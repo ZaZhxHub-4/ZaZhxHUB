@@ -1,0 +1,18 @@
+local function runScript1()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/ZaZhxHub-4/ZaZhxHUB/refs/heads/main/End-Loader"))()
+end
+
+local function runScript2()
+    local originalCreate = game.Players.LocalPlayer.PlayerGui.ChildAdded
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/4LynxX/Lynx/refs/heads/main/LynxxMain.lua"))()
+    -- Sembunyikan semua UI dari script Lynx
+    for _, gui in pairs(game.Players.LocalPlayer.PlayerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            gui.Enabled = false
+        end
+    end
+end
+
+runScript1()
+task.wait(1)
+runScript2()
