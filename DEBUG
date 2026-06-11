@@ -1,20 +1,21 @@
-local UIS = game:GetService("UserInputService")
-local setthreadidentity = setthreadidentity
+local Players = game:GetService("Players")
+local lp = Players.LocalPlayer
+local pg = lp:WaitForChild("PlayerGui")
 
--- =====================
--- GUI
--- =====================
+local old = pg:FindFirstChild("DebugConsole")
+if old then old:Destroy() end
+
 local sg = Instance.new("ScreenGui")
-sg.Name = "DebugPanel"
+sg.Name = "DebugConsole"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.DisplayOrder = 9999
 sg.IgnoreGuiInset = true
-sg.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+sg.Parent = pg
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 420, 0, 300)
-panel.Position = UDim2.new(0.5, -210, 0.5, -150)
+panel.Size = UDim2.new(0, 430, 0, 280)
+panel.Position = UDim2.new(0.5, -215, 0.5, -140)
 panel.BackgroundColor3 = Color3.fromRGB(10, 11, 15)
 panel.BorderSizePixel = 0
 panel.Active = true
@@ -26,7 +27,6 @@ local pStroke = Instance.new("UIStroke", panel)
 pStroke.Color = Color3.fromRGB(0, 180, 80)
 pStroke.Thickness = 1.5
 
--- Header
 local header = Instance.new("Frame")
 header.Size = UDim2.new(1, 0, 0, 28)
 header.BackgroundColor3 = Color3.fromRGB(16, 18, 24)
@@ -36,10 +36,10 @@ header.Parent = panel
 Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -40, 1, 0)
+title.Size = UDim2.new(1, -60, 1, 0)
 title.Position = UDim2.new(0, 10, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "🔍 Debug InvokeServer — Hapus item dari booth!"
+title.Text = "🔍 Debug Console"
 title.TextColor3 = Color3.fromRGB(80, 255, 150)
 title.TextSize = 10
 title.Font = Enum.Font.GothamBold
@@ -48,35 +48,22 @@ title.ZIndex = 902
 title.Parent = header
 
 local clearBtn = Instance.new("TextButton")
-clearBtn.Size = UDim2.new(0, 50, 0, 20)
-clearBtn.Position = UDim2.new(1, -58, 0, 4)
-clearBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+clearBtn.Size = UDim2.new(0, 46, 0, 20)
+clearBtn.Position = UDim2.new(1, -50, 0, 4)
+clearBtn.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
 clearBtn.BorderSizePixel = 0
 clearBtn.Text = "Clear"
-clearBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+clearBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
 clearBtn.TextSize = 9
 clearBtn.Font = Enum.Font.GothamBold
+clearBtn.AutoButtonColor = false
 clearBtn.ZIndex = 902
 clearBtn.Parent = header
 Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0, 4)
 
--- Status bar
-local statusLbl = Instance.new("TextLabel")
-statusLbl.Size = UDim2.new(1, -12, 0, 16)
-statusLbl.Position = UDim2.new(0, 8, 0, 30)
-statusLbl.BackgroundTransparency = 1
-statusLbl.Text = "⏳ Menunggu... hapus 1 item dari booth secara manual"
-statusLbl.TextColor3 = Color3.fromRGB(255, 200, 60)
-statusLbl.TextSize = 9
-statusLbl.Font = Enum.Font.Gotham
-statusLbl.TextXAlignment = Enum.TextXAlignment.Left
-statusLbl.ZIndex = 902
-statusLbl.Parent = panel
-
--- Scroll output
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -12, 1, -54)
-scroll.Position = UDim2.new(0, 6, 0, 48)
+scroll.Size = UDim2.new(1, -10, 1, -34)
+scroll.Position = UDim2.new(0, 5, 0, 32)
 scroll.BackgroundColor3 = Color3.fromRGB(14, 16, 22)
 scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 3
@@ -85,93 +72,81 @@ scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 scroll.ZIndex = 901
 scroll.Parent = panel
 Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 6)
-local listLayout = Instance.new("UIListLayout", scroll)
-listLayout.Padding = UDim.new(0, 2)
-local scrollPad = Instance.new("UIPadding", scroll)
-scrollPad.PaddingLeft = UDim.new(0, 6)
-scrollPad.PaddingTop = UDim.new(0, 4)
+local layout = Instance.new("UIListLayout", scroll)
+layout.Padding = UDim.new(0, 1)
+local pad = Instance.new("UIPadding", scroll)
+pad.PaddingLeft = UDim.new(0, 5)
+pad.PaddingTop = UDim.new(0, 3)
 
-local logCount = 0
-
-local function addLog(text, color)
-    logCount = logCount + 1
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -8, 0, 0)
-    lbl.AutomaticSize = Enum.AutomaticSize.Y
-    lbl.BackgroundTransparency = 1
-    lbl.Text = "[" .. logCount .. "] " .. text
-    lbl.TextColor3 = color or Color3.fromRGB(220, 228, 240)
-    lbl.TextSize = 9
-    lbl.Font = Enum.Font.Gotham
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextWrapped = true
-    lbl.ZIndex = 902
-    lbl.Parent = scroll
-    -- Auto scroll ke bawah
-    task.wait()
-    scroll.CanvasPosition = Vector2.new(0, scroll.AbsoluteCanvasSize.Y)
+local logN = 0
+local function log(txt, color)
+    logN = logN + 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, -8, 0, 0)
+    l.AutomaticSize = Enum.AutomaticSize.Y
+    l.BackgroundTransparency = 1
+    l.Text = "[" .. logN .. "] " .. txt
+    l.TextColor3 = color or Color3.fromRGB(220, 228, 240)
+    l.TextSize = 9
+    l.Font = Enum.Font.Gotham
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.TextWrapped = true
+    l.ZIndex = 902
+    l.Parent = scroll
+    task.defer(function()
+        scroll.CanvasPosition = Vector2.new(0, math.huge)
+    end)
 end
 
 clearBtn.MouseButton1Click:Connect(function()
     for _, c in ipairs(scroll:GetChildren()) do
         if c:IsA("TextLabel") then c:Destroy() end
     end
-    logCount = 0
-    statusLbl.Text = "⏳ Menunggu... hapus 1 item dari booth secara manual"
-    statusLbl.TextColor3 = Color3.fromRGB(255, 200, 60)
+    logN = 0
+    log("Cleared!", Color3.fromRGB(255, 200, 60))
 end)
 
--- =====================
--- HOOK
--- =====================
-addLog("Hook dipasang — silakan hapus 1 item dari booth", Color3.fromRGB(80, 255, 150))
+log("Memasang hook...", Color3.fromRGB(255, 200, 60))
 
-local orig
-setthreadidentity(6)
-orig = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    if method == "InvokeServer" then
-        task.spawn(function()
-            local args = {...}
+local ok, err = pcall(function()
+    setthreadidentity(6)
+    local orig
+    orig = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if method == "InvokeServer" then
+            task.spawn(function()
+                local args = {...}
+                local rfName = "?"
+                pcall(function() rfName = self.Name end)
 
-            local rfName = "Unknown"
-            pcall(function() rfName = self.Name end)
-
-            local hasUUID = false
-            for _, v in ipairs(args) do
-                if type(v) == "string" and #v == 36 and v:match(
-                    "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
-                ) then hasUUID = true end
-            end
-
-            -- Log SEMUA InvokeServer, bukan hanya yang ada UUID
-            local argInfo = {}
-            for i, v in ipairs(args) do
-                local t = type(v)
-                local display = ""
-                if t == "string" then
-                    display = '"' .. tostring(v):sub(1, 36) .. '"'
-                elseif t == "number" then
-                    display = tostring(v)
-                elseif t == "boolean" then
-                    display = tostring(v)
-                else
-                    display = "[" .. t .. "]"
+                local parts = {"RF: " .. rfName}
+                for i, v in ipairs(args) do
+                    local t = type(v)
+                    local val = ""
+                    if t == "string" then val = v:sub(1, 36)
+                    elseif t == "number" or t == "boolean" then val = tostring(v)
+                    else val = "[" .. t .. "]" end
+                    table.insert(parts, "A"..i.."="..val)
                 end
-                table.insert(argInfo, "A"..i.."("..t..")="..display)
-            end
 
-            local color = hasUUID
-                and Color3.fromRGB(80, 255, 150)
-                or Color3.fromRGB(160, 160, 180)
+                local hasUUID = false
+                for _, v in ipairs(args) do
+                    if type(v) == "string" and #v == 36 then hasUUID = true end
+                end
 
-            addLog("RF: " .. rfName .. " | " .. table.concat(argInfo, " | "), color)
+                local color = hasUUID
+                    and Color3.fromRGB(80, 255, 150)
+                    or Color3.fromRGB(160, 160, 180)
 
-            if hasUUID then
-                statusLbl.Text = "✅ Ada UUID! RF: " .. rfName .. " — " .. #args .. " args"
-                statusLbl.TextColor3 = Color3.fromRGB(80, 255, 150)
-            end
-        end)
-    end
-    return orig(self, ...)
-end))
+                log(table.concat(parts, " | "), color)
+            end)
+        end
+        return orig(self, ...)
+    end))
+end)
+
+if ok then
+    log("✅ Hook terpasang! Buka booth → hapus 1 item", Color3.fromRGB(80, 255, 150))
+else
+    log("❌ Hook gagal: " .. tostring(err), Color3.fromRGB(255, 80, 80))
+end
