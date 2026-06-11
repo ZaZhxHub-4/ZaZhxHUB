@@ -1,152 +1,145 @@
-local Players = game:GetService("Players")
-local lp = Players.LocalPlayer
-local pg = lp:WaitForChild("PlayerGui")
+-- ╔══════════════════════════════════════════════╗
+-- ║   DEBUG v2: InvokeServer Only + Marker        ║
+-- ║   Lebih bersih, fokus ke candidate delete     ║
+-- ╚══════════════════════════════════════════════╝
 
-local old = pg:FindFirstChild("DebugConsole")
-if old then old:Destroy() end
+local HS = game:GetService("Players")
+local HSJ = game:GetService("HttpService")
+local UIS = game:GetService("UserInputService")
 
-local sg = Instance.new("ScreenGui")
-sg.Name = "DebugConsole"
-sg.ResetOnSpawn = false
-sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-sg.DisplayOrder = 9999
-sg.IgnoreGuiInset = true
-sg.Parent = pg
+local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 430, 0, 280)
-panel.Position = UDim2.new(0.5, -215, 0.5, -140)
-panel.BackgroundColor3 = Color3.fromRGB(10, 11, 15)
-panel.BorderSizePixel = 0
-panel.Active = true
-panel.Draggable = true
-panel.ZIndex = 900
-panel.Parent = sg
-Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
-local pStroke = Instance.new("UIStroke", panel)
-pStroke.Color = Color3.fromRGB(0, 180, 80)
-pStroke.Thickness = 1.5
-
-local header = Instance.new("Frame")
-header.Size = UDim2.new(1, 0, 0, 28)
-header.BackgroundColor3 = Color3.fromRGB(16, 18, 24)
-header.BorderSizePixel = 0
-header.ZIndex = 901
-header.Parent = panel
-Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -60, 1, 0)
-title.Position = UDim2.new(0, 10, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "🔍 Debug Console"
-title.TextColor3 = Color3.fromRGB(80, 255, 150)
-title.TextSize = 10
-title.Font = Enum.Font.GothamBold
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.ZIndex = 902
-title.Parent = header
-
-local clearBtn = Instance.new("TextButton")
-clearBtn.Size = UDim2.new(0, 46, 0, 20)
-clearBtn.Position = UDim2.new(1, -50, 0, 4)
-clearBtn.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
-clearBtn.BorderSizePixel = 0
-clearBtn.Text = "Clear"
-clearBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
-clearBtn.TextSize = 9
-clearBtn.Font = Enum.Font.GothamBold
-clearBtn.AutoButtonColor = false
-clearBtn.ZIndex = 902
-clearBtn.Parent = header
-Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0, 4)
-
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -10, 1, -34)
-scroll.Position = UDim2.new(0, 5, 0, 32)
-scroll.BackgroundColor3 = Color3.fromRGB(14, 16, 22)
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 3
-scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scroll.ZIndex = 901
-scroll.Parent = panel
-Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 6)
-local layout = Instance.new("UIListLayout", scroll)
-layout.Padding = UDim.new(0, 1)
-local pad = Instance.new("UIPadding", scroll)
-pad.PaddingLeft = UDim.new(0, 5)
-pad.PaddingTop = UDim.new(0, 3)
-
-local logN = 0
-local function log(txt, color)
-    logN = logN + 1
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1, -8, 0, 0)
-    l.AutomaticSize = Enum.AutomaticSize.Y
-    l.BackgroundTransparency = 1
-    l.Text = "[" .. logN .. "] " .. txt
-    l.TextColor3 = color or Color3.fromRGB(220, 228, 240)
-    l.TextSize = 9
-    l.Font = Enum.Font.Gotham
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.TextWrapped = true
-    l.ZIndex = 902
-    l.Parent = scroll
-    task.defer(function()
-        scroll.CanvasPosition = Vector2.new(0, math.huge)
+local function sendWH(title, desc, color)
+    pcall(function()
+        request({
+            Url = WEBHOOK, Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HSJ:JSONEncode({
+                username = "🔍 Debug v2",
+                embeds = {{ title=title, description=desc, color=color or 16776960,
+                    footer={text="Debug v2 • " .. os.date("%H:%M:%S")} }}
+            })
+        })
     end)
 end
 
-clearBtn.MouseButton1Click:Connect(function()
-    for _, c in ipairs(scroll:GetChildren()) do
-        if c:IsA("TextLabel") then c:Destroy() end
+local function serializeArgs(args)
+    local parts = {}
+    for i, v in ipairs(args) do
+        local t = type(v)
+        local repr
+        if t == "string" then
+            repr = '"' .. v:sub(1,80) .. (v:len()>80 and "..." or "") .. '"'
+        elseif t == "number" then repr = tostring(v)
+        elseif t == "boolean" then repr = tostring(v)
+        elseif t == "table" then
+            local ok, enc = pcall(function() return HSJ:JSONEncode(v) end)
+            repr = ok and enc:sub(1,120) or "[table]"
+        elseif t == "userdata" then
+            local ok, name = pcall(function() return v.ClassName or v.Name or tostring(v) end)
+            repr = ok and ("[userdata: "..name.."]") or "[userdata]"
+        else repr = "["..t.."]" end
+        table.insert(parts, "**["..i.."]** `"..t.."` → "..repr)
     end
-    logN = 0
-    log("Cleared!", Color3.fromRGB(255, 200, 60))
-end)
+    return #parts > 0 and table.concat(parts,"\n") or "🔴 **TIDAK ADA ARGUMEN**"
+end
 
-log("Memasang hook...", Color3.fromRGB(255, 200, 60))
+-- ── Blacklist noise — skip sama sekali ───────────────────────────
+local BLACKLIST_PATHS = {
+    "Analytics", "GameAnalytics", "Gamebeast", "PingSender"
+}
+local function isNoise(path)
+    for _, kw in ipairs(BLACKLIST_PATHS) do
+        if path:find(kw, 1, true) then return true end
+    end
+    return false
+end
+
+local invokeCount = 0
+local markerActive = false
+local markerTime   = nil
+local hookRef      = nil
+
+-- ── Keyboard shortcut: tekan F saat AKAN hapus item ──────────────
+UIS.InputBegan:Connect(function(inp, gameProc)
+    if gameProc then return end
+    if inp.KeyCode == Enum.KeyCode.F then
+        markerActive = true
+        markerTime   = tick()
+        sendWH("📌 MARKER DITEKAN",
+            "Kamu menekan **F** — sekarang **hapus item dari booth**!\nCall yang muncul setelah ini adalah kandidat delete.",
+            3066993)
+        print("[Debug v2] MARKER aktif — sekarang hapus item!")
+    end
+end)
 
 local ok, err = pcall(function()
     setthreadidentity(6)
-    local orig
-    orig = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+
+    hookRef = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
         local method = getnamecallmethod()
-        if method == "InvokeServer" then
-            task.spawn(function()
-                local args = {...}
-                local rfName = "?"
-                pcall(function() rfName = self.Name end)
 
-                local parts = {"RF: " .. rfName}
-                for i, v in ipairs(args) do
-                    local t = type(v)
-                    local val = ""
-                    if t == "string" then val = v:sub(1, 36)
-                    elseif t == "number" or t == "boolean" then val = tostring(v)
-                    else val = "[" .. t .. "]" end
-                    table.insert(parts, "A"..i.."="..val)
-                end
-
-                local hasUUID = false
-                for _, v in ipairs(args) do
-                    if type(v) == "string" and #v == 36 then hasUUID = true end
-                end
-
-                local color = hasUUID
-                    and Color3.fromRGB(80, 255, 150)
-                    or Color3.fromRGB(160, 160, 180)
-
-                log(table.concat(parts, " | "), color)
-            end)
+        -- HANYA tangkap InvokeServer
+        if method ~= "InvokeServer" then
+            return hookRef(self, ...)
         end
-        return orig(self, ...)
+
+        local args     = { ... }
+        local selfPath = "[?]"
+        local selfName = "[?]"
+        pcall(function()
+            selfPath = self:GetFullName()
+            selfName = self.Name or tostring(self)
+        end)
+
+        -- Skip noise
+        if isNoise(selfPath) then
+            return hookRef(self, ...)
+        end
+
+        invokeCount += 1
+
+        -- Tandai apakah call ini dekat dengan marker
+        local markerFlag = ""
+        if markerActive and markerTime then
+            local delta = tick() - markerTime
+            if delta <= 5 then
+                -- Dalam 5 detik setelah F ditekan
+                markerFlag = "\n🎯 **" .. string.format("%.2f", delta) .. "s setelah MARKER — INI KANDIDAT DELETE!**"
+            elseif delta > 10 then
+                markerActive = false
+                markerTime   = nil
+            end
+        end
+
+        local argStr = serializeArgs(args)
+        local desc   = table.concat({
+            "**Method:** `" .. method .. "`",
+            "**Name:** `" .. selfName .. "`",
+            "**Path:** `" .. selfPath .. "`",
+            "",
+            "**Args:**",
+            argStr,
+            markerFlag,
+        }, "\n")
+
+        local color = markerFlag ~= "" and 15548997 or 8421504  -- merah = kandidat, abu = biasa
+        sendWH("📡 InvokeServer #" .. invokeCount, desc, color)
+
+        return hookRef(self, ...)
     end))
 end)
 
 if ok then
-    log("✅ Hook terpasang! Buka booth → hapus 1 item", Color3.fromRGB(80, 255, 150))
+    print("[Debug v2] Hook aktif!")
+    print("[Debug v2] CARA PAKAI:")
+    print("[Debug v2] 1. Buka booth")
+    print("[Debug v2] 2. Tekan F di keyboard SESAAT SEBELUM hapus item")
+    print("[Debug v2] 3. Langsung hapus item dari booth")
+    print("[Debug v2] Call yang muncul dalam 5 detik setelah F = kandidat delete")
+    sendWH("✅ Debug v2 Siap",
+        "**Cara pakai:**\n1. Buka booth\n2. Tekan **F** di keyboard sesaat sebelum hapus\n3. Langsung hapus item\n\nCall dalam 5 detik setelah F akan ditandai 🎯",
+        3066993)
 else
-    log("❌ Hook gagal: " .. tostring(err), Color3.fromRGB(255, 80, 80))
+    print("[Debug v2] Gagal: " .. tostring(err))
 end
