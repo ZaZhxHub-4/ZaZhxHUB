@@ -1,0 +1,70 @@
+local HS = game:GetService("HttpService")
+local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+
+local function sendWebhook(title, desc)
+    pcall(function()
+        request({
+            Url = WEBHOOK,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HS:JSONEncode({
+                username = "🔍 Debug Delete Booth",
+                embeds = {{
+                    title = title,
+                    description = desc,
+                    color = 16776960
+                }}
+            })
+        })
+    end)
+end
+
+local captured = false
+
+local orig = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    if method == "InvokeServer" and not captured then
+        local args = {...}
+        
+        -- Cek apakah ada UUID di argumen
+        local hasUUID = false
+        for _, v in ipairs(args) do
+            if type(v) == "string" and #v == 36 and v:match(
+                "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
+            ) then hasUUID = true end
+        end
+        
+        if hasUUID then
+            -- Log semua InvokeServer yang ada UUID-nya
+            local rfName = "Unknown"
+            pcall(function() rfName = self.Name end)
+            
+            local argInfo = {}
+            for i, v in ipairs(args) do
+                local t = type(v)
+                local display = ""
+                if t == "string" then
+                    display = '"' .. v:sub(1, 40) .. '"'
+                elseif t == "number" then
+                    display = tostring(v)
+                elseif t == "boolean" then
+                    display = tostring(v)
+                else
+                    display = "[" .. t .. "]"
+                end
+                table.insert(argInfo, "Arg" .. i .. " (" .. t .. "): " .. display)
+            end
+            
+            local desc = "**RF Name:** `" .. rfName .. "`\n"
+                .. "**RF FullPath:** `" .. tostring(self) .. "`\n"
+                .. "**ArgCount:** " .. #args .. "\n"
+                .. "**Args:**\n```\n" .. table.concat(argInfo, "\n") .. "\n```"
+            
+            sendWebhook("📡 InvokeServer Tertangkap!", desc)
+            print("[DEBUG] RF:", rfName, "| Args:", #args)
+        end
+    end
+    return orig(self, ...)
+end))
+
+print("✅ Debug aktif — sekarang hapus 1 item dari booth secara manual!")
