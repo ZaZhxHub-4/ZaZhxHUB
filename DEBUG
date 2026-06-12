@@ -1,199 +1,84 @@
--- ============================================================
--- TEST EQUIP ROD - DENGAN GUI SEDERHANA
--- ============================================================
+-- ╔══════════════════════════════════════════════════════════════════╗
+-- ║   FISH IT DEBUGGER: EQUIP / UNEQUIP TRACKER                      ║
+-- ║   Memantau sinyal di balik layar & kirim ke Discord Webhook      ║
+-- ╚══════════════════════════════════════════════════════════════════╝
+
 local Players = game:GetService("Players")
+local HS = game:GetService("HttpService")
 local lp = Players.LocalPlayer
-local RS = game:GetService("ReplicatedStorage")
-local UIS = game:GetService("UserInputService")
 
--- Buat GUI untuk output
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TestEquipGUI"
-screenGui.Parent = lp:WaitForChild("PlayerGui")
+-- Menggunakan URL rahasia dari script utama kamu
+local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 400, 0, 300)
-mainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-mainFrame.BackgroundTransparency = 0.1
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 30)
-title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-title.Text = "Test Equip Rod"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 14
-title.Parent = mainFrame
-Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
-
-local outputBox = Instance.new("TextBox")
-outputBox.Size = UDim2.new(1, -20, 1, -70)
-outputBox.Position = UDim2.new(0, 10, 0, 40)
-outputBox.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-outputBox.TextColor3 = Color3.fromRGB(200, 200, 200)
-outputBox.TextSize = 11
-outputBox.Font = Enum.Font.Gotham
-outputBox.TextWrapped = true
-outputBox.TextEditable = false
-outputBox.MultiLine = true
-outputBox.ClearTextOnFocus = false
-outputBox.Text = "Mencari remote event...\n"
-outputBox.Parent = mainFrame
-Instance.new("UICorner", outputBox).CornerRadius = UDim.new(0, 6)
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 60, 0, 30)
-closeBtn.Position = UDim2.new(1, -70, 1, -40)
-closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-closeBtn.Text = "Tutup"
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.Font = Enum.Font.Gotham
-closeBtn.TextSize = 12
-closeBtn.Parent = mainFrame
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
-closeBtn.MouseButton1Click:Connect(function()
-    screenGui:Destroy()
-end)
-
-local function addLog(msg)
-    outputBox.Text = outputBox.Text .. "\n" .. msg
-    -- Auto scroll ke bawah
-    outputBox.CursorPosition = -1
-end
-
--- Mulai test
-addLog("🔍 Mencari remote event EquipToolFromHotbar...")
-
-local equipRemote = nil
-local unequipRemote = nil
-
-for _, obj in ipairs(game:GetDescendants()) do
-    if obj:IsA("RemoteEvent") then
-        if obj.Name == "EquipToolFromHotbar" then
-            equipRemote = obj
-            addLog("✅ Ditemukan EquipToolFromHotbar di: " .. obj:GetFullName())
-        elseif obj.Name == "UnequipToolFromHotbar" then
-            unequipRemote = obj
-            addLog("✅ Ditemukan UnequipToolFromHotbar di: " .. obj:GetFullName())
-        end
-    end
-end
-
-if not equipRemote then
-    addLog("❌ EquipToolFromHotbar tidak ditemukan!")
-    addLog("📡 Menampilkan semua RemoteEvent dengan kata 'Equip':")
-    for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("RemoteEvent") and obj.Name:lower():find("equip") then
-            addLog("   - " .. obj.Name .. " di " .. obj:GetFullName())
-        end
-    end
-    return
-end
-
--- Ambil tool di hotbar
-local backpack = lp:FindFirstChild("Backpack")
-if not backpack then
-    addLog("❌ Backpack tidak ditemukan, tunggu sebentar...")
-    backpack = lp:WaitForChild("Backpack", 5)
-    if not backpack then
-        addLog("❌ Backpack tidak muncul, pastikan karakter sudah spawn.")
-        return
-    end
-end
-
-local tools = {}
-for _, child in ipairs(backpack:GetChildren()) do
-    if child:IsA("Tool") then
-        table.insert(tools, child)
-        addLog("📦 Tool di hotbar: " .. child.Name)
-    end
-end
-
-if #tools == 0 then
-    addLog("❌ Tidak ada tool di hotbar! Masukkan rod ke hotbar dulu.")
-    return
-end
-
-local testRod = tools[1]
-addLog("🔧 Akan meng-equip rod: " .. testRod.Name)
-
-local function tryEquip(param, paramDesc)
-    addLog("→ Mencoba " .. paramDesc)
-    local success, err = pcall(function()
-        equipRemote:FireServer(param)
-    end)
-    if success then
-        addLog("  FireServer berhasil dikirim.")
-    else
-        addLog("  FireServer gagal: " .. tostring(err))
-    end
-    task.wait(1.5)
-    -- Cek apakah rod sudah di tangan
-    local char = lp.Character
-    if char and char:FindFirstChild(testRod.Name) then
-        addLog("🎉 BERHASIL! Rod " .. testRod.Name .. " berada di tangan!")
-        return true
-    end
-    addLog("  ⚠️ Rod tidak muncul di tangan.")
-    return false
-end
-
-addLog("========== MULAI TEST EQUIP ==========")
-
--- Coba parameter 1: tool instance
-if tryEquip(testRod, "tool instance") then return end
-
--- Coba parameter 2: nomor slot (0-7)
-for slot = 0, 7 do
-    if tryEquip(slot, "slot " .. slot) then return end
-end
-
--- Coba parameter 3: nama tool string
-if tryEquip(testRod.Name, "string nama tool") then return end
-
--- Coba parameter 4: UUID jika ada
-local uuid = testRod:GetAttribute("UUID") or testRod:GetAttribute("ItemId")
-if uuid then
-    if tryEquip(uuid, "UUID: " .. uuid) then return end
-end
-
--- Coba parameter 5: kosong (tanpa parameter)
-addLog("→ Mencoba tanpa parameter")
-local success, err = pcall(function()
-    equipRemote:FireServer()
-end)
-if success then
-    addLog("  FireServer berhasil dikirim.")
-    task.wait(1.5)
-    local char = lp.Character
-    if char and char:FindFirstChild(testRod.Name) then
-        addLog("🎉 BERHASIL! Rod " .. testRod.Name .. " berada di tangan!")
-        return
-    end
-end
-
-addLog("❌ Semua percobaan equip gagal. Tidak ada yang berhasil.")
-
--- Optional: test unequip jika ada remote
-if unequipRemote then
-    addLog("========== TEST UNEQUIP ==========")
-    addLog("→ Mencoba unequip tanpa parameter")
+-- Fungsi kirim ke Webhook
+local function sendWebhook(title, desc, color)
     pcall(function()
-        unequipRemote:FireServer()
+        request({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HS:JSONEncode({
+                username = "🐟 Tracker Equip/Unequip",
+                embeds = {{
+                    title = title,
+                    description = desc,
+                    color = color or 16766720,
+                    footer = {text = "Fish It Debugger • " .. os.date("%H:%M:%S")}
+                }}
+            })
+        })
     end)
-    task.wait(1)
-    local char = lp.Character
-    if char and not char:FindFirstChildWhichIsA("Tool") then
-        addLog("✅ Unequip berhasil! Tidak ada tool di tangan.")
-    else
-        addLog("⚠️ Unequip gagal, tool masih di tangan.")
-    end
 end
 
-addLog("========== SELESAI ==========")
-addLog("Jika equip berhasil, metode ini bisa dipakai.")
-addLog("Tutup GUI ini untuk mengakhiri.")
+sendWebhook("🔍 Debugger Diaktifkan!", "Sistem siap. Silakan klik/pilih pancingan kamu (Equip) dan lepas (Unequip) secara manual di game.", 3066993)
+
+-- ==========================================
+-- METODE 1: DETEKSI TOOL STANDAR ROBLOX
+-- ==========================================
+lp.Character.ChildAdded:Connect(function(child)
+    if child:IsA("Tool") then
+        sendWebhook("🎒 Metode 1: Standard Equip Terdeteksi", "**Nama Item:** `" .. child.Name .. "`\nGame ini menggunakan sistem Tool bawaan Roblox.", 3447003)
+    end
+end)
+
+lp.Character.ChildRemoved:Connect(function(child)
+    if child:IsA("Tool") then
+        sendWebhook("🎒 Metode 1: Standard Unequip Terdeteksi", "**Nama Item:** `" .. child.Name .. "`\nItem dikembalikan ke tas.", 15158332)
+    end
+end)
+
+-- ==========================================
+-- METODE 2: DETEKSI REMOTE EVENT / FUNCTION
+-- ==========================================
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+
+    -- Cek jika client mengirim data ke server
+    if not checkcaller() and (method == "FireServer" or method == "InvokeServer") then
+        local remoteName = tostring(self.Name)
+        local argStr = ""
+        
+        for i, v in ipairs(args) do
+            local val = type(v) == "userdata" and typeof(v) or tostring(v)
+            argStr = argStr .. "Arg["..i.."]: " .. val .. "\n"
+        end
+
+        local lowerName = string.lower(remoteName)
+        local lowerArgs = string.lower(argStr)
+
+        -- Filter cerdas agar Discord tidak kena spam Limit/Ratelimit
+        -- Hanya tangkap log jika ada hubungannya dengan equip/item/rod/inventory
+        if lowerName:match("equip") or lowerName:match("tool") or lowerName:match("item") or lowerName:match("inventory") or
+           lowerArgs:match("equip") or lowerArgs:match("rod") or lowerArgs:match("pancing") then
+            
+            local desc = "📡 **Remote:** `" .. remoteName .. "`\n⚙️ **Method:** `" .. method .. "`\n\n📝 **Arguments:**\n```lua\n" .. (argStr == "" and "Tidak ada argument" or argStr) .. "\n```"
+            task.spawn(sendWebhook, "⚡ Sinyal Remote Custom Terdeteksi!", desc, 15105570)
+        end
+    end
+
+    return oldNamecall(self, ...)
+end))
+
+print("🎣 [DEBUGGER] Berhasil di-inject. Silakan equip rod kamu.")
