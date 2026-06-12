@@ -1,88 +1,66 @@
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local RS = game:GetService("ReplicatedStorage")
-local lp = Players.LocalPlayer
 
-print("--- MEMULAI TEST FINAL: DIRECT REMOTE BOMBARDMENT ---")
+print("--- TEST FINAL LAPIS 2: INJECTION FUNGSI INTERNAL ---")
 
--- 1. AUTO CLAIM BOOTH (Sukses Fix)
-local function claimBoothFix()
-    local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.ActionText == "Claim Booth" then
-            local pos = obj.Parent:IsA("Attachment") and obj.Parent.WorldPosition or (obj.Parent:IsA("BasePart") and obj.Parent.Position)
-            if pos then
-                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-                task.wait(0.5)
-                local oldLoS = obj.RequiresLineOfSight
-                local oldDist = obj.MaxActivationDistance
-                obj.RequiresLineOfSight = false
-                obj.MaxActivationDistance = 99
-                pcall(function() fireproximityprompt(obj) end)
-                task.wait(0.5)
-                obj.RequiresLineOfSight = oldLoS
-                obj.MaxActivationDistance = oldDist
-                print("[+] Booth berhasil di-claim!")
-                return true
-            end
-        end
-    end
-    return false
-end
-
--- 2. BACA DATA ITEM DARI TAS
-local function getInventoryData(itemName)
+-- Ambil TABEL UTUH dari item (bukan cuma string UUID)
+local function getFullItemTable(itemName)
     local Replion = require(RS.Packages.Replion)
     local PlayerData = Replion.Client:WaitReplion("Data")
+    local ItemUtility = require(RS.Shared.ItemUtility)
     local inv = PlayerData:Get("Inventory")
-    if not inv or not inv.Items then return nil, nil end
+    
+    if not inv or not inv.Items then return nil end
     for _, item in ipairs(inv.Items) do
-        local data = require(RS.Shared.ItemUtility):GetItemData(item.Id)
+        local data = ItemUtility:GetItemData(item.Id)
         local n = (data and data.Data and data.Data.Name) or (data and data.Name)
-        if n == itemName then
-            local cat = (data and data.Data and data.Data.Type) or (data and data.Type) or "Item"
-            return item.UUID, cat
+        if n == itemName then 
+            return item -- Bawa pulang seluruh tabel datanya!
         end
     end
-    return nil, nil
+    return nil
 end
 
--- 3. EKSEKUSI REMOTE LANGSUNG
-local function testDirectListing(itemName, price)
-    local uuid, category = getInventoryData(itemName)
-    if not uuid then warn("[-] Item '"..itemName.."' tidak ditemukan di tas!"); return end
+local function executeGameFunction(itemName, price)
+    local itemTable = getFullItemTable(itemName)
+    if not itemTable then warn("[-] Item '"..itemName.."' tidak ada di tas!"); return end
+    
+    print("[+] Tabel Item didapatkan! UUID:", itemTable.UUID)
 
-    print("[+] Item ketemu! UUID:", uuid, "| Kategori:", category)
-
-    -- Ekstrak RemoteFunction dari Kamus Jaringan (Sesuai Screenshot 1)
-    local RF_CreateListing = nil
+    local targetFunc = nil
     for _, v in pairs(getgc(true)) do
-        if type(v) == "table" and rawget(v, "CreateSaleListing") then
-            if typeof(rawget(v, "CreateSaleListing")) == "Instance" then
-                RF_CreateListing = rawget(v, "CreateSaleListing")
-                break
+        if type(v) == "function" then
+            local info = debug.getinfo(v)
+            if info.name == "CreateSaleListing" then
+                -- Pastikan fungsi ini memegang Remote di upvalues-nya (Sesuai Screenshot)
+                for _, upval in pairs(debug.getupvalues(v)) do
+                    if typeof(upval) == "Instance" and (upval:IsA("RemoteFunction") or upval:IsA("RemoteEvent")) then
+                        targetFunc = v
+                        break
+                    end
+                end
+                if targetFunc then break end
             end
         end
     end
 
-    if not RF_CreateListing then warn("[-] RemoteFunction tidak ditemukan!"); return end
-    
-    print("[+] RemoteFunction didapatkan! Memulai tembakan bombardir...")
+    if targetFunc then
+        print("[+] Fungsi Bawaan Game Ditemukan! Mulai Eksekusi...")
+        
+        -- Kita paksa fungsi bawaan game bekerja dengan semua kemungkinan parameter
+        -- Parameter 1: Panggil normal (Tabel Item, Harga)
+        task.spawn(function() pcall(function() targetFunc(itemTable, price) end) end)
+        -- Parameter 2: Panggil normal pakai UUID (UUID, Harga)
+        task.spawn(function() pcall(function() targetFunc(itemTable.UUID, price) end) end)
+        -- Parameter 3: Object-Oriented Call (Kirim 'nil' sebagai pengganti self)
+        task.spawn(function() pcall(function() targetFunc(nil, itemTable, price) end) end)
+        task.spawn(function() pcall(function() targetFunc(nil, itemTable.UUID, price) end) end)
 
-    -- Bombardir 4 Pola Argumen Paling Umum
-    task.spawn(function() pcall(function() RF_CreateListing:InvokeServer(uuid, price) end) end)
-    task.spawn(function() pcall(function() RF_CreateListing:InvokeServer(category, uuid, price) end) end)
-    task.spawn(function() pcall(function() RF_CreateListing:InvokeServer(uuid, price, category) end) end)
-    task.spawn(function() pcall(function() RF_CreateListing:InvokeServer(price, uuid) end) end)
-
-    task.wait(1.5)
-    print("[!] TEST SELESAI. Cek Booth kamu sekarang, apakah " .. itemName .. " seharga " .. price .. " berhasil dipajang?")
+        task.wait(1)
+        print("[!] Eksekusi selesai. Coba cek booth kamu sekarang.")
+    else
+        warn("[-] Fungsi CreateSaleListing tidak ditemukan di memori.")
+    end
 end
 
--- =======================
--- EKSEKUSI
--- =======================
-claimBoothFix()
-task.wait(1)
-testDirectListing("Enchant Stone", 500)
+executeGameFunction("Enchant Stone", 500)
