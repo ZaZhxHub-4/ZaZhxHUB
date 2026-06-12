@@ -1,75 +1,62 @@
 -- ╔══════════════════════════════════════════════════════════════════╗
--- ║   ZHX MEMORY SCANNER: HUNTING THE HASHED REMOTES                 ║
+-- ║   ZHX BOOTH POSITION MAPPER (WEBHOOK EDITION)                    ║
 -- ╚══════════════════════════════════════════════════════════════════╝
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
+local lp = Players.LocalPlayer
 
-local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_MemoryScanner"
-pcall(function() sg.Parent = CoreGui end)
-if not sg.Parent then sg.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui") end
+local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+local httpRequest = (syn and syn.request) or request or http_request or (http and http.request)
 
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0, 250, 0, 50)
-btn.Position = UDim2.new(0.5, -125, 0, 20)
-btn.BackgroundColor3 = Color3.fromRGB(50, 50, 200)
+-- UI Sederhana
+local sg = Instance.new("ScreenGui", CoreGui)
+local btn = Instance.new("TextButton", sg)
+btn.Size = UDim2.new(0, 220, 0, 60)
+btn.Position = UDim2.new(0.5, -110, 0.8, 0)
+btn.Text = "📍 SAVE & SEND TO DISCORD"
+btn.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
 btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 btn.Font = Enum.Font.GothamBold
-btn.TextSize = 12
-btn.Text = "🔍 SCAN MEMORY (CARI KAMUS REMOTE)"
-btn.Parent = sg
 Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 
+local count = 0
+
 btn.MouseButton1Click:Connect(function()
-    btn.Text = "MENCARI... (AWAS NGE-LAG BENTAR)"
-    btn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
-    task.wait(0.1)
+    if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+        local pos = lp.Character.HumanoidRootPart.CFrame
+        count = count + 1
+        
+        -- Formatter CFrame agar mudah di-paste ke script nanti
+        local posStr = string.format("CFrame.new(%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f)", 
+            pos.X, pos.Y, pos.Z, 
+            pos.RightVector.X, pos.RightVector.Y, pos.RightVector.Z, 
+            pos.UpVector.X, pos.UpVector.Y, pos.UpVector.Z, 
+            pos.LookVector.X, pos.LookVector.Y, pos.LookVector.Z)
 
-    local foundTables = 0
-    local remoteDictionary = nil
+        -- Kirim ke Webhook
+        local data = {
+            username = "ZHX Mapper",
+            embeds = {{
+                title = "📍 Booth #" .. count .. " Disimpan",
+                description = "Koordinat berhasil ditangkap!",
+                fields = {{name = "CFrame Code", value = "```lua\n" .. posStr .. "\n```", inline = false}},
+                color = 3066993
+            }}
+        }
 
-    -- Mengambil seluruh data di memori game
-    local gc = getgc(true)
-    
-    for i, v in pairs(gc) do
-        -- Kita mencari tipe "table"
-        if type(v) == "table" then
-            local hasRemote = false
-            local hasStringKey = false
-            
-            -- Kita cek secara aman apakah isi tabel ini mengandung Remote
-            pcall(function()
-                for key, val in pairs(v) do
-                    if type(key) == "string" and typeof(val) == "Instance" then
-                        if val:IsA("RemoteEvent") or val:IsA("RemoteFunction") then
-                            hasRemote = true
-                            hasStringKey = true
-                            break
-                        end
-                    end
-                end
-            end)
+        pcall(function()
+            httpRequest({
+                Url = WEBHOOK_URL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode(data)
+            })
+        end)
 
-            -- Jika tabel ini berisi string (misal: "Trade") dan isinya RemoteFunction, ini target kita!
-            if hasRemote and hasStringKey then
-                foundTables = foundTables + 1
-                warn("-----------------------------------------")
-                warn("TABEL KANDIDAT #" .. foundTables .. " DITEMUKAN DI MEMORI!")
-                
-                -- Print isi tabelnya ke console (F9)
-                for key, val in pairs(v) do
-                    if type(key) == "string" and typeof(val) == "Instance" then
-                        print("🔑 Kunci: [" .. key .. "] ---> Remote: " .. val.Name)
-                    end
-                end
-            end
-        end
+        btn.Text = "✅ TERKIRIM! (" .. count .. ")"
+        task.wait(1.5)
+        btn.Text = "📍 SAVE & SEND TO DISCORD"
     end
-
-    btn.Text = "✅ SELESAI! BUKA F9 (CONSOLE)"
-    btn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    print("-----------------------------------------")
-    print("PENCARIAN SELESAI. Total tabel mencurigakan:", foundTables)
-    print("Silakan cari tulisan seperti 'Trade', 'Decline', 'Booth', atau 'List' di atas!")
-    
-    task.delay(4, function() sg:Destroy() end)
 end)
