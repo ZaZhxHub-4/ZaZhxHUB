@@ -1,36 +1,29 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local RS = game:GetService("ReplicatedStorage")
 local lp = Players.LocalPlayer
 
-print("--- MEMULAI TEST LAPIS 2 & AUTO CLAIM ---")
+print("--- MEMULAI TEST FINAL: DIRECT REMOTE BOMBARDMENT ---")
 
--- 1. FIX AUTO CLAIM BOOTH
+-- 1. AUTO CLAIM BOOTH (Sukses Fix)
 local function claimBoothFix()
-    local char = lp.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
-
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.ActionText == "Claim Booth" then
             local pos = obj.Parent:IsA("Attachment") and obj.Parent.WorldPosition or (obj.Parent:IsA("BasePart") and obj.Parent.Position)
             if pos then
-                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) -- Teleport tepat di atasnya
-                task.wait(0.5) -- Tunggu server mendaftar posisi kita
-                
-                -- MANIPULASI PROMPT
+                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+                task.wait(0.5)
                 local oldLoS = obj.RequiresLineOfSight
                 local oldDist = obj.MaxActivationDistance
                 obj.RequiresLineOfSight = false
                 obj.MaxActivationDistance = 99
-                
                 pcall(function() fireproximityprompt(obj) end)
                 task.wait(0.5)
-                
-                -- Kembalikan normal agar tidak mencurigakan
                 obj.RequiresLineOfSight = oldLoS
                 obj.MaxActivationDistance = oldDist
-                
-                print("[+] Mencoba Claim Booth...")
+                print("[+] Booth berhasil di-claim!")
                 return true
             end
         end
@@ -38,59 +31,58 @@ local function claimBoothFix()
     return false
 end
 
--- 2. BYPASS LAPIS 2 (Pajang Otomatis Tanpa Manual Click)
-local function getInventoryUUID(itemName)
-    local Replion = require(game:GetService("ReplicatedStorage").Packages.Replion)
+-- 2. BACA DATA ITEM DARI TAS
+local function getInventoryData(itemName)
+    local Replion = require(RS.Packages.Replion)
     local PlayerData = Replion.Client:WaitReplion("Data")
     local inv = PlayerData:Get("Inventory")
-    if not inv or not inv.Items then return nil end
+    if not inv or not inv.Items then return nil, nil end
     for _, item in ipairs(inv.Items) do
-        -- Kita ambil UUID item pertama yang namanya cocok
-        local data = require(game:GetService("ReplicatedStorage").Shared.ItemUtility):GetItemData(item.Id)
-        local n = (data and data.Data and data.Data.Name) or data.Name
-        if n == itemName then return item.UUID end
+        local data = require(RS.Shared.ItemUtility):GetItemData(item.Id)
+        local n = (data and data.Data and data.Data.Name) or (data and data.Name)
+        if n == itemName then
+            local cat = (data and data.Data and data.Data.Type) or (data and data.Type) or "Item"
+            return item.UUID, cat
+        end
     end
-    return nil
+    return nil, nil
 end
 
-local function testBypassPajangItem(itemName, price)
-    local uuid = getInventoryUUID(itemName)
-    if not uuid then 
-        warn("[-] Item " .. itemName .. " tidak ditemukan di tas!") 
-        return 
-    end
+-- 3. EKSEKUSI REMOTE LANGSUNG
+local function testDirectListing(itemName, price)
+    local uuid, category = getInventoryData(itemName)
+    if not uuid then warn("[-] Item '"..itemName.."' tidak ditemukan di tas!"); return end
 
-    local gc = getgc(true)
-    local gameCreateListingFunc = nil
+    print("[+] Item ketemu! UUID:", uuid, "| Kategori:", category)
 
-    -- Mencari fungsi asli bawaan game seperti di screenshot kamu
-    for _, v in pairs(gc) do
-        if type(v) == "function" then
-            local info = debug.getinfo(v)
-            if info.name == "CreateSaleListing" then
-                gameCreateListingFunc = v
+    -- Ekstrak RemoteFunction dari Kamus Jaringan (Sesuai Screenshot 1)
+    local RF_CreateListing = nil
+    for _, v in pairs(getgc(true)) do
+        if type(v) == "table" and rawget(v, "CreateSaleListing") then
+            if typeof(rawget(v, "CreateSaleListing")) == "Instance" then
+                RF_CreateListing = rawget(v, "CreateSaleListing")
                 break
             end
         end
     end
 
-    if gameCreateListingFunc then
-        print("[+] Fungsi internal game ditemukan! Mencoba membajak dan memajang item...")
-        -- Mengeksekusi fungsi bawaan game secara langsung
-        pcall(function()
-            gameCreateListingFunc(uuid, price)
-        end)
-        print("[!] Cek Booth kamu sekarang, apakah item berhasil terpajang?")
-    else
-        warn("[-] Gagal menemukan fungsi internal game.")
-    end
+    if not RF_CreateListing then warn("[-] RemoteFunction tidak ditemukan!"); return end
+    
+    print("[+] RemoteFunction didapatkan! Memulai tembakan bombardir...")
+
+    -- Bombardir 4 Pola Argumen Paling Umum
+    task.spawn(function() pcall(function() RF_CreateListing:InvokeServer(uuid, price) end) end)
+    task.spawn(function() pcall(function() RF_CreateListing:InvokeServer(category, uuid, price) end) end)
+    task.spawn(function() pcall(function() RF_CreateListing:InvokeServer(uuid, price, category) end) end)
+    task.spawn(function() pcall(function() RF_CreateListing:InvokeServer(price, uuid) end) end)
+
+    task.wait(1.5)
+    print("[!] TEST SELESAI. Cek Booth kamu sekarang, apakah " .. itemName .. " seharga " .. price .. " berhasil dipajang?")
 end
 
--- ==========================================
--- EKSEKUSI TEST
--- ==========================================
+-- =======================
+-- EKSEKUSI
+-- =======================
 claimBoothFix()
-task.wait(1.5) -- Jeda setelah claim booth
-
--- GANTI "Salmon" DENGAN NAMA IKAN YANG ADA DI TAS KAMU, 500 ADALAH HARGANYA
-testBypassPajangItem("Enchant Stone", 500)
+task.wait(1)
+testDirectListing("Enchant Stone", 500)
