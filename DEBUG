@@ -1,200 +1,60 @@
 -- =====================================================================
--- SCRIPT DEBUG: MONITOR EQUIP/UNEQUIP ROD DI FISH IT
+-- SCRIPT DEBUG LANJUTAN: CAPTURE ARGS EQUIP/UNEQUIP ROD
 -- =====================================================================
--- Cara Pakai:
--- 1. Ganti WEBHOOK_URL dengan URL Discord Webhook kamu (yang ada di script utama)
--- 2. Execute script ini di executor (Delta Mobile)
--- 3. Lakukan equip dan unequip rod secara MANUAL di game
--- 4. Cek Discord, akan muncul notifikasi setiap ada perubahan
--- 5. Hasilnya akan kita gunakan untuk membuat metode anti AFK yang lebih stealth
+-- Ganti WEBHOOK_URL dengan milikmu
+-- Execute, lalu lakukan equip/unequip rod manual, lihat hasil di Discord
 -- =====================================================================
 
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 
--- TODO: GANTI DENGAN WEBHOOK URL DARI SCRIPT UTAMA KAMU
-local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"  -- <-- GANTI INI
+local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY" -- GANTI
 
--- Fungsi kirim notifikasi ke Discord
 local function sendToDiscord(title, description, color)
-    if WEBHOOK_URL == "" or WEBHOOK_URL == "https://discordapp.com/api/webhooks/..." then
-        warn("Webhook URL belum diisi!")
-        return
-    end
     pcall(function()
         request({
             Url = WEBHOOK_URL,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🐟 Debug Equip/Unequip Rod",
-                embeds = {{
-                    title = title,
-                    description = description,
-                    color = color or 3066993,
-                    footer = {text = os.date("%H:%M:%S")}
-                }}
+                username = "🐟 Debug Equip Args",
+                embeds = {{title = title, description = description, color = color or 3066993}}
             })
         })
     end)
 end
 
--- =====================================================================
--- 1. MONITOR PERUBAHAN DI CHARACTER (TOOL YANG DI-EQUIP)
--- =====================================================================
-local function watchCharacter(character)
-    if not character then return end
-    
-    local function onToolEquipped(tool)
-        if tool:IsA("Tool") then
-            sendToDiscord("🔧 ROD DI-EQUIP", string.format(
-                "**Nama Rod:** %s\n**Parent:** %s\n**Tool ID:** %s",
-                tool.Name, tool.Parent.Name, tool:GetFullName()
-            ), 65280) -- hijau
-        end
-    end
-    
-    local function onToolUnequipped(tool)
-        if tool:IsA("Tool") then
-            sendToDiscord("⚠️ ROD DI-UNEQUIP", string.format(
-                "**Nama Rod:** %s\n**Sebelumnya di:** %s",
-                tool.Name, tool.Parent and tool.Parent.Name or "unknown"
-            ), 16776960) -- kuning
-        end
-    end
-    
-    character.ChildAdded:Connect(onToolEquipped)
-    character.ChildRemoved:Connect(onToolUnequipped)
-    
-    -- Cek tool yang sudah ada saat ini
-    for _, tool in ipairs(character:GetChildren()) do
-        if tool:IsA("Tool") then
-            sendToDiscord("🎣 ROD SUDAH TER-EQUIP (Awal)", string.format(
-                "**Nama Rod:** %s\n**Parent:** %s",
-                tool.Name, tool.Parent.Name
-            ), 65280)
-        end
-    end
-end
-
--- =====================================================================
--- 2. MONITOR PERUBAHAN DI BACKPACK (TOOL YANG BELUM DI-EQUIP)
--- =====================================================================
-local function watchBackpack(backpack)
-    if not backpack then return end
-    
-    local function onToolAddedToBackpack(tool)
-        if tool:IsA("Tool") then
-            sendToDiscord("🎒 ROD MASUK BACKPACK", string.format(
-                "**Nama Rod:** %s\n**Lokasi:** Backpack\n**Kemungkinan:** Baru dibeli atau di-unequip",
-                tool.Name
-            ), 16776960) -- kuning
-        end
-    end
-    
-    local function onToolRemovedFromBackpack(tool)
-        if tool:IsA("Tool") then
-            sendToDiscord("🎒 ROD KELUAR BACKPACK (DI-EQUIP?)", string.format(
-                "**Nama Rod:** %s\n**Lokasi sebelumnya:** Backpack",
-                tool.Name
-            ), 65280) -- hijau
-        end
-    end
-    
-    backpack.ChildAdded:Connect(onToolAddedToBackpack)
-    backpack.ChildRemoved:Connect(onToolRemovedFromBackpack)
-    
-    -- Cek tool yang sudah ada di backpack
-    for _, tool in ipairs(backpack:GetChildren()) do
-        if tool:IsA("Tool") then
-            sendToDiscord("🎒 ROD DI BACKPACK (Awal)", string.format(
-                "**Nama Rod:** %s",
-                tool.Name
-            ), 16776960)
-        end
-    end
-end
-
--- =====================================================================
--- 3. SCAN SEMUA REMOTE EVENT YANG MUNGKIN TERKAIT EQUIP/UNEQUIP
--- =====================================================================
-local function scanRemoteEvents()
-    local remoteEvents = {}
-    local function scan(obj)
-        for _, child in ipairs(obj:GetChildren()) do
-            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-                table.insert(remoteEvents, child:GetFullName())
-            end
-            scan(child)
-        end
-    end
-    scan(game)
-    
-    -- Kirim daftar remote event ke Discord (hanya yang mengandung kata kunci)
-    local relevantEvents = {}
-    for _, name in ipairs(remoteEvents) do
-        local lowerName = name:lower()
-        if lowerName:find("equip") or lowerName:find("unequip") or lowerName:find("rod") or lowerName:find("tool") or lowerName:find("backpack") then
-            table.insert(relevantEvents, name)
-        end
-    end
-    
-    if #relevantEvents > 0 then
-        sendToDiscord("📡 REMOTE EVENT TERKAIT EQUIP/ROD", "```\n" .. table.concat(relevantEvents, "\n") .. "\n```", 3447003)
-    else
-        sendToDiscord("📡 REMOTE EVENT", "Tidak ditemukan remote event yang terkait equip/rod.", 3447003)
-    end
-end
-
--- =====================================================================
--- 4. HOOK METHOD __NAMECALL UNTUK MENDETEKSI INVOKESERVER
--- =====================================================================
+-- Hook semua RemoteEvent/RemoteFunction yang InvokeServer
 local origHook
-local function hookInvokeServer()
+local function hookAll()
     pcall(function()
         setthreadidentity(6)
         origHook = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-            if getnamecallmethod() == "InvokeServer" then
+            local method = getnamecallmethod()
+            if method == "InvokeServer" or method == "FireServer" then
                 local args = {...}
-                local isRodRelated = false
-                local eventName = self.Name or "unknown"
-                local eventNameLower = eventName:lower()
-                
-                -- Cek apakah event terkait rod/equip/unequip
-                if eventNameLower:find("equip") or eventNameLower:find("unequip") or eventNameLower:find("rod") or eventNameLower:find("tool") then
-                    isRodRelated = true
-                end
-                
-                -- Cek argumen apakah mengandung kata kunci rod
-                for _, arg in ipairs(args) do
-                    if type(arg) == "string" and (arg:lower():find("rod") or arg:lower():find("equip") or arg:lower():find("unequip")) then
-                        isRodRelated = true
-                        break
-                    end
-                end
-                
-                if isRodRelated then
-                    -- Kirim notifikasi ke Discord
+                local targetName = self.Name or "unknown"
+                -- Filter hanya yang terkait equip/unequip/tool/rod
+                local lowerName = targetName:lower()
+                if lowerName:find("equip") or lowerName:find("unequip") or lowerName:find("tool") or lowerName:find("rod") or lowerName:find("hotbar") then
                     local argsStr = {}
                     for i, arg in ipairs(args) do
                         if type(arg) == "string" then
-                            argsStr[i] = string.format("[%d] = %q", i, arg)
+                            argsStr[i] = string.format("[%d]=%q", i, arg)
                         elseif type(arg) == "number" then
-                            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
+                            argsStr[i] = string.format("[%d]=%s", i, tostring(arg))
                         elseif type(arg) == "boolean" then
-                            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
+                            argsStr[i] = string.format("[%d]=%s", i, tostring(arg))
                         elseif type(arg) == "table" then
-                            argsStr[i] = string.format("[%d] = [table]", i)
+                            argsStr[i] = string.format("[%d]=[table]", i)
+                        elseif type(arg) == "Instance" then
+                            argsStr[i] = string.format("[%d]=%s", i, arg:GetFullName())
                         else
-                            argsStr[i] = string.format("[%d] = %s", i, type(arg))
+                            argsStr[i] = string.format("[%d]=%s", i, type(arg))
                         end
                     end
-                    sendToDiscord("🔥 INVOKESERVER TERDETEKSI", string.format(
-                        "**Event:** %s\n**Args:** %s",
-                        eventName,
-                        table.concat(argsStr, ", ")
-                    ), 15158332) -- merah
+                    sendToDiscord("🎣 " .. method .. " : " .. targetName, "```\n" .. table.concat(argsStr, "\n") .. "\n```", 65280)
                 end
             end
             return origHook(self, ...)
@@ -202,27 +62,6 @@ local function hookInvokeServer()
     end)
 end
 
--- =====================================================================
--- 5. START MONITORING
--- =====================================================================
--- Monitor karakter
-if lp.Character then
-    watchCharacter(lp.Character)
-end
-lp.CharacterAdded:Connect(watchCharacter)
-
--- Monitor backpack
-local backpack = lp:WaitForChild("Backpack")
-watchBackpack(backpack)
-
--- Scan remote events
-task.wait(2)
-scanRemoteEvents()
-
--- Hook InvokeServer (opsional, mungkin berisiko)
--- hookInvokeServer()
-
-sendToDiscord("🐟 DEBUG SCRIPT STARTED", "Memantau equip/unequip rod...\n\n**Cara test:**\n1. Equip rod dari backpack\n2. Unequip rod\n3. Ganti rod dengan rod lain\n\nHasil akan muncul di Discord.", 3066993)
-
-print("✅ Debug script berjalan. Silakan equip/unequip rod secara manual.")
-print("📡 Hasil akan dikirim ke Discord webhook.")
+hookAll()
+sendToDiscord("🔍 Debug Started", "Sekarang lakukan equip/unequip rod manual. Hasil akan muncul di sini.", 3447003)
+print("✅ Hook aktif. Silakan equip/unequip rod.")
