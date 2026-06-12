@@ -1,29 +1,96 @@
--- SCRIPT DEBUG LAPIS 2: Ekstraksi Memori Booth
-local gc = getgc(true)
-local found = false
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local lp = Players.LocalPlayer
 
-for _, v in pairs(gc) do
-    if type(v) == "table" then
-        -- Mencari tabel yang mengurus data pengiriman Booth
-        if rawget(v, "CreateSaleListing") or rawget(v, "ListMenu") or rawget(v, "BoothController") then
-            warn("[DEBUG] Tabel Modul Booth Ditemukan!")
-            for k, val in pairs(v) do
-                print("  -> Kunci:", k, "| Tipe:", type(val))
+print("--- MEMULAI TEST LAPIS 2 & AUTO CLAIM ---")
+
+-- 1. FIX AUTO CLAIM BOOTH
+local function claimBoothFix()
+    local char = lp.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.ActionText == "Claim Booth" then
+            local pos = obj.Parent:IsA("Attachment") and obj.Parent.WorldPosition or (obj.Parent:IsA("BasePart") and obj.Parent.Position)
+            if pos then
+                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) -- Teleport tepat di atasnya
+                task.wait(0.5) -- Tunggu server mendaftar posisi kita
+                
+                -- MANIPULASI PROMPT
+                local oldLoS = obj.RequiresLineOfSight
+                local oldDist = obj.MaxActivationDistance
+                obj.RequiresLineOfSight = false
+                obj.MaxActivationDistance = 99
+                
+                pcall(function() fireproximityprompt(obj) end)
+                task.wait(0.5)
+                
+                -- Kembalikan normal agar tidak mencurigakan
+                obj.RequiresLineOfSight = oldLoS
+                obj.MaxActivationDistance = oldDist
+                
+                print("[+] Mencoba Claim Booth...")
+                return true
             end
-            found = true
         end
-    elseif type(v) == "function" then
-        local info = debug.getinfo(v)
-        if info.name == "CreateSaleListing" or info.name == "SellItem" then
-            warn("[DEBUG] Fungsi Pengirim Ditemukan!")
-            for i, upval in pairs(debug.getupvalues(v)) do
-                print("  -> Upvalue", i, ":", type(upval), tostring(upval))
+    end
+    return false
+end
+
+-- 2. BYPASS LAPIS 2 (Pajang Otomatis Tanpa Manual Click)
+local function getInventoryUUID(itemName)
+    local Replion = require(game:GetService("ReplicatedStorage").Packages.Replion)
+    local PlayerData = Replion.Client:WaitReplion("Data")
+    local inv = PlayerData:Get("Inventory")
+    if not inv or not inv.Items then return nil end
+    for _, item in ipairs(inv.Items) do
+        -- Kita ambil UUID item pertama yang namanya cocok
+        local data = require(game:GetService("ReplicatedStorage").Shared.ItemUtility):GetItemData(item.Id)
+        local n = (data and data.Data and data.Data.Name) or data.Name
+        if n == itemName then return item.UUID end
+    end
+    return nil
+end
+
+local function testBypassPajangItem(itemName, price)
+    local uuid = getInventoryUUID(itemName)
+    if not uuid then 
+        warn("[-] Item " .. itemName .. " tidak ditemukan di tas!") 
+        return 
+    end
+
+    local gc = getgc(true)
+    local gameCreateListingFunc = nil
+
+    -- Mencari fungsi asli bawaan game seperti di screenshot kamu
+    for _, v in pairs(gc) do
+        if type(v) == "function" then
+            local info = debug.getinfo(v)
+            if info.name == "CreateSaleListing" then
+                gameCreateListingFunc = v
+                break
             end
-            found = true
         end
+    end
+
+    if gameCreateListingFunc then
+        print("[+] Fungsi internal game ditemukan! Mencoba membajak dan memajang item...")
+        -- Mengeksekusi fungsi bawaan game secara langsung
+        pcall(function()
+            gameCreateListingFunc(uuid, price)
+        end)
+        print("[!] Cek Booth kamu sekarang, apakah item berhasil terpajang?")
+    else
+        warn("[-] Gagal menemukan fungsi internal game.")
     end
 end
 
-if not found then
-    print("[DEBUG] Modul Lapis 2 tersembunyi lebih dalam atau belum dimuat oleh game.")
-end
+-- ==========================================
+-- EKSEKUSI TEST
+-- ==========================================
+claimBoothFix()
+task.wait(1.5) -- Jeda setelah claim booth
+
+-- GANTI "Salmon" DENGAN NAMA IKAN YANG ADA DI TAS KAMU, 500 ADALAH HARGANYA
+testBypassPajangItem("Enchant Stone", 500)
