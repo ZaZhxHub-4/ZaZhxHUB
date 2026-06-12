@@ -1,17 +1,8 @@
 local Replion = require(game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Replion"))
 local PlayerData = Replion.Client:WaitReplion("Data")
 task.wait(1)
-
 local HS = game:GetService("HttpService")
-local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-
 local ok, booth = pcall(function() return PlayerData:Get("Booth") end)
-local msg = "ok="..tostring(ok).."\ntype="..type(booth).."\ndata="..HS:JSONEncode(booth or {})
-
-pcall(function()
-    request({Url=WEBHOOK, Method="POST",
-        Headers={["Content-Type"]="application/json"},
-        Body=HS:JSONEncode({content="```\n"..msg.."\n```"})
-    })
-end)
-print(msg)
+print("ok="..tostring(ok))
+print("type="..type(booth))
+print(HS:JSONEncode(booth or {}))
