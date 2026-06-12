@@ -1,33 +1,24 @@
--- ╔══════════════════════════════════════════════════════════════════╗
--- ║   FISH IT AUTO BOOTH v9.0 [FULL AUTOMATED & STEALTH]             ║
--- ║   - Dynamic Hash Resolver (No Manual Hooking)                    ║
--- ║   - Auto Claim Booth (ProximityPrompt)                           ║
--- ║   - Auto Reject Trade (Hash Remote)                              ║
--- ║   - Auto Delete All Items                                        ║
--- ║   - All Features from v8.8 + Safety Lock                         ║
--- ╚══════════════════════════════════════════════════════════════════╝
+-- ============================================================
+-- FISH IT AUTO BOOTH v9.0 [FULL AUTOMATED & STEALTH]
+-- Dynamic Hash Resolver, Auto Claim Booth, Auto Reject Trade
+-- ============================================================
 
--- ═════════════════════════════════════════════════════════════════
--- 🛡️ 1. MEMASTIKAN GAME & LINGKUNGAN SEPENUHNYA DIMUAT
--- ═════════════════════════════════════════════════════════════════
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-local Players    = game:GetService("Players")
-local RS         = game:GetService("ReplicatedStorage")
-local HS         = game:GetService("HttpService")
-local UIS        = game:GetService("UserInputService")
-local TS         = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local HS = game:GetService("HttpService")
+local UIS = game:GetService("UserInputService")
+local TS = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
-local Stats      = game:GetService("Stats")
-local Workspace  = game:GetService("Workspace")
-local Lighting   = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
 local StarterGui = game:GetService("StarterGui")
 
 while not Players.LocalPlayer do task.wait() end
 local lp = Players.LocalPlayer
 local pg = lp:WaitForChild("PlayerGui", 9e9)
 
--- Notifikasi loading awal
 pcall(function()
     StarterGui:SetCore("SendNotification", {
         Title = "ZHX AUTO PLAZA v9.0",
@@ -36,9 +27,9 @@ pcall(function()
     })
 end)
 
--- ═════════════════════════════════════════════════════════════════
--- 🌐 2. DYNAMIC HASH RESOLVER (OTOMATIS, TANPA PANCING MANUAL)
--- ═════════════════════════════════════════════════════════════════
+-- ============================================================
+-- DYNAMIC HASH RESOLVER
+-- ============================================================
 local Remotes = {}
 local resolverSuccess = false
 
@@ -72,24 +63,24 @@ local function resolveHashes()
     
     resolverSuccess = (Remotes.Create and Remotes.Delete and Remotes.Decline and Remotes.TradeOffer)
     if not resolverSuccess then
-        warn("[ZHX] Resolver gagal menemukan semua hash. Beberapa fitur mungkin tidak berfungsi.")
+        warn("[ZHX] Resolver gagal menemukan semua hash.")
         pcall(function()
             StarterGui:SetCore("SendNotification", {
-                Title = "⚠️ Resolver Gagal",
+                Title = "Resolver Gagal",
                 Text = "Beberapa hash tidak ditemukan. Coba re-join server.",
                 Duration = 5
             })
         end)
     else
-        print("[ZHX] Hash resolved: Create=", Remotes.Create.Name, "Delete=", Remotes.Delete.Name, "Decline=", Remotes.Decline.Name)
+        print("[ZHX] Hash resolved: Create=", Remotes.Create.Name, "Delete=", Remotes.Delete.Name)
     end
 end
 
 resolveHashes()
 
--- ═════════════════════════════════════════════════════════════════
--- 📦 3. LOAD FLUENT LIBRARY (DENGAN RETRY)
--- ═════════════════════════════════════════════════════════════════
+-- ============================================================
+-- LOAD FLUENT LIBRARY
+-- ============================================================
 local Fluent
 for attempt = 1, 5 do
     local success, res = pcall(function()
@@ -100,61 +91,57 @@ for attempt = 1, 5 do
 end
 if not Fluent then
     pcall(function()
-        StarterGui:SetCore("SendNotification", {Title="Error", Text="Gagal memuat UI. Cek koneksi.", Duration=5})
+        StarterGui:SetCore("SendNotification", {Title="Error", Text="Gagal memuat UI.", Duration=5})
     end)
     return
 end
 
--- ═════════════════════════════════════════════════════════════════
--- 🔧 4. VARIABEL GLOBAL & STATE
--- ═════════════════════════════════════════════════════════════════
+-- ============================================================
+-- VARIABLES & STATE
+-- ============================================================
 local hasClaimedBooth = false
 local autoReject = false
 local autoOn = false
 local boothInitializing = false
 
--- Slot data (single & multi)
 local MAX_SLOTS = 8
-local slotData, slotListing, slotPendingRestok = {}, {}, {}
+local slotData = {}
+local slotListing = {}
 for i = 1, MAX_SLOTS do
     slotData[i] = {itemId=nil, itemName=nil, category=nil, price=0, active=false, listedUUID=nil}
     slotListing[i] = false
-    slotPendingRestok[i] = false
 end
 
 local MAX_MULTI = 2
-local multiSlotData, multiListing, multiPendingRestok = {}, {}, {}
+local multiSlotData = {}
+local multiListing = {}
 for m = 1, MAX_MULTI do
     multiSlotData[m] = {items={}, price=0, active=false, currentItemIdx=1, listedUUID=nil}
     multiListing[m] = false
-    multiPendingRestok[m] = false
 end
 
--- Webhook
 local WEBHOOK_SECRET = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local webhookURL = ""
 local webhookEnabled = false
 
--- Cache inventory
 local allItemsCache = {}
 local nameToIdMap = {}
 
--- UI Elements (untuk update dinamis)
 local UIElements = {
     SingleDD = {}, SinglePrice = {}, SingleStatus = {},
     MultiStatus = {}, MultiPrice = {},
     MultiTagLabels = {}, MultiAddBtns = {},
 }
 
--- ═════════════════════════════════════════════════════════════════
--- 🧩 5. FUNGSI-FUNGSI UTILITY (INVENTORY, TOKEN, DLL) - SAMA SEPERTI V8.8
--- ═════════════════════════════════════════════════════════════════
+-- ============================================================
+-- UTILITY FUNCTIONS (Inventory, Token, etc)
+-- ============================================================
 local TOKEN_PATHS = {
-    {"Events",         "Frame.TokenCounter.Counter"},
-    {"TokenShardsAd",  "Container.Bottom.Tokens.TokenCounter.Counter"},
+    {"Events", "Frame.TokenCounter.Counter"},
+    {"TokenShardsAd", "Container.Bottom.Tokens.TokenCounter.Counter"},
     {"! Trade Tokens", "Frame.Top.Tokens.TokenCounter.Counter"},
-    {"! Trading",      "Frame.Bottom.Tokens.TokenCounter.Counter"},
-    {"! Booth",        "Frame.Bottom.Tokens.TokenCounter.Counter"},
+    {"! Trading", "Frame.Bottom.Tokens.TokenCounter.Counter"},
+    {"! Booth", "Frame.Bottom.Tokens.TokenCounter.Counter"},
 }
 
 local function resolveSubPath(root, pathStr)
@@ -177,7 +164,6 @@ local function getCurrentToken()
     return "?"
 end
 
--- Modules game
 local SharedFolder = RS:WaitForChild("Shared", 9e9)
 local PackagesFolder = RS:WaitForChild("Packages", 9e9)
 local ItemUtility = require(SharedFolder:WaitForChild("ItemUtility", 9e9))
@@ -240,18 +226,16 @@ local function getInventoryItemList()
     return list
 end
 
--- Fungsi untuk memanggil remote (generik)
 local function invokeRemote(remote, ...)
-    if not remote then return false, "Remote nil" end
+    if not remote then return false end
     if remote:IsA("RemoteFunction") then
         return pcall(function() return remote:InvokeServer(...) end)
     elseif remote:IsA("RemoteEvent") then
         return pcall(function() return remote:FireServer(...) end)
     end
-    return false, "Bukan remote"
+    return false
 end
 
--- Fungsi pendukung untuk slot (sama seperti v8.8)
 local function getAvailableUUIDForItem(itemId, excludeUUIDs)
     excludeUUIDs = excludeUUIDs or {}
     local snap = getInventorySnapshot()
@@ -291,12 +275,11 @@ local function isItemUsed(itemId, excludeSingleIdx, excludeMultiIdx)
     return false
 end
 
--- Fungsi listing single slot (menggunakan hash Create yang sudah di-resolve)
 local function listSingleSlot(idx)
     local s = slotData[idx]
     if not s.itemId or not s.active or slotListing[idx] or not Remotes.Create then return false end
     local uuid = getAvailableUUIDForItem(s.itemId, getAllUsedUUIDs("single", idx))
-    if not uuid then s.active=false; return false, "Habis" end
+    if not uuid then s.active=false; return false end
     slotListing[idx] = true
     local ok = invokeRemote(Remotes.Create, s.category, uuid, math.floor(s.price))
     slotListing[idx] = false
@@ -304,7 +287,6 @@ local function listSingleSlot(idx)
     else s.listedUUID = nil; return false end
 end
 
--- Fungsi listing multi slot (mirip v8.8)
 local function listMultiSlot(mIdx)
     local ms = multiSlotData[mIdx]
     if not ms.active or #ms.items==0 or multiListing[mIdx] or not Remotes.Create then return false end
@@ -316,14 +298,14 @@ local function listMultiSlot(mIdx)
         if it and #getUUIDsForItemId(it.itemId) > 0 then found = true; break
         else ms.currentItemIdx = ms.currentItemIdx + 1 end
     end
-    if not found then ms.active=false; return false, "Habis" end
+    if not found then ms.active=false; return false end
     local it = ms.items[ms.currentItemIdx]
     local used = getAllUsedUUIDs("multi", mIdx)
     local uuid = getAvailableUUIDForItem(it.itemId, used)
     if not uuid then
         ms.currentItemIdx = ms.currentItemIdx + 1
         if ms.currentItemIdx > totalItems then ms.currentItemIdx = 1 end
-        return false, "item saat ini habis"
+        return false
     end
     multiListing[mIdx] = true
     local ok = invokeRemote(Remotes.Create, it.category, uuid, math.floor(ms.price))
@@ -345,9 +327,9 @@ local function updateAllUIStatus()
         if UIElements.SingleStatus[i] then
             if slotData[i].itemId then
                 local cnt = #getUUIDsForItemId(slotData[i].itemId)
-                UIElements.SingleStatus[i]:SetDesc("Stok Tas: "..cnt.." | "..(slotData[i].active and "✅ Aktif" or "⛔ Mati (cek harga)"))
+                UIElements.SingleStatus[i]:SetDesc("Stok: "..cnt.." | "..(slotData[i].active and "Aktif" or "Mati"))
             else
-                UIElements.SingleStatus[i]:SetDesc("Kosong — pilih item & isi harga")
+                UIElements.SingleStatus[i]:SetDesc("Kosong")
             end
         end
     end
@@ -355,15 +337,14 @@ local function updateAllUIStatus()
         if UIElements.MultiStatus[m] then
             if #multiSlotData[m].items > 0 then
                 local tot = getTotalMultiStock(m)
-                UIElements.MultiStatus[m]:SetDesc("Total Stok: "..tot.." | "..#multiSlotData[m].items.." item | "..(multiSlotData[m].active and "✅ Aktif" or "⛔ Mati (cek harga)"))
+                UIElements.MultiStatus[m]:SetDesc("Stok: "..tot.." | "..#multiSlotData[m].items.." item | "..(multiSlotData[m].active and "Aktif" or "Mati"))
             else
-                UIElements.MultiStatus[m]:SetDesc("Antrian kosong — tambahkan item")
+                UIElements.MultiStatus[m]:SetDesc("Kosong")
             end
         end
     end
 end
 
--- Fungsi untuk mengirim notifikasi webhook (sama seperti v8.8)
 local function isValidWebhook(url)
     if url == "TONGKI" then return true end
     return url:match("^https://discord%.com/api/webhooks/%d+/.+$") ~= nil
@@ -379,19 +360,19 @@ local function sendEmbed(title, desc, color)
             Url = url, Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HS:JSONEncode({
-                username = "🐟 ZaZhx Auto Booth",
+                username = "Zhx Auto Booth",
                 embeds = {{
                     title = title, description = desc, color = color or 3066993,
-                    footer = {text = "Fish It Auto Booth v9.0 • " .. os.date("%H:%M:%S")}
+                    footer = {text = "v9.0 • " .. os.date("%H:%M:%S")}
                 }}
             })
         })
     end)
 end
 
--- ═════════════════════════════════════════════════════════════════
--- 🏪 6. AUTO CLAIM BOOTH (MENGGUNAKAN PROXIMITYPROMPT)
--- ═════════════════════════════════════════════════════════════════
+-- ============================================================
+-- AUTO CLAIM BOOTH (ProximityPrompt)
+-- ============================================================
 local BoothPositions = {
     CFrame.new(-1086.597656, 14.589593, 3043.180176, 0.394877, 0.000000, 0.918734, -0.000000, 1.000000, -0.000000, 0.918734, 0.000000, -0.394877),
     CFrame.new(-1011.693665, 14.589422, 3042.674561, 0.433560, -0.000000, -0.901125, 0.000000, 1.000000, -0.000000, -0.901125, 0.000000, -0.433560),
@@ -441,7 +422,7 @@ local function autoClaimBooth()
     for i, pos in ipairs(BoothPositions) do
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp then hrp.CFrame = pos end
-        task.wait(1.5) -- Tunggu teleport dan loading
+        task.wait(1.5)
         char = lp.Character
         if not char then return false end
         local prompt = findClaimPrompt(char)
@@ -449,33 +430,31 @@ local function autoClaimBooth()
             local success = pcall(function() fireproximityprompt(prompt) end)
             if success then
                 hasClaimedBooth = true
-                Fluent:Notify({Title="✅ Booth Claimed", Content="Berhasil claim booth #"..i, Type="Success", Duration=3})
+                Fluent:Notify({Title="Booth Claimed", Content="Berhasil claim booth #"..i, Type="Success", Duration=3})
                 return true
-            else
-                warn("Gagal trigger prompt di booth #"..i)
             end
         end
         task.wait(0.5)
     end
-    Fluent:Notify({Title="❌ Gagal", Content="Semua booth penuh atau tidak ditemukan prompt.", Type="Error", Duration=4})
+    Fluent:Notify({Title="Gagal", Content="Semua booth penuh.", Type="Error", Duration=4})
     return false
 end
 
--- ═════════════════════════════════════════════════════════════════
--- 🚫 7. AUTO REJECT TRADE (LISTENER)
--- ═════════════════════════════════════════════════════════════════
+-- ============================================================
+-- AUTO REJECT TRADE
+-- ============================================================
 if Remotes.TradeOffer and Remotes.Decline then
     Remotes.TradeOffer.OnClientEvent:Connect(function(player)
         if autoReject and player then
             invokeRemote(Remotes.Decline, player)
-            Fluent:Notify({Title="Trade Ditolak", Content="Permintaan dari "..player.Name, Type="Warning", Duration=2})
+            Fluent:Notify({Title="Trade Ditolak", Content="Dari "..player.Name, Type="Warning", Duration=2})
         end
     end)
 end
 
--- ═════════════════════════════════════════════════════════════════
--- 🗑 8. HAPUS SEMUA ITEM (MENGGUNAKAN HASH DELETE)
--- ═════════════════════════════════════════════════════════════════
+-- ============================================================
+-- DELETE ALL LISTINGS
+-- ============================================================
 local function deleteAllListings()
     if not Remotes.Delete then
         Fluent:Notify({Title="Error", Content="Remote Delete tidak ditemukan.", Type="Error", Duration=2})
@@ -483,18 +462,18 @@ local function deleteAllListings()
     end
     local success = invokeRemote(Remotes.Delete)
     if success then
-        Fluent:Notify({Title="Booth Dibersihkan", Content="Semua item telah dihapus.", Type="Success", Duration=2})
+        Fluent:Notify({Title="Booth Bersih", Content="Semua item dihapus.", Type="Success", Duration=2})
         for i=1, MAX_SLOTS do slotData[i].listedUUID = nil end
         for m=1, MAX_MULTI do multiSlotData[m].listedUUID = nil end
     else
-        Fluent:Notify({Title="Gagal", Content="Tidak dapat menghapus item.", Type="Error", Duration=2})
+        Fluent:Notify({Title="Gagal", Content="Tidak bisa hapus.", Type="Error", Duration=2})
     end
     return success
 end
 
--- ═════════════════════════════════════════════════════════════════
--- 🖥️ 9. MEMBUAT UI FLUENT (SEMUA TAB LENGKAP)
--- ═════════════════════════════════════════════════════════════════
+-- ============================================================
+-- FLUENT UI WINDOW
+-- ============================================================
 local winW, winH = 490, 320
 local verticalScale = 0.2
 local Window = Fluent:CreateWindow({
@@ -514,13 +493,13 @@ local Tabs = {
     Settings = Window:AddTab({Title="Settings", Icon="solar/settings-bold"}),
 }
 
--- ===================== TAB SETUP =====================
+-- TAB SETUP
 Tabs.Setup:AddButton({
-    Title = "🔄 MUAT DAFTAR ITEM",
+    Title = "MUAT DAFTAR ITEM",
     Callback = function()
         local list = getInventoryItemList()
         if #list == 0 then
-            Fluent:Notify({Title="Error", Content="Tas kosong atau belum siap!", Type="Error", Duration=2})
+            Fluent:Notify({Title="Error", Content="Tas kosong!", Type="Error", Duration=2})
             return
         end
         allItemsCache = list
@@ -533,44 +512,50 @@ Tabs.Setup:AddButton({
             end
         end
         for i = 1, MAX_SLOTS do
-            pcall(function()
-                if UIElements.SingleDD[i] then UIElements.SingleDD[i]:SetValues(singleList) end
-            end)
+            pcall(function() if UIElements.SingleDD[i] then UIElements.SingleDD[i]:SetValues(singleList) end end)
         end
         for m = 1, MAX_MULTI do
-            rebuildMultiTagsLabel(m) -- fungsi ini didefinisikan nanti di bagian Multi Slots
+            -- rebuildMultiTagsLabel akan didefinisikan nanti
+            if UIElements.MultiTagLabels[m] then
+                local ms = multiSlotData[m]
+                if #ms.items == 0 then
+                    UIElements.MultiTagLabels[m]:SetDesc("Belum ada item")
+                else
+                    local names = {}
+                    for _, it in ipairs(ms.items) do table.insert(names, it.itemName) end
+                    UIElements.MultiTagLabels[m]:SetDesc(table.concat(names, ", "))
+                end
+            end
         end
         updateAllUIStatus()
-        Fluent:Notify({Title="✅ Berhasil", Content=#list.." item dimuat.", Type="Success", Duration=3})
+        Fluent:Notify({Title="Sukses", Content=#list.." item dimuat.", Type="Success", Duration=3})
     end
 })
 
 Tabs.Setup:AddButton({
-    Title = "📍 AUTO CLAIM BOOTH",
-    Callback = function()
-        task.spawn(autoClaimBooth)
-    end
+    Title = "AUTO CLAIM BOOTH",
+    Callback = function() task.spawn(autoClaimBooth) end
 })
 
 Tabs.Setup:AddButton({
-    Title = "🗑 HAPUS SEMUA ITEM (CLEAR BOOTH)",
+    Title = "HAPUS SEMUA ITEM",
     Callback = deleteAllListings
 })
 
 Tabs.Setup:AddDivider()
 
 Tabs.Setup:AddToggle("AutoBoothToggle", {
-    Title = "▶ MULAI AUTO BOOTH",
+    Title = "MULAI AUTO BOOTH",
     Default = false,
     Callback = function(state)
         if state then
             if not resolverSuccess then
-                Fluent:Notify({Title="Error", Content="Resolve hash gagal. Ulangi script.", Type="Error", Duration=3})
+                Fluent:Notify({Title="Error", Content="Resolve hash gagal.", Type="Error", Duration=3})
                 task.defer(function() pcall(function() Window.Elements["AutoBoothToggle"]:SetValue(false) end) end)
                 return
             end
             if not hasClaimedBooth then
-                Fluent:Notify({Title="Error", Content="Claim booth dulu! Tekan tombol Auto Claim Booth.", Type="Error", Duration=3})
+                Fluent:Notify({Title="Error", Content="Claim booth dulu!", Type="Error", Duration=3})
                 task.defer(function() pcall(function() Window.Elements["AutoBoothToggle"]:SetValue(false) end) end)
                 return
             end
@@ -580,14 +565,13 @@ Tabs.Setup:AddToggle("AutoBoothToggle", {
                 for m=1, MAX_MULTI do if #multiSlotData[m].items>0 and multiSlotData[m].price>0 then hasActive=true; break end end
             end
             if not hasActive then
-                Fluent:Notify({Title="Error", Content="Isi minimal 1 slot dengan item & harga!", Type="Error", Duration=3})
+                Fluent:Notify({Title="Error", Content="Isi minimal 1 slot!", Type="Error", Duration=3})
                 task.defer(function() pcall(function() Window.Elements["AutoBoothToggle"]:SetValue(false) end) end)
                 return
             end
             autoOn = true
             boothInitializing = true
-            Fluent:Notify({Title="Auto Booth ON", Content="Sistem aktif, memantau booth...", Type="Success", Duration=2})
-            -- Listing awal
+            Fluent:Notify({Title="Auto Booth ON", Content="Sistem aktif.", Type="Success", Duration=2})
             task.spawn(function()
                 for i = 1, MAX_SLOTS do
                     if not autoOn then break end
@@ -606,7 +590,6 @@ Tabs.Setup:AddToggle("AutoBoothToggle", {
                     task.wait(1.5)
                     if not autoOn then break end
                     local snap = getInventorySnapshot()
-                    -- Single slot monitoring
                     for i = 1, MAX_SLOTS do
                         local s = slotData[i]
                         if not s.itemId or not s.active then continue end
@@ -614,21 +597,19 @@ Tabs.Setup:AddToggle("AutoBoothToggle", {
                             local soldName, soldPrice = s.itemName, s.price
                             s.listedUUID = nil
                             local rem = #getUUIDsForItemId(s.itemId)
-                            sendEmbed("🛒 Terjual — Slot "..i, "**"..soldName.."**\n💰 **"..soldPrice.." Token**\n📦 Sisa: **"..rem.."**\n💎 "..getCurrentToken(), 3066993)
+                            sendEmbed("Terjual Slot "..i, soldName.."\nHarga: "..soldPrice.."\nSisa: "..rem, 3066993)
                             if rem > 0 then
                                 task.delay(0.5, function()
                                     if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end
                                 end)
                             else
                                 s.active = false
-                                sendEmbed("⚠ Habis — Slot "..i, soldName.." habis.", 15158332)
                                 updateAllUIStatus()
                             end
                         elseif not s.listedUUID and not slotListing[i] then
                             task.spawn(function() if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end end)
                         end
                     end
-                    -- Multi slot monitoring
                     for m = 1, MAX_MULTI do
                         local ms = multiSlotData[m]
                         if not ms.active or #ms.items == 0 then continue end
@@ -639,10 +620,9 @@ Tabs.Setup:AddToggle("AutoBoothToggle", {
                             ms.currentItemIdx = ci + 1
                             if ms.currentItemIdx > #ms.items then ms.currentItemIdx = 1 end
                             local totalStock = getTotalMultiStock(m)
-                            sendEmbed("🛒 Terjual — Multi "..m, "**"..soldName.."**\n💰 **"..ms.price.." Token**\n📦 Total Antrian: **"..totalStock.."**\n💎 "..getCurrentToken(), 3066993)
+                            sendEmbed("Terjual Multi "..m, soldName.."\nHarga: "..ms.price.."\nSisa antrian: "..totalStock, 3066993)
                             if totalStock == 0 then
                                 ms.active = false
-                                sendEmbed("⚠ Multi "..m.." Habis", "Semua item habis.", 15158332)
                                 updateAllUIStatus()
                             else
                                 task.delay(0.5, function() if autoOn and not multiListing[m] then listMultiSlot(m); updateAllUIStatus() end end)
@@ -657,13 +637,13 @@ Tabs.Setup:AddToggle("AutoBoothToggle", {
         else
             autoOn = false
             boothInitializing = false
-            Fluent:Notify({Title="Auto Booth OFF", Content="Sistem dihentikan.", Type="Warning", Duration=2})
+            Fluent:Notify({Title="Auto Booth OFF", Content="Dihentikan.", Type="Warning", Duration=2})
         end
     end
 })
 
--- ===================== TAB SINGLE SLOTS =====================
-Tabs.Slots:AddParagraph({Title="Single Slot (Slot 1–8)", Content="Muat item dulu di Setup, lalu pilih item & isi harga. Slot aktif otomatis."})
+-- TAB SINGLE SLOTS
+Tabs.Slots:AddParagraph({Title="Single Slots 1-8", Content="Pilih item dan isi harga."})
 for i = 1, MAX_SLOTS do
     local sec = Tabs.Slots:AddSection("Slot " .. i)
     UIElements.SingleDD[i] = sec:AddDropdown("SD_"..i, {
@@ -676,7 +656,7 @@ for i = 1, MAX_SLOTS do
             elseif nameToIdMap[v] then
                 local id = nameToIdMap[v].id
                 if isItemUsed(id, i, nil) then
-                    Fluent:Notify({Title="⚠ Gagal Dipilih", Content="Item '"..v.."' sudah terpakai di slot lain!", Type="Error", Duration=3})
+                    Fluent:Notify({Title="Gagal", Content="Item '"..v.."' sudah terpakai!", Type="Error", Duration=3})
                     task.defer(function() UIElements.SingleDD[i]:SetValue("- Kosongkan -") end)
                     return
                 end
@@ -698,13 +678,13 @@ for i = 1, MAX_SLOTS do
     UIElements.SingleStatus[i] = sec:AddParagraph({Title = "Status Slot "..i, Content = "Kosong"})
 end
 
--- ===================== TAB MULTI SLOTS =====================
-Tabs.Multi:AddParagraph({Title="Multi Slot (M1 & M2)", Content="Klik tombol '+ Pilih Item' untuk memilih beberapa item. Item dipajang bergantian."})
+-- TAB MULTI SLOTS
+Tabs.Multi:AddParagraph({Title="Multi Slots M1 & M2", Content="Klik tombol untuk pilih item antrian."})
 local function rebuildMultiTagsLabel(mIdx)
     if UIElements.MultiTagLabels[mIdx] then
         local ms = multiSlotData[mIdx]
         if #ms.items == 0 then
-            UIElements.MultiTagLabels[mIdx]:SetDesc("Belum ada item dipilih — tekan tombol di atas")
+            UIElements.MultiTagLabels[mIdx]:SetDesc("Belum ada item")
         else
             local names = {}
             for _, it in ipairs(ms.items) do table.insert(names, it.itemName) end
@@ -714,13 +694,11 @@ local function rebuildMultiTagsLabel(mIdx)
     updateAllUIStatus()
 end
 
--- Multi-select overlay (sederhana, seperti v8.8 tapi tanpa drag-drop rumit)
-local function openMultiOverlay(mIdx, anchorBtn)
+local function openMultiOverlay(mIdx)
     if #allItemsCache == 0 then
-        Fluent:Notify({Title="⚠ Belum Muat", Content="Tekan MUAT DAFTAR ITEM dulu di tab Setup!", Type="Warning", Duration=3})
+        Fluent:Notify({Title="Error", Content="Muat item dulu di tab Setup!", Type="Warning", Duration=3})
         return
     end
-    -- Buat GUI sederhana untuk multi select (popup)
     local sg = Instance.new("ScreenGui", pg)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, 300, 0, 400)
@@ -790,17 +768,14 @@ local function openMultiOverlay(mIdx, anchorBtn)
 end
 
 for m = 1, MAX_MULTI do
-    local sec = Tabs.Multi:AddSection("Antrian Multi M"..m)
+    local sec = Tabs.Multi:AddSection("Multi M"..m)
     UIElements.MultiAddBtns[m] = sec:AddButton({
-        Title = "📋 Pilih / Edit Item Antrian M"..m,
-        Callback = function()
-            local dummyAnchor = {AbsolutePosition = Vector2.new(100,100), AbsoluteSize = Vector2.new(200,30)}
-            openMultiOverlay(m, dummyAnchor)
-        end
+        Title = "Pilih Item Multi M"..m,
+        Callback = function() openMultiOverlay(m) end
     })
-    UIElements.MultiTagLabels[m] = sec:AddParagraph({Title = "Item Dipilih M"..m, Content = "Belum ada item"})
+    UIElements.MultiTagLabels[m] = sec:AddParagraph({Title = "Item Dipilih M"..m, Content = "Belum ada"})
     UIElements.MultiPrice[m] = sec:AddInput("MP_"..m, {
-        Title = "Harga Pukul Rata M"..m, Numeric = true, Placeholder = "Contoh: 300",
+        Title = "Harga Rata M"..m, Numeric = true, Placeholder = "Contoh: 300",
         Callback = function(v)
             local p = tonumber(v) or 0
             multiSlotData[m].price = p
@@ -808,10 +783,10 @@ for m = 1, MAX_MULTI do
             updateAllUIStatus()
         end
     })
-    UIElements.MultiStatus[m] = sec:AddParagraph({Title = "Status M"..m, Content = "Antrian kosong"})
+    UIElements.MultiStatus[m] = sec:AddParagraph({Title = "Status M"..m, Content = "Kosong"})
 end
 
--- ===================== TAB CONFIG (SEDERHANA, SIMPAN/LOAD) =====================
+-- TAB CONFIG (sederhana)
 local CONFIG_FILE = "ZhxBooth_v9_config.json"
 local savedConfigs = {}
 local configNameList = {"- Belum Ada Config -"}
@@ -834,14 +809,14 @@ local function saveConfigsToFile()
     end
 end
 
-Tabs.Config:AddParagraph({Title="Pengaturan Config", Content="Simpan & load konfigurasi slot (dan webhook)."})
-local cfgNameInput = Tabs.Config:AddInput("CfgName", {Title="Nama Config Baru", Placeholder="Contoh: SalmonFarm"})
+Tabs.Config:AddParagraph({Title="Config", Content="Simpan & load konfigurasi."})
+local cfgNameInput = Tabs.Config:AddInput("CfgName", {Title="Nama Config", Placeholder="Contoh: Salmon"})
 local cfgSelectDD = Tabs.Config:AddDropdown("CfgList", {Title="Pilih Config", Values=configNameList})
 Tabs.Config:AddButton({
-    Title = "💾 SIMPAN CONFIG",
+    Title = "SIMPAN CONFIG",
     Callback = function()
         local name = cfgNameInput.Value
-        if not name or name:match("^%s*$") then Fluent:Notify({Title="Error", Content="Isi nama config!", Type="Error", Duration=2}) return end
+        if not name or name:match("^%s*$") then Fluent:Notify({Title="Error", Content="Isi nama!", Type="Error", Duration=2}) return end
         local cfg = {single={}, multi={}, webhook=webhookURL}
         for i=1,MAX_SLOTS do
             if slotData[i].itemId and slotData[i].price>0 then
@@ -860,14 +835,14 @@ Tabs.Config:AddButton({
         saveConfigsToFile()
         cfgSelectDD:SetValues(configNameList)
         cfgSelectDD:SetValue(name)
-        Fluent:Notify({Title="💾 Tersimpan", Content="Config '"..name.."' disimpan.", Type="Success", Duration=2})
+        Fluent:Notify({Title="Tersimpan", Content="Config '"..name.."' disimpan.", Type="Success", Duration=2})
     end
 })
 Tabs.Config:AddButton({
-    Title = "📂 LOAD CONFIG",
+    Title = "LOAD CONFIG",
     Callback = function()
         local name = cfgSelectDD.Value
-        if not name or not savedConfigs[name] then Fluent:Notify({Title="Error", Content="Pilih config valid!", Type="Error", Duration=2}) return end
+        if not name or not savedConfigs[name] then Fluent:Notify({Title="Error", Content="Pilih config!", Type="Error", Duration=2}) return end
         local list = getInventoryItemList()
         allItemsCache = list
         nameToIdMap = {}
@@ -912,32 +887,32 @@ Tabs.Config:AddButton({
         end
         if cfg.webhook then webhookURL = cfg.webhook; pcall(function() Window.Elements["WH_Input"]:SetValue(cfg.webhook) end) end
         updateAllUIStatus()
-        Fluent:Notify({Title="📂 Dimuat", Content="Config '"..name.."' berhasil dimuat.", Type="Success", Duration=2})
+        Fluent:Notify({Title="Dimuat", Content="Config '"..name.."' loaded.", Type="Success", Duration=2})
     end
 })
 Tabs.Config:AddButton({
-    Title = "🗑 HAPUS CONFIG",
+    Title = "HAPUS CONFIG",
     Callback = function()
         local name = cfgSelectDD.Value
-        if not name or not savedConfigs[name] then Fluent:Notify({Title="Error", Content="Pilih config valid!", Type="Error", Duration=2}) return end
+        if not name or not savedConfigs[name] then Fluent:Notify({Title="Error", Content="Pilih config!", Type="Error", Duration=2}) return end
         savedConfigs[name] = nil
         for i,n in ipairs(configNameList) do if n==name then table.remove(configNameList,i); break end end
         if #configNameList==0 then table.insert(configNameList, "- Belum Ada Config -") end
         saveConfigsToFile()
         cfgSelectDD:SetValues(configNameList)
         cfgSelectDD:SetValue(configNameList[1])
-        Fluent:Notify({Title="🗑 Dihapus", Content="Config '"..name.."' dihapus.", Type="Warning", Duration=2})
+        Fluent:Notify({Title="Dihapus", Content="Config '"..name.."' dihapus.", Type="Warning", Duration=2})
     end
 })
 
--- ===================== TAB WEBHOOK =====================
-Tabs.Webhook:AddParagraph({Title="Notifikasi Terjual", Content="Masukkan URL Discord Webhook."})
+-- TAB WEBHOOK
+Tabs.Webhook:AddParagraph({Title="Webhook", Content="Masukkan URL Discord webhook."})
 Tabs.Webhook:AddInput("WH_Input", {
-    Title="Webhook URL Discord", Placeholder="https://discord.com/api/webhooks/...",
+    Title="Webhook URL", Placeholder="https://discord.com/api/webhooks/...",
     Callback = function(v) webhookURL = v end
 })
 Tabs.Webhook:AddToggle("WH_Toggle", {
-    Title="Aktifkan Notifikasi Webhook", Default=false,
+    Title="Aktifkan Webhook", Default=false,
     Callback = function(v)
         if v and (webhookURL=="" or not isValidWebhook(webhookURL)) then
             Fluent:Notify({Title="Error", Content="URL tidak valid!", Type="Error", Duration=2})
@@ -945,15 +920,15 @@ Tabs.Webhook:AddToggle("WH_Toggle", {
             return
         end
         webhookEnabled = v
-        Fluent:Notify({Title="🔔 Webhook "..(v and "ON" or "OFF"), Type="Info", Duration=2})
+        Fluent:Notify({Title="Webhook "..(v and "ON" or "OFF"), Type="Info", Duration=2})
     end
 })
 
--- ===================== TAB UTILITY (Anti AFK, Boost FPS, Stats Panel, Auto Reject) =====================
-Tabs.Utility:AddParagraph({Title="Fitur Tambahan", Content="Anti AFK, Boost FPS, Panel Statistik, Auto Reject Trade."})
+-- TAB UTILITY
+Tabs.Utility:AddParagraph({Title="Utility", Content="Anti AFK, Boost FPS, Stats, Auto Reject Trade."})
 -- Anti AFK
 local antiAFKEnabled = true
-Tabs.Utility:AddToggle("AntiAFKToggle", {Title="🛡️ Anti AFK", Default=true, Callback=function(s) antiAFKEnabled=s end})
+Tabs.Utility:AddToggle("AntiAFKToggle", {Title="Anti AFK", Default=true, Callback=function(s) antiAFKEnabled=s end})
 task.spawn(function()
     local gc = getconnections or get_signal_cons
     if gc then
@@ -962,7 +937,7 @@ task.spawn(function()
         end
     end
 end)
--- Boost FPS (sederhana)
+-- Boost FPS
 local boostFPS = false
 local originalLighting = {}
 local function applyBoostFPS(state)
@@ -975,7 +950,7 @@ local function applyBoostFPS(state)
         for k,v in pairs(originalLighting) do pcall(function() Lighting[k]=v end) end
     end
 end
-Tabs.Utility:AddToggle("BoostFPSToggle", {Title="⚡ Boost FPS", Default=false, Callback=applyBoostFPS})
+Tabs.Utility:AddToggle("BoostFPSToggle", {Title="Boost FPS", Default=false, Callback=applyBoostFPS})
 -- Stats Panel
 local showStats = false
 local statGui, statText
@@ -1010,7 +985,7 @@ task.spawn(function()
         end
     end
 end)
-Tabs.Utility:AddToggle("StatsToggle", {Title="📊 Show FPS Panel", Default=false, Callback=function(s)
+Tabs.Utility:AddToggle("StatsToggle", {Title="FPS Panel", Default=false, Callback=function(s)
     showStats = s
     if s then
         if not statGui then createStatsPanel() else statGui.Enabled = true end
@@ -1018,14 +993,14 @@ Tabs.Utility:AddToggle("StatsToggle", {Title="📊 Show FPS Panel", Default=fals
         if statGui then statGui.Enabled = false end
     end
 end})
--- Auto Reject Trade (toggle sudah ada di bagian listener, tinggal tambahkan toggle di UI)
-Tabs.Utility:AddToggle("AutoRejectTrade", {Title="🚫 Auto Reject Trade", Default=false, Callback=function(v) autoReject = v end})
+-- Auto Reject Trade
+Tabs.Utility:AddToggle("AutoRejectTrade", {Title="Auto Reject Trade", Default=false, Callback=function(v) autoReject = v end})
 
--- ===================== TAB SETTINGS =====================
+-- TAB SETTINGS
 Tabs.Settings:AddButton({
-    Title = "🌐 Server Hop (10–18 Player)",
+    Title = "Server Hop (10-18 Player)",
     Callback = function()
-        Fluent:Notify({Title="Server Hop", Content="Mencari server...", Type="Info", Duration=2})
+        Fluent:Notify({Title="Server Hop", Content="Mencari...", Type="Info", Duration=2})
         task.spawn(function()
             local pId = game.PlaceId
             local found, best = nil, 0
@@ -1038,17 +1013,17 @@ Tabs.Settings:AddButton({
                 end
             end)
             if found then
-                Fluent:Notify({Title="Pindah", Content="Server ditemukan ("..best.." player)", Type="Success", Duration=2})
+                Fluent:Notify({Title="Pindah", Content="Server "..best.." player", Type="Success", Duration=2})
                 task.wait(1); pcall(function() TS:TeleportToPlaceInstance(pId, found, lp) end)
             else
-                Fluent:Notify({Title="Pindah", Content="Pindah server random...", Type="Warning", Duration=2})
+                Fluent:Notify({Title="Pindah", Content="Random server", Type="Warning", Duration=2})
                 task.wait(1); pcall(function() TS:Teleport(pId, lp) end)
             end
         end)
     end
 })
 Tabs.Settings:AddButton({
-    Title = "🔄 RESET SEMUA SLOT",
+    Title = "RESET SEMUA SLOT",
     Callback = function()
         autoOn = false
         for i=1,MAX_SLOTS do
@@ -1079,7 +1054,7 @@ task.delay(0.8, function()
     end)
 end)
 
--- ===================== FLOATING TOGGLE BUTTON =====================
+-- FLOATING BUTTON
 local floatingGui = Instance.new("ScreenGui")
 floatingGui.Name = "ZHX_ToggleGui"
 floatingGui.ResetOnSpawn = false
@@ -1097,6 +1072,5 @@ zhxBtn.MouseButton1Click:Connect(function()
     if uiVisible then Window:Show() else Window:Hide() end
 end)
 
--- ===================== FINAL INIT =====================
 Window:SelectTab(1)
-print("🐟 ZHX Auto Booth v9.0 loaded. Resolver success:", resolverSuccess)
+print("ZHX Auto Booth v9.0 loaded. Resolver success:", resolverSuccess)
