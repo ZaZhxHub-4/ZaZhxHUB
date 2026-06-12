@@ -1,120 +1,75 @@
 -- ╔══════════════════════════════════════════════════════════════════╗
--- ║   TRADE REJECT DEBUGGER & WEBHOOK SENDER                         ║
+-- ║   ZHX MEMORY SCANNER: HUNTING THE HASHED REMOTES                 ║
 -- ╚══════════════════════════════════════════════════════════════════╝
-
-local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 
--- Webhook TONGKI milikmu
-local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-
--- Kompatibilitas fungsi request untuk berbagai Executor
-local httpRequest = (syn and syn.request) or request or http_request or (http and http.request)
-
-if not httpRequest then
-    warn("Executor kamu tidak mendukung HTTP Requests!")
-    return
-end
-
--- =====================
--- MEMBUAT MINI UI DEBUG
--- =====================
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_TradeDebugger"
-sg.ResetOnSpawn = false
+sg.Name = "ZHX_MemoryScanner"
 pcall(function() sg.Parent = CoreGui end)
 if not sg.Parent then sg.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui") end
 
 local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0, 200, 0, 50)
-btn.Position = UDim2.new(0.5, -100, 0, 20)
-btn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+btn.Size = UDim2.new(0, 250, 0, 50)
+btn.Position = UDim2.new(0.5, -125, 0, 20)
+btn.BackgroundColor3 = Color3.fromRGB(50, 50, 200)
 btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 btn.Font = Enum.Font.GothamBold
 btn.TextSize = 12
-btn.Text = "🔴 REC (KLIK SEBELUM TEKAN 'NO')"
+btn.Text = "🔍 SCAN MEMORY (CARI KAMUS REMOTE)"
 btn.Parent = sg
 Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 
-local recording = false
-
--- =====================
--- FUNGSI KIRIM KE WEBHOOK
--- =====================
-local function sendToWebhook(remoteName, className, method, args)
-    local argStr = ""
-    for i, v in ipairs(args) do
-        local valType = typeof(v)
-        local valStr = tostring(v)
-        if valType == "Instance" then
-            valStr = "Instance [" .. v.ClassName .. "] -> " .. v.Name
-        elseif valType == "string" then
-            valStr = '"' .. v .. '"'
-        end
-        argStr = argStr .. "Arg[" .. i .. "]: " .. valStr .. " (" .. valType .. ")\n"
-    end
-    if argStr == "" then argStr = "Tidak ada argumen (Kosong)" end
-
-    local data = {
-        username = "ZHX Debugger",
-        content = "🔍 **Data Trade Berhasil Ditangkap!**",
-        embeds = {{
-            title = "📡 Remote Terdeteksi: " .. remoteName,
-            color = 16711680, -- Merah
-            fields = {
-                {name = "Tipe", value = className, inline = true},
-                {name = "Method", value = method, inline = true},
-                {name = "Arguments Fired", value = "```lua\n" .. argStr .. "\n```", inline = false}
-            },
-            footer = {text = "Waktu: " .. os.date("%H:%M:%S")}
-        }}
-    }
-
-    local success, err = pcall(function()
-        httpRequest({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode(data)
-        })
-    end)
-end
-
--- =====================
--- HOOK NAMECALL (MEMATA-MATAI GAME)
--- =====================
-local origNamecall
-origNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-
-    -- Hanya catat jika tombol REC sedang aktif, dan ini dari game (bukan dari eksekutor)
-    if recording and not checkcaller() then
-        if method == "FireServer" or method == "InvokeServer" then
-            task.spawn(sendToWebhook, self.Name, self.ClassName, method, args)
-        end
-    end
-
-    return origNamecall(self, ...)
-end))
-
--- =====================
--- LOGIC TOMBOL REC
--- =====================
 btn.MouseButton1Click:Connect(function()
-    if recording then return end
-    recording = true
-    btn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    btn.Text = "🟢 MEREKAM... (KLIK 'NO' SEKARANG)"
-    
-    -- Merekam selama 3 detik saja agar webhook tidak spam
-    task.delay(3, function()
-        recording = false
-        btn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        btn.Text = "🔴 SELESAI. CEK DISCORD!"
-        task.wait(2)
-        btn.Text = "🔴 REC (KLIK SEBELUM TEKAN 'NO')"
-    end)
-end)
+    btn.Text = "MENCARI... (AWAS NGE-LAG BENTAR)"
+    btn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
+    task.wait(0.1)
 
-print("✅ Debugger siap! Munculkan Pop-up Trade lalu ikuti instruksi di tombol.")
+    local foundTables = 0
+    local remoteDictionary = nil
+
+    -- Mengambil seluruh data di memori game
+    local gc = getgc(true)
+    
+    for i, v in pairs(gc) do
+        -- Kita mencari tipe "table"
+        if type(v) == "table" then
+            local hasRemote = false
+            local hasStringKey = false
+            
+            -- Kita cek secara aman apakah isi tabel ini mengandung Remote
+            pcall(function()
+                for key, val in pairs(v) do
+                    if type(key) == "string" and typeof(val) == "Instance" then
+                        if val:IsA("RemoteEvent") or val:IsA("RemoteFunction") then
+                            hasRemote = true
+                            hasStringKey = true
+                            break
+                        end
+                    end
+                end
+            end)
+
+            -- Jika tabel ini berisi string (misal: "Trade") dan isinya RemoteFunction, ini target kita!
+            if hasRemote and hasStringKey then
+                foundTables = foundTables + 1
+                warn("-----------------------------------------")
+                warn("TABEL KANDIDAT #" .. foundTables .. " DITEMUKAN DI MEMORI!")
+                
+                -- Print isi tabelnya ke console (F9)
+                for key, val in pairs(v) do
+                    if type(key) == "string" and typeof(val) == "Instance" then
+                        print("🔑 Kunci: [" .. key .. "] ---> Remote: " .. val.Name)
+                    end
+                end
+            end
+        end
+    end
+
+    btn.Text = "✅ SELESAI! BUKA F9 (CONSOLE)"
+    btn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    print("-----------------------------------------")
+    print("PENCARIAN SELESAI. Total tabel mencurigakan:", foundTables)
+    print("Silakan cari tulisan seperti 'Trade', 'Decline', 'Booth', atau 'List' di atas!")
+    
+    task.delay(4, function() sg:Destroy() end)
+end)
