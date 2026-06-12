@@ -1,66 +1,38 @@
-local Players = game:GetService("Players")
+-- SCRIPT AUTO-PANCING [NO MANUAL ACTION]
 local RS = game:GetService("ReplicatedStorage")
+local ItemUtility = require(RS.Shared.ItemUtility)
+local Replion = require(RS.Packages.Replion)
 
-print("--- TEST FINAL LAPIS 2: INJECTION FUNGSI INTERNAL ---")
-
--- Ambil TABEL UTUH dari item (bukan cuma string UUID)
-local function getFullItemTable(itemName)
-    local Replion = require(RS.Packages.Replion)
-    local PlayerData = Replion.Client:WaitReplion("Data")
-    local ItemUtility = require(RS.Shared.ItemUtility)
-    local inv = PlayerData:Get("Inventory")
-    
-    if not inv or not inv.Items then return nil end
+local function getEnchantStoneData()
+    local inv = Replion.Client:WaitReplion("Data"):Get("Inventory")
     for _, item in ipairs(inv.Items) do
         local data = ItemUtility:GetItemData(item.Id)
         local n = (data and data.Data and data.Data.Name) or (data and data.Name)
-        if n == itemName then 
-            return item -- Bawa pulang seluruh tabel datanya!
-        end
+        if n == "Enchant Stone" then return item.UUID, (data and data.Data and data.Data.Type) or "Item" end
     end
-    return nil
+    return nil, nil
 end
 
-local function executeGameFunction(itemName, price)
-    local itemTable = getFullItemTable(itemName)
-    if not itemTable then warn("[-] Item '"..itemName.."' tidak ada di tas!"); return end
-    
-    print("[+] Tabel Item didapatkan! UUID:", itemTable.UUID)
+local function autoPancing()
+    local uuid, cat = getEnchantStoneData()
+    if not uuid then print("[-] Enchant Stone tidak ditemukan di tas.") return end
 
-    local targetFunc = nil
+    -- Cari Remote di memory
+    local RF = nil
     for _, v in pairs(getgc(true)) do
-        if type(v) == "function" then
-            local info = debug.getinfo(v)
-            if info.name == "CreateSaleListing" then
-                -- Pastikan fungsi ini memegang Remote di upvalues-nya (Sesuai Screenshot)
-                for _, upval in pairs(debug.getupvalues(v)) do
-                    if typeof(upval) == "Instance" and (upval:IsA("RemoteFunction") or upval:IsA("RemoteEvent")) then
-                        targetFunc = v
-                        break
-                    end
-                end
-                if targetFunc then break end
-            end
+        if type(v) == "table" and rawget(v, "CreateSaleListing") then
+            RF = rawget(v, "CreateSaleListing")
+            break
         end
     end
 
-    if targetFunc then
-        print("[+] Fungsi Bawaan Game Ditemukan! Mulai Eksekusi...")
-        
-        -- Kita paksa fungsi bawaan game bekerja dengan semua kemungkinan parameter
-        -- Parameter 1: Panggil normal (Tabel Item, Harga)
-        task.spawn(function() pcall(function() targetFunc(itemTable, price) end) end)
-        -- Parameter 2: Panggil normal pakai UUID (UUID, Harga)
-        task.spawn(function() pcall(function() targetFunc(itemTable.UUID, price) end) end)
-        -- Parameter 3: Object-Oriented Call (Kirim 'nil' sebagai pengganti self)
-        task.spawn(function() pcall(function() targetFunc(nil, itemTable, price) end) end)
-        task.spawn(function() pcall(function() targetFunc(nil, itemTable.UUID, price) end) end)
-
-        task.wait(1)
-        print("[!] Eksekusi selesai. Coba cek booth kamu sekarang.")
-    else
-        warn("[-] Fungsi CreateSaleListing tidak ditemukan di memori.")
+    if RF then
+        print("[+] Memulai pancingan otomatis...")
+        -- Tembak sekali untuk pancing pola (otomatis)
+        pcall(function() RF:InvokeServer(uuid, 500) end) 
+        print("[+] Pancingan selesai. Pola sekarang tersimpan di cache script.")
     end
 end
 
-executeGameFunction("Enchant Stone", 500)
+-- Eksekusi saat script jalan
+autoPancing()
