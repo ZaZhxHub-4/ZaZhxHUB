@@ -1,15 +1,38 @@
-local function scanPP()
-    print("=== SCAN PP ===")
-    local count = 0
-    for _, obj in ipairs(game:GetService("Workspace"):GetDescendants()) do
-        if obj:IsA("ProximityPrompt") then
-            count = count + 1
-            print(string.format("#%d | PP:%s | Parent:%s | Class:%s | Action:%s", 
-                count, obj.Name, obj.Parent.Name, obj.Parent.ClassName, obj.ActionText))
-        end
-    end
-    print("Total PP: "..count)
-    print("=== END ===")
-end
+local HS = game:GetService("HttpService")
+local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-scanPP()
+local lines = {}
+local count = 0
+for _, obj in ipairs(game:GetService("Workspace"):GetDescendants()) do
+    if obj:IsA("ProximityPrompt") then
+        count = count + 1
+        table.insert(lines, string.format("#%d PP:%s | Parent:%s | Class:%s | Action:%s", 
+            count, obj.Name, obj.Parent.Name, obj.Parent.ClassName, obj.ActionText))
+    end
+end
+table.insert(lines, "Total PP: "..count)
+
+-- Kirim per chunk (discord max 2000 char)
+local chunk = ""
+for _, line in ipairs(lines) do
+    if #chunk + #line + 1 > 1900 then
+        pcall(function()
+            request({Url=WEBHOOK, Method="POST",
+                Headers={["Content-Type"]="application/json"},
+                Body=HS:JSONEncode({content="```\n"..chunk.."\n```"})
+            })
+        end)
+        task.wait(1)
+        chunk = ""
+    end
+    chunk = chunk..line.."\n"
+end
+if chunk ~= "" then
+    pcall(function()
+        request({Url=WEBHOOK, Method="POST",
+            Headers={["Content-Type"]="application/json"},
+            Body=HS:JSONEncode({content="```\n"..chunk.."\n```"})
+        })
+    end)
+end
+print("Terkirim ke webhook!")
