@@ -1,102 +1,171 @@
--- =====================================================================
--- DEBUG CAPTURE PARAMETER EQUIP/UNEQUIP ROD (HOTBAR)
--- =====================================================================
--- Ganti WEBHOOK_URL dengan URL dari script utama kamu
-local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+-- ============================================================
+-- TEST EQUIP/UNEQUIP ROD VIA REMOTE EVENT
+-- ============================================================
+-- Jalankan script ini, lalu cek apakah rod berhasil equip/unequip
+-- ============================================================
 
-local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local lp = Players.LocalPlayer
 local RS = game:GetService("ReplicatedStorage")
 
--- Path remote events
-local equipRemote = RS:FindFirstChild("Packages") and RS.Packages:FindFirstChild("_Index") and RS.Packages._Index:FindFirstChild("sleitnick_net@0.2.0") and RS.Packages._Index["sleitnick_net@0.2.0"].net.RE.EquipToolFromHotbar
-local unequipRemote = RS:FindFirstChild("Packages") and RS.Packages:FindFirstChild("_Index") and RS.Packages._Index:FindFirstChild("sleitnick_net@0.2.0") and RS.Packages._Index["sleitnick_net@0.2.0"].net.RE.UnequipToolFromHotbar
-
-if not equipRemote or not unequipRemote then
-    warn("Remote event tidak ditemukan! Cek path.")
+-- Cari remote event EquipToolFromHotbar dan UnequipToolFromHotbar
+local net = RS:FindFirstChild("Packages") and RS.Packages:FindFirstChild("_Index") and RS.Packages._Index:FindFirstChild("sleitnick_net@0.2.0")
+if not net then
+    warn("Net package tidak ditemukan!")
     return
 end
 
--- Fungsi kirim ke Discord
-local function sendToDiscord(title, description, color)
+local equipRemote = net.net.RE:FindFirstChild("EquipToolFromHotbar")
+local unequipRemote = net.net.RE:FindFirstChild("UnequipToolFromHotbar")
+
+if not equipRemote or not unequipRemote then
+    warn("Remote event tidak ditemukan!")
+    return
+end
+
+-- Fungsi untuk mendapatkan tool di hotbar (backpack)
+local function getHotbarTools()
+    local backpack = lp:FindFirstChild("Backpack")
+    if not backpack then return {} end
+    local tools = {}
+    for _, child in ipairs(backpack:GetChildren()) do
+        if child:IsA("Tool") then
+            table.insert(tools, child)
+        end
+    end
+    return tools
+end
+
+-- Fungsi untuk mendapatkan tool yang sedang di-equip
+local function getEquippedTool()
+    local char = lp.Character
+    if not char then return nil end
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Tool") then
+            return child
+        end
+    end
+    return nil
+end
+
+-- Test equip rod pertama di hotbar
+local function testEquip()
+    local tools = getHotbarTools()
+    if #tools == 0 then
+        print("❌ Tidak ada rod di hotbar (backpack). Masukkan rod ke hotbar dulu.")
+        return false
+    end
+    
+    local targetTool = tools[1]
+    print("🔧 Mencoba equip rod:", targetTool.Name)
+    
+    -- Coba kirim parameter (tool instance) - kemungkinan 1
     pcall(function()
-        request({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode({
-                username = "🔧 Debug Equip/Unequip",
-                embeds = {{
-                    title = title,
-                    description = description,
-                    color = color or 3066993,
-                    footer = {text = os.date("%H:%M:%S")}
-                }}
-            })
-        })
+        equipRemote:FireServer(targetTool)
+        print("✅ Equip dengan parameter (Tool) dikirim")
     end)
+    
+    -- Tunggu sebentar lalu cek apakah berhasil
+    task.wait(1)
+    local equipped = getEquippedTool()
+    if equipped then
+        print("✅ BERHASIL! Rod ter-equip:", equipped.Name)
+        return true
+    else
+        print("❌ Gagal dengan parameter (Tool). Coba metode lain...")
+        return false
+    end
 end
 
--- Hook EquipToolFromHotbar
-local oldEquipFire = equipRemote.FireServer
-equipRemote.FireServer = function(self, ...)
-    local args = {...}
-    local argsStr = {}
-    for i, arg in ipairs(args) do
-        if type(arg) == "string" then
-            argsStr[i] = string.format("[%d] = %q", i, arg)
-        elseif type(arg) == "number" then
-            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
-        elseif type(arg) == "boolean" then
-            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
-        elseif type(arg) == "table" then
-            -- Coba lihat isi table (mungkin berisi tool UUID atau itemId)
-            local tblStr = {}
-            for k, v in pairs(arg) do
-                if type(v) == "string" then
-                    tblStr[#tblStr+1] = string.format("%s = %q", tostring(k), v)
-                else
-                    tblStr[#tblStr+1] = string.format("%s = %s", tostring(k), tostring(v))
-                end
+-- Test equip dengan parameter slot number (0-7)
+local function testEquipBySlot(slot)
+    print("🔧 Mencoba equip slot:", slot)
+    pcall(function()
+        equipRemote:FireServer(slot)
+        print("✅ Equip dengan parameter (slot) dikirim")
+    end)
+    task.wait(1)
+    local equipped = getEquippedTool()
+    if equipped then
+        print("✅ BERHASIL! Rod ter-equip:", equipped.Name)
+        return true
+    else
+        print("❌ Gagal dengan parameter (slot)")
+        return false
+    end
+end
+
+-- Test equip dengan parameter (tool name string)
+local function testEquipByName(toolName)
+    print("🔧 Mencoba equip rod dengan nama:", toolName)
+    pcall(function()
+        equipRemote:FireServer(toolName)
+        print("✅ Equip dengan parameter (string name) dikirim")
+    end)
+    task.wait(1)
+    local equipped = getEquippedTool()
+    if equipped then
+        print("✅ BERHASIL! Rod ter-equip:", equipped.Name)
+        return true
+    else
+        print("❌ Gagal dengan parameter (string name)")
+        return false
+    end
+end
+
+-- Test unequip
+local function testUnequip()
+    local current = getEquippedTool()
+    if not current then
+        print("⚠️ Tidak ada rod yang sedang di-equip. Equip dulu.")
+        return false
+    end
+    
+    print("🔧 Mencoba unequip rod:", current.Name)
+    pcall(function()
+        unequipRemote:FireServer()
+        print("✅ Unequip tanpa parameter dikirim")
+    end)
+    task.wait(1)
+    local stillEquipped = getEquippedTool()
+    if not stillEquipped then
+        print("✅ BERHASIL unequip!")
+        return true
+    else
+        print("❌ Gagal unequip")
+        return false
+    end
+end
+
+-- ============================================================
+-- EKSEKUSI TEST
+-- ============================================================
+print("========== TEST EQUIP ROD ==========")
+print("Pastikan ada rod di hotbar (backpack)!")
+
+-- Tunggu sebentar agar player siap
+task.wait(1)
+
+-- Coba metode equip (Tool instance)
+if not testEquip() then
+    -- Jika gagal, coba slot 1
+    if not testEquipBySlot(1) then
+        -- Coba slot 0
+        if not testEquipBySlot(0) then
+            -- Coba dengan nama tool
+            local tools = getHotbarTools()
+            if #tools > 0 then
+                testEquipByName(tools[1].Name)
             end
-            argsStr[i] = string.format("[%d] = { %s }", i, table.concat(tblStr, ", "))
-        else
-            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
         end
     end
-    sendToDiscord("🎣 EQUIP ROD", string.format("**Remote:** EquipToolFromHotbar\n**Args:**\n%s", table.concat(argsStr, "\n")), 65280)
-    return oldEquipFire(self, ...)
 end
 
--- Hook UnequipToolFromHotbar
-local oldUnequipFire = unequipRemote.FireServer
-unequipRemote.FireServer = function(self, ...)
-    local args = {...}
-    local argsStr = {}
-    for i, arg in ipairs(args) do
-        if type(arg) == "string" then
-            argsStr[i] = string.format("[%d] = %q", i, arg)
-        elseif type(arg) == "number" then
-            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
-        elseif type(arg) == "boolean" then
-            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
-        elseif type(arg) == "table" then
-            local tblStr = {}
-            for k, v in pairs(arg) do
-                if type(v) == "string" then
-                    tblStr[#tblStr+1] = string.format("%s = %q", tostring(k), v)
-                else
-                    tblStr[#tblStr+1] = string.format("%s = %s", tostring(k), tostring(v))
-                end
-            end
-            argsStr[i] = string.format("[%d] = { %s }", i, table.concat(tblStr, ", "))
-        else
-            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
-        end
-    end
-    sendToDiscord("⚠️ UNEQUIP ROD", string.format("**Remote:** UnequipToolFromHotbar\n**Args:**\n%s", table.concat(argsStr, "\n")), 16776960)
-    return oldUnequipFire(self, ...)
-end
+-- Setelah equip, coba unequip
+task.wait(2)
+print("========== TEST UNEQUIP ROD ==========")
+testUnequip()
 
-sendToDiscord("✅ DEBUG ACTIVE", "Sekarang coba **equip** dan **unequip** rod dari hotbar secara manual.\nParameter akan muncul di sini.", 3066993)
-
-print("✅ Debug hook aktif. Silakan equip/unequip rod dari hotbar.")
+print("========== SELESAI ==========")
+print("Jika equip/unequip berhasil, metode ini bisa dipakai untuk anti AFK.")
+print("Jika gagal semua, beri tahu saya hasilnya.")
