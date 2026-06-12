@@ -1,249 +1,62 @@
--- ╔════════════════════════════════════════════════════════════════════════════╗
--- ║   ZHX DYNAMIC HASH RESOLVER (COMPLETE)                                     ║
--- ║   Mencari: Decline, Create, Delete, TradeOffer, ClaimBooth, dll            ║
--- ║   Output ke Discord Webhook + In-Game Panel (Copyable)                     ║
--- ╚════════════════════════════════════════════════════════════════════════════╝
+-- ╔══════════════════════════════════════════════════════════════════╗
+-- ║   ZHX BOOTH POSITION MAPPER (WEBHOOK EDITION)                    ║
+-- ╚══════════════════════════════════════════════════════════════════╝
 
 local HttpService = game:GetService("HttpService")
-local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
 local lp = Players.LocalPlayer
-local pg = lp:WaitForChild("PlayerGui")
 
--- ===================== KONFIGURASI =====================
 local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local httpRequest = (syn and syn.request) or request or http_request or (http and http.request)
 
--- Kata kunci yang akan dicari di dalam tabel kamus (key string)
-local KEYWORDS = {
-    -- Trade related
-    Decline = {"DeclineTrade", "DeclineTradeOffer", "RejectTrade", "DenyTrade"},
-    Create  = {"CreateSaleListing", "CreateListing", "AddListing", "PostItem", "ListItem"},
-    Delete  = {"DeleteSaleListing", "DeleteListing", "RemoveListing", "CancelListing", "UnlistItem"},
-    TradeOffer = {"TradeOfferReceived", "OnTradeRequest", "TradeRequest", "OfferReceived"},
-    -- Booth claim related (cari berbagai kemungkinan)
-    Claim   = {"ClaimBooth", "RentBooth", "TakeBooth", "StartBooth", "BoothClaim", "Claim", "Rent", "TakeBoothSpot", "PurchaseBooth", "BuyBooth"},
-    -- Additional
-    Accept  = {"AcceptTradeOffer", "AcceptTrade"},
-    SetReady = {"SetReady"},
-}
+-- UI Sederhana
+local sg = Instance.new("ScreenGui", CoreGui)
+local btn = Instance.new("TextButton", sg)
+btn.Size = UDim2.new(0, 220, 0, 60)
+btn.Position = UDim2.new(0.5, -110, 0.8, 0)
+btn.Text = "📍 SAVE & SEND TO DISCORD"
+btn.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
+btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+btn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 
--- Fungsi kirim ke Discord (dengan chunking)
-local function sendToDiscord(title, content, color)
-    if not httpRequest then
-        warn("HTTP tidak didukung, akan pakai UI panel saja.")
-        return false
-    end
-    color = color or 3066993
-    local success, err = pcall(function()
-        httpRequest({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode({
-                username = "ZHX Resolver",
-                embeds = {{
-                    title = title,
-                    description = content,
-                    color = color,
-                    footer = {text = os.date("%Y-%m-%d %H:%M:%S")}
-                }}
+local count = 0
+
+btn.MouseButton1Click:Connect(function()
+    if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+        local pos = lp.Character.HumanoidRootPart.CFrame
+        count = count + 1
+        
+        -- Formatter CFrame agar mudah di-paste ke script nanti
+        local posStr = string.format("CFrame.new(%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f)", 
+            pos.X, pos.Y, pos.Z, 
+            pos.RightVector.X, pos.RightVector.Y, pos.RightVector.Z, 
+            pos.UpVector.X, pos.UpVector.Y, pos.UpVector.Z, 
+            pos.LookVector.X, pos.LookVector.Y, pos.LookVector.Z)
+
+        -- Kirim ke Webhook
+        local data = {
+            username = "ZHX Mapper",
+            embeds = {{
+                title = "📍 Booth #" .. count .. " Disimpan",
+                description = "Koordinat berhasil ditangkap!",
+                fields = {{name = "CFrame Code", value = "```lua\n" .. posStr .. "\n```", inline = false}},
+                color = 3066993
+            }}
+        }
+
+        pcall(function()
+            httpRequest({
+                Url = WEBHOOK_URL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode(data)
             })
-        })
-    end)
-    return success
-end
+        end)
 
--- ===================== MEMBUAT UI PANEL (CADANGAN) =====================
-local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_ResolverUI"
-sg.ResetOnSpawn = false
-pcall(function() sg.Parent = CoreGui end)
-if not sg.Parent then sg.Parent = pg end
-
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 450, 0, 500)
-mainFrame.Position = UDim2.new(0.5, -225, 0.5, -250)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = sg
-Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
-mainFrame.Active = true
-mainFrame.Draggable = true
-
-local header = Instance.new("TextLabel")
-header.Size = UDim2.new(1, 0, 0, 40)
-header.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-header.Text = "🔍 ZHX HASH RESOLVER"
-header.TextColor3 = Color3.fromRGB(72, 210, 130)
-header.Font = Enum.Font.GothamBold
-header.TextSize = 14
-header.Parent = mainFrame
-Instance.new("UICorner", header).CornerRadius = UDim.new(0, 8)
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 30, 0, 30)
-closeBtn.Position = UDim2.new(1, -35, 0, 5)
-closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-closeBtn.Text = "X"
-closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.Parent = header
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
-closeBtn.MouseButton1Click:Connect(function() sg:Destroy() end)
-
-local logBox = Instance.new("TextBox")
-logBox.Size = UDim2.new(1, -20, 1, -100)
-logBox.Position = UDim2.new(0, 10, 0, 50)
-logBox.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
-logBox.TextColor3 = Color3.fromRGB(200, 200, 200)
-logBox.Font = Enum.Font.Code
-logBox.TextSize = 11
-logBox.MultiLine = true
-logBox.ClearTextOnFocus = false
-logBox.TextEditable = true
-logBox.Text = "Klik 'SCAN' untuk memulai..."
-logBox.Parent = mainFrame
-Instance.new("UICorner", logBox).CornerRadius = UDim.new(0, 6)
-
-local scanBtn = Instance.new("TextButton")
-scanBtn.Size = UDim2.new(1, -20, 0, 40)
-scanBtn.Position = UDim2.new(0, 10, 1, -85)
-scanBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
-scanBtn.Text = "🔍 SCAN MEMORY & RESOLVE HASH"
-scanBtn.TextColor3 = Color3.fromRGB(255,255,255)
-scanBtn.Font = Enum.Font.GothamBold
-scanBtn.Parent = mainFrame
-Instance.new("UICorner", scanBtn).CornerRadius = UDim.new(0, 6)
-
-local copyBtn = Instance.new("TextButton")
-copyBtn.Size = UDim2.new(1, -20, 0, 40)
-copyBtn.Position = UDim2.new(0, 10, 1, -40)
-copyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 100)
-copyBtn.Text = "📋 COPY KE CLIPBOARD"
-copyBtn.TextColor3 = Color3.fromRGB(255,255,255)
-copyBtn.Font = Enum.Font.GothamBold
-copyBtn.Parent = mainFrame
-Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 6)
-
--- ===================== FUNGSI SCANNER UTAMA =====================
-local function scanMemory()
-    logBox.Text = "⏳ Memulai scan memori (getgc)...\nIni bisa menyebabkan lag sebentar.\n"
-    scanBtn.Text = "⏳ SCANNING..."
-    scanBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
-    task.wait(0.1)
-
-    local foundTables = 0
-    local result = {}
-    local gc = getgc(true)
-    local totalTables = 0
-
-    for _, v in pairs(gc) do
-        if type(v) == "table" then
-            totalTables = totalTables + 1
-            local hasRemote = false
-            local stringKeys = {}
-            pcall(function()
-                for key, val in pairs(v) do
-                    if type(key) == "string" and typeof(val) == "Instance" and (val:IsA("RemoteEvent") or val:IsA("RemoteFunction")) then
-                        hasRemote = true
-                        stringKeys[key] = val.Name
-                    end
-                end
-            end)
-            if hasRemote then
-                foundTables = foundTables + 1
-                for key, remoteName in pairs(stringKeys) do
-                    -- Cari kecocokan dengan keyword
-                    for cat, keywords in pairs(KEYWORDS) do
-                        for _, kw in ipairs(keywords) do
-                            if key:lower():find(kw:lower()) then
-                                if not result[cat] then result[cat] = {} end
-                                result[cat][key] = remoteName
-                            end
-                        end
-                    end
-                    -- Catat juga semua yang mengandung kata 'Booth' atau 'Trade' sebagai cadangan
-                    if key:lower():find("booth") or key:lower():find("trade") or key:lower():find("listing") then
-                        if not result["Other"] then result["Other"] = {} end
-                        result["Other"][key] = remoteName
-                    end
-                end
-            end
-        end
-    end
-
-    -- Format hasil
-    local output = "✅ SCAN SELESAI!\n"
-    output = output .. "Total tabel di memori: " .. totalTables .. "\n"
-    output = output .. "Tabel mengandung remote: " .. foundTables .. "\n"
-    output = output .. "──────────────────────────────\n\n"
-
-    local function addCategory(title, data)
-        if data and next(data) then
-            output = output .. "🔹 " .. title .. ":\n"
-            for k, v in pairs(data) do
-                output = output .. "   [" .. k .. "] = " .. v .. "\n"
-            end
-            output = output .. "\n"
-        end
-    end
-
-    addCategory("🚫 DECLINE TRADE", result.Decline)
-    addCategory("📦 CREATE LISTING", result.Create)
-    addCategory("🗑 DELETE LISTING", result.Delete)
-    addCategory("📩 TRADE OFFER RECEIVED", result.TradeOffer)
-    addCategory("🏪 CLAIM BOOTH", result.Claim)
-    addCategory("🔧 ACCEPT / SET READY", result.Accept)
-    addCategory("📌 OTHER (Booth/Trade related)", result.Other)
-
-    if not (result.Decline or result.Create or result.Delete or result.TradeOffer or result.Claim) then
-        output = output .. "⚠️ TIDAK ADA KAMUS REMOTE YANG COCOK!\n"
-        output = output .. "Mungkin game menggunakan metode lain. Coba pancing manual seperti biasa?\n"
-    else
-        output = output .. "──────────────────────────────\n"
-        output = output .. "💡 Gunakan hash di atas untuk script utama.\n"
-        output = output .. "Jika Claim Booth tidak ditemukan, mungkin perlu dicari cara lain.\n"
-    end
-
-    logBox.Text = output
-    scanBtn.Text = "✅ SCAN SELESAI"
-    scanBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
-
-    -- Kirim ke Discord jika memungkinkan
-    if httpRequest then
-        local discordMsg = "**ZHX Hash Resolver Results**\n```lua\n" .. output .. "\n```"
-        sendToDiscord("Hash Resolver Complete", discordMsg, 3066993)
-    end
-
-    return output
-end
-
-scanBtn.MouseButton1Click:Connect(function()
-    task.spawn(scanMemory)
-end)
-
-copyBtn.MouseButton1Click:Connect(function()
-    if setclipboard then
-        setclipboard(logBox.Text)
-        copyBtn.Text = "✅ COPIED!"
-        copyBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-        task.wait(2)
-        copyBtn.Text = "📋 COPY KE CLIPBOARD"
-        copyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 100)
-    else
-        copyBtn.Text = "❌ TIDAK SUPPORT"
-        copyBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        task.wait(2)
-        copyBtn.Text = "📋 COPY MANUAL (teks di atas)"
-        copyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 100)
+        btn.Text = "✅ TERKIRIM! (" .. count .. ")"
+        task.wait(1.5)
+        btn.Text = "📍 SAVE & SEND TO DISCORD"
     end
 end)
-
--- Auto-run scan saat script dijalankan (opsional, bisa dihapus jika ingin manual)
-task.spawn(function()
-    task.wait(1) -- beri waktu UI muncul
-    scanMemory()
-end)
-
-print("✅ ZHX Resolver siap. Tekan tombol 'SCAN' atau tunggu auto-scan.")
