@@ -1,183 +1,199 @@
 -- ============================================================
--- TEST EQUIP/UNEQUIP ROD - PENCARIAN LANGSUNG
+-- TEST EQUIP ROD - DENGAN GUI SEDERHANA
 -- ============================================================
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local RS = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
 
--- Cari remote event EquipToolFromHotbar dan UnequipToolFromHotbar
+-- Buat GUI untuk output
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TestEquipGUI"
+screenGui.Parent = lp:WaitForChild("PlayerGui")
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 400, 0, 300)
+mainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+title.Text = "Test Equip Rod"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.Parent = mainFrame
+Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+
+local outputBox = Instance.new("TextBox")
+outputBox.Size = UDim2.new(1, -20, 1, -70)
+outputBox.Position = UDim2.new(0, 10, 0, 40)
+outputBox.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+outputBox.TextColor3 = Color3.fromRGB(200, 200, 200)
+outputBox.TextSize = 11
+outputBox.Font = Enum.Font.Gotham
+outputBox.TextWrapped = true
+outputBox.TextEditable = false
+outputBox.MultiLine = true
+outputBox.ClearTextOnFocus = false
+outputBox.Text = "Mencari remote event...\n"
+outputBox.Parent = mainFrame
+Instance.new("UICorner", outputBox).CornerRadius = UDim.new(0, 6)
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 60, 0, 30)
+closeBtn.Position = UDim2.new(1, -70, 1, -40)
+closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+closeBtn.Text = "Tutup"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Font = Enum.Font.Gotham
+closeBtn.TextSize = 12
+closeBtn.Parent = mainFrame
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+local function addLog(msg)
+    outputBox.Text = outputBox.Text .. "\n" .. msg
+    -- Auto scroll ke bawah
+    outputBox.CursorPosition = -1
+end
+
+-- Mulai test
+addLog("🔍 Mencari remote event EquipToolFromHotbar...")
+
 local equipRemote = nil
 local unequipRemote = nil
 
 for _, obj in ipairs(game:GetDescendants()) do
-    if obj.Name == "EquipToolFromHotbar" and obj:IsA("RemoteEvent") then
-        equipRemote = obj
-    elseif obj.Name == "UnequipToolFromHotbar" and obj:IsA("RemoteEvent") then
-        unequipRemote = obj
+    if obj:IsA("RemoteEvent") then
+        if obj.Name == "EquipToolFromHotbar" then
+            equipRemote = obj
+            addLog("✅ Ditemukan EquipToolFromHotbar di: " .. obj:GetFullName())
+        elseif obj.Name == "UnequipToolFromHotbar" then
+            unequipRemote = obj
+            addLog("✅ Ditemukan UnequipToolFromHotbar di: " .. obj:GetFullName())
+        end
     end
 end
 
 if not equipRemote then
-    warn("EquipToolFromHotbar tidak ditemukan!")
-    print("Mencoba mencari remote event dengan kata kunci 'Equip'...")
+    addLog("❌ EquipToolFromHotbar tidak ditemukan!")
+    addLog("📡 Menampilkan semua RemoteEvent dengan kata 'Equip':")
     for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("RemoteEvent") and (obj.Name:find("Equip") or obj.Name:find("Tool")) then
-            print(" - Ditemukan:", obj:GetFullName())
+        if obj:IsA("RemoteEvent") and obj.Name:lower():find("equip") then
+            addLog("   - " .. obj.Name .. " di " .. obj:GetFullName())
         end
     end
     return
 end
 
-if not unequipRemote then
-    warn("UnequipToolFromHotbar tidak ditemukan!")
-end
-
-print("✅ Remote event ditemukan:")
-print("   Equip:", equipRemote:GetFullName())
-if unequipRemote then
-    print("   Unequip:", unequipRemote:GetFullName())
-end
-
--- Fungsi untuk mendapatkan tool di hotbar (backpack)
-local function getHotbarTools()
-    local backpack = lp:FindFirstChild("Backpack")
-    if not backpack then return {} end
-    local tools = {}
-    for _, child in ipairs(backpack:GetChildren()) do
-        if child:IsA("Tool") then
-            table.insert(tools, child)
-        end
+-- Ambil tool di hotbar
+local backpack = lp:FindFirstChild("Backpack")
+if not backpack then
+    addLog("❌ Backpack tidak ditemukan, tunggu sebentar...")
+    backpack = lp:WaitForChild("Backpack", 5)
+    if not backpack then
+        addLog("❌ Backpack tidak muncul, pastikan karakter sudah spawn.")
+        return
     end
-    return tools
 end
 
--- Fungsi untuk mendapatkan tool yang sedang di-equip
-local function getEquippedTool()
-    local char = lp.Character
-    if not char then return nil end
-    for _, child in ipairs(char:GetChildren()) do
-        if child:IsA("Tool") then
-            return child
-        end
+local tools = {}
+for _, child in ipairs(backpack:GetChildren()) do
+    if child:IsA("Tool") then
+        table.insert(tools, child)
+        addLog("📦 Tool di hotbar: " .. child.Name)
     end
-    return nil
 end
 
--- Test equip dengan berbagai parameter
-local function testEquip()
-    local tools = getHotbarTools()
-    if #tools == 0 then
-        print("❌ Tidak ada rod di hotbar (backpack). Masukkan rod ke hotbar dulu.")
-        return false
-    end
-    
-    local rod = tools[1]
-    print("🔧 Mencoba equip rod:", rod.Name)
-    
-    -- Parameter kemungkinan: tool instance
-    print("→ Mencoba parameter (tool instance)")
-    local success = pcall(function()
-        equipRemote:FireServer(rod)
+if #tools == 0 then
+    addLog("❌ Tidak ada tool di hotbar! Masukkan rod ke hotbar dulu.")
+    return
+end
+
+local testRod = tools[1]
+addLog("🔧 Akan meng-equip rod: " .. testRod.Name)
+
+local function tryEquip(param, paramDesc)
+    addLog("→ Mencoba " .. paramDesc)
+    local success, err = pcall(function()
+        equipRemote:FireServer(param)
     end)
     if success then
-        task.wait(1)
-        if getEquippedTool() then
-            print("✅ BERHASIL equip dengan tool instance!")
-            return true
-        end
+        addLog("  FireServer berhasil dikirim.")
+    else
+        addLog("  FireServer gagal: " .. tostring(err))
     end
-    
-    -- Parameter: slot number (0-7)
-    for slot = 0, 7 do
-        print("→ Mencoba parameter (slot):", slot)
-        pcall(function()
-            equipRemote:FireServer(slot)
-        end)
-        task.wait(0.5)
-        if getEquippedTool() then
-            print("✅ BERHASIL equip dengan slot:", slot)
-            return true
-        end
-    end
-    
-    -- Parameter: nama tool (string)
-    print("→ Mencoba parameter (string nama tool):", rod.Name)
-    pcall(function()
-        equipRemote:FireServer(rod.Name)
-    end)
-    task.wait(1)
-    if getEquippedTool() then
-        print("✅ BERHASIL equip dengan nama tool!")
+    task.wait(1.5)
+    -- Cek apakah rod sudah di tangan
+    local char = lp.Character
+    if char and char:FindFirstChild(testRod.Name) then
+        addLog("🎉 BERHASIL! Rod " .. testRod.Name .. " berada di tangan!")
         return true
     end
-    
-    -- Parameter: UUID? (mungkin tool memiliki attribute)
-    local uuid = rod:GetAttribute("UUID") or rod:GetAttribute("ItemId")
-    if uuid then
-        print("→ Mencoba parameter (UUID):", uuid)
-        pcall(function()
-            equipRemote:FireServer(uuid)
-        end)
-        task.wait(1)
-        if getEquippedTool() then
-            print("✅ BERHASIL equip dengan UUID!")
-            return true
-        end
-    end
-    
-    print("❌ Semua percobaan equip gagal.")
+    addLog("  ⚠️ Rod tidak muncul di tangan.")
     return false
 end
 
--- Test unequip
-local function testUnequip()
-    if not unequipRemote then
-        print("⚠️ Unequip remote tidak ditemukan, skip.")
-        return false
+addLog("========== MULAI TEST EQUIP ==========")
+
+-- Coba parameter 1: tool instance
+if tryEquip(testRod, "tool instance") then return end
+
+-- Coba parameter 2: nomor slot (0-7)
+for slot = 0, 7 do
+    if tryEquip(slot, "slot " .. slot) then return end
+end
+
+-- Coba parameter 3: nama tool string
+if tryEquip(testRod.Name, "string nama tool") then return end
+
+-- Coba parameter 4: UUID jika ada
+local uuid = testRod:GetAttribute("UUID") or testRod:GetAttribute("ItemId")
+if uuid then
+    if tryEquip(uuid, "UUID: " .. uuid) then return end
+end
+
+-- Coba parameter 5: kosong (tanpa parameter)
+addLog("→ Mencoba tanpa parameter")
+local success, err = pcall(function()
+    equipRemote:FireServer()
+end)
+if success then
+    addLog("  FireServer berhasil dikirim.")
+    task.wait(1.5)
+    local char = lp.Character
+    if char and char:FindFirstChild(testRod.Name) then
+        addLog("🎉 BERHASIL! Rod " .. testRod.Name .. " berada di tangan!")
+        return
     end
-    
-    local current = getEquippedTool()
-    if not current then
-        print("⚠️ Tidak ada rod yang sedang di-equip. Equip dulu.")
-        return false
-    end
-    
-    print("🔧 Mencoba unequip rod:", current.Name)
-    print("→ Mencoba tanpa parameter")
+end
+
+addLog("❌ Semua percobaan equip gagal. Tidak ada yang berhasil.")
+
+-- Optional: test unequip jika ada remote
+if unequipRemote then
+    addLog("========== TEST UNEQUIP ==========")
+    addLog("→ Mencoba unequip tanpa parameter")
     pcall(function()
         unequipRemote:FireServer()
     end)
     task.wait(1)
-    if not getEquippedTool() then
-        print("✅ BERHASIL unequip!")
-        return true
+    local char = lp.Character
+    if char and not char:FindFirstChildWhichIsA("Tool") then
+        addLog("✅ Unequip berhasil! Tidak ada tool di tangan.")
+    else
+        addLog("⚠️ Unequip gagal, tool masih di tangan.")
     end
-    
-    print("→ Mencoba dengan parameter tool instance")
-    pcall(function()
-        unequipRemote:FireServer(current)
-    end)
-    task.wait(1)
-    if not getEquippedTool() then
-        print("✅ BERHASIL unequip dengan tool instance!")
-        return true
-    end
-    
-    print("❌ Unequip gagal.")
-    return false
 end
 
--- ============================================================
--- EKSEKUSI TEST
--- ============================================================
-print("========== TEST EQUIP ROD ==========")
-task.wait(2) -- tunggu stabil
-if testEquip() then
-    task.wait(2)
-    print("========== TEST UNEQUIP ROD ==========")
-    testUnequip()
-end
-
-print("========== SELESAI ==========")
-print("Jika equip/unequip berhasil, metode ini bisa dipakai untuk anti AFK.")
-print("Jika gagal semua, coba manual equip/unequip dan lihat apakah remote event terpanggil.")
+addLog("========== SELESAI ==========")
+addLog("Jika equip berhasil, metode ini bisa dipakai.")
+addLog("Tutup GUI ini untuk mengakhiri.")
