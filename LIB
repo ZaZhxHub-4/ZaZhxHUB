@@ -231,21 +231,21 @@ end
 -- =====================
 -- FLUENT WINDOW (UKURAN DIPERKECIL)
 -- =====================
-local winW, winH = 490, 320   -- Ukuran panel
+local winW, winH = 490, 320   -- diperkecil
+local vp = workspace.CurrentCamera.ViewportSize
 
 local Window = Fluent:CreateWindow({
-    Title              = "ZHX Hub",
-    SubTitle           = "v8.8",
-    TabWidth           = 130,
-    Size               = UDim2.fromOffset(winW, winH),
-    -- Menggunakan 0.5 (tengah) dan menggeser ke kiri/atas sebanyak setengah ukuran panel
-    Position           = UDim2.new(0.5, -(winW / 2), 0.5, -(winH / 2)), 
-    Acrylic            = true,
-    Theme              = "AMOLED",
-    MinimizeKey        = Enum.KeyCode.RightControl,
-    UserInfoTop        = true,
-    UserInfoTitle      = getDisplayName(18),
-    UserInfoSubtitle   = "PLAZA AUTO",
+    Title            = "ZHX Hub",
+    SubTitle         = "v8.8",
+    TabWidth         = 130,    -- diperkecil
+    Size             = UDim2.fromOffset(winW, winH),
+    Position         = UDim2.fromOffset((vp.X / 2) - (winW / 2), (vp.Y / 2) - (winH / 2)),
+    Acrylic          = true,
+    Theme            = "AMOLED",
+    MinimizeKey      = Enum.KeyCode.RightControl,
+    UserInfoTop      = true,
+    UserInfoTitle    = getDisplayName(18),
+    UserInfoSubtitle = "PLAZA AUTO",
 })
 
 local Tabs = {
