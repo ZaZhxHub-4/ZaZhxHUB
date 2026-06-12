@@ -1,10 +1,39 @@
 -- ╔══════════════════════════════════════════════════════════════════╗
--- ║   ZHX MEMORY SCANNER: HUNTING THE HASHED REMOTES                 ║
+-- ║   ZHX MEMORY SCANNER: WEBHOOK EDITION                            ║
 -- ╚══════════════════════════════════════════════════════════════════╝
+
+local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 
+local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+local httpRequest = (syn and syn.request) or request or http_request or (http and http.request)
+
+if not httpRequest then
+    warn("Executor kamu tidak mendukung HTTP Requests!")
+    return
+end
+
+-- Fungsi aman untuk mengirim pesan panjang ke Discord
+local function sendToDiscord(content)
+    pcall(function()
+        httpRequest({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                username = "ZHX Scanner",
+                content = content
+            })
+        })
+    end)
+end
+
+-- =====================
+-- MEMBUAT MINI UI DEBUG
+-- =====================
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_MemoryScanner"
+sg.Name = "ZHX_MemoryScannerWeb"
+sg.ResetOnSpawn = false
 pcall(function() sg.Parent = CoreGui end)
 if not sg.Parent then sg.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui") end
 
@@ -15,7 +44,7 @@ btn.BackgroundColor3 = Color3.fromRGB(50, 50, 200)
 btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 btn.Font = Enum.Font.GothamBold
 btn.TextSize = 12
-btn.Text = "🔍 SCAN MEMORY (CARI KAMUS REMOTE)"
+btn.Text = "🔍 SCAN MEMORY KE DISCORD"
 btn.Parent = sg
 Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 
@@ -24,19 +53,16 @@ btn.MouseButton1Click:Connect(function()
     btn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
     task.wait(0.1)
 
-    local foundTables = 0
-    local remoteDictionary = nil
+    sendToDiscord("⏳ **Memulai proses scan memori (GetGC)...**")
 
-    -- Mengambil seluruh data di memori game
+    local foundTables = 0
     local gc = getgc(true)
     
     for i, v in pairs(gc) do
-        -- Kita mencari tipe "table"
         if type(v) == "table" then
             local hasRemote = false
             local hasStringKey = false
             
-            -- Kita cek secara aman apakah isi tabel ini mengandung Remote
             pcall(function()
                 for key, val in pairs(v) do
                     if type(key) == "string" and typeof(val) == "Instance" then
@@ -49,27 +75,41 @@ btn.MouseButton1Click:Connect(function()
                 end
             end)
 
-            -- Jika tabel ini berisi string (misal: "Trade") dan isinya RemoteFunction, ini target kita!
             if hasRemote and hasStringKey then
                 foundTables = foundTables + 1
-                warn("-----------------------------------------")
-                warn("TABEL KANDIDAT #" .. foundTables .. " DITEMUKAN DI MEMORI!")
                 
-                -- Print isi tabelnya ke console (F9)
+                -- Menyusun pesan agar rapi dan tidak lewat batas karakter Discord
+                local chunk = "🔍 **TABEL KANDIDAT #" .. foundTables .. "** Ditemukan!\n```lua\n"
+                
                 for key, val in pairs(v) do
                     if type(key) == "string" and typeof(val) == "Instance" then
-                        print("🔑 Kunci: [" .. key .. "] ---> Remote: " .. val.Name)
+                        if val:IsA("RemoteEvent") or val:IsA("RemoteFunction") then
+                            local line = "Kunci: [" .. key .. "] ---> " .. val.ClassName .. " (" .. val.Name .. ")\n"
+                            
+                            -- Jika chunk sudah mendekati batas Discord (2000 max, kita set 1800 agar aman)
+                            if #chunk + #line > 1800 then
+                                chunk = chunk .. "
+```"
+                                sendToDiscord(chunk)
+                                task.wait(1) -- Jeda 1 detik anti rate-limit Discord
+                                chunk = "```lua\n" -- Buka blok kode baru
+                            end
+                            chunk = chunk .. line
+                        end
                     end
                 end
+                
+                chunk = chunk .. "
+```"
+                sendToDiscord(chunk)
+                task.wait(1.5)
             end
         end
     end
 
-    btn.Text = "✅ SELESAI! BUKA F9 (CONSOLE)"
+    btn.Text = "✅ SELESAI! CEK DISCORD"
     btn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    print("-----------------------------------------")
-    print("PENCARIAN SELESAI. Total tabel mencurigakan:", foundTables)
-    print("Silakan cari tulisan seperti 'Trade', 'Decline', 'Booth', atau 'List' di atas!")
+    sendToDiscord("✅ **SCAN SELESAI.** Total tabel mencurigakan yang ditemukan: **" .. foundTables .. "**")
     
     task.delay(4, function() sg:Destroy() end)
 end)
