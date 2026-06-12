@@ -1,16 +1,22 @@
 -- =====================================================================
--- SCRIPT DEBUG LANJUTAN: CAPTURE ARGS EQUIP/UNEQUIP ROD
+-- DEBUG CAPTURE PARAMETER EQUIP/UNEQUIP ROD (HOTBAR)
 -- =====================================================================
--- Ganti WEBHOOK_URL dengan milikmu
--- Execute, lalu lakukan equip/unequip rod manual, lihat hasil di Discord
--- =====================================================================
+-- Ganti WEBHOOK_URL dengan URL dari script utama kamu
+local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-local Players = game:GetService("Players")
-local lp = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
+local RS = game:GetService("ReplicatedStorage")
 
-local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY" -- GANTI
+-- Path remote events
+local equipRemote = RS:FindFirstChild("Packages") and RS.Packages:FindFirstChild("_Index") and RS.Packages._Index:FindFirstChild("sleitnick_net@0.2.0") and RS.Packages._Index["sleitnick_net@0.2.0"].net.RE.EquipToolFromHotbar
+local unequipRemote = RS:FindFirstChild("Packages") and RS.Packages:FindFirstChild("_Index") and RS.Packages._Index:FindFirstChild("sleitnick_net@0.2.0") and RS.Packages._Index["sleitnick_net@0.2.0"].net.RE.UnequipToolFromHotbar
 
+if not equipRemote or not unequipRemote then
+    warn("Remote event tidak ditemukan! Cek path.")
+    return
+end
+
+-- Fungsi kirim ke Discord
 local function sendToDiscord(title, description, color)
     pcall(function()
         request({
@@ -18,50 +24,79 @@ local function sendToDiscord(title, description, color)
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🐟 Debug Equip Args",
-                embeds = {{title = title, description = description, color = color or 3066993}}
+                username = "🔧 Debug Equip/Unequip",
+                embeds = {{
+                    title = title,
+                    description = description,
+                    color = color or 3066993,
+                    footer = {text = os.date("%H:%M:%S")}
+                }}
             })
         })
     end)
 end
 
--- Hook semua RemoteEvent/RemoteFunction yang InvokeServer
-local origHook
-local function hookAll()
-    pcall(function()
-        setthreadidentity(6)
-        origHook = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-            if method == "InvokeServer" or method == "FireServer" then
-                local args = {...}
-                local targetName = self.Name or "unknown"
-                -- Filter hanya yang terkait equip/unequip/tool/rod
-                local lowerName = targetName:lower()
-                if lowerName:find("equip") or lowerName:find("unequip") or lowerName:find("tool") or lowerName:find("rod") or lowerName:find("hotbar") then
-                    local argsStr = {}
-                    for i, arg in ipairs(args) do
-                        if type(arg) == "string" then
-                            argsStr[i] = string.format("[%d]=%q", i, arg)
-                        elseif type(arg) == "number" then
-                            argsStr[i] = string.format("[%d]=%s", i, tostring(arg))
-                        elseif type(arg) == "boolean" then
-                            argsStr[i] = string.format("[%d]=%s", i, tostring(arg))
-                        elseif type(arg) == "table" then
-                            argsStr[i] = string.format("[%d]=[table]", i)
-                        elseif type(arg) == "Instance" then
-                            argsStr[i] = string.format("[%d]=%s", i, arg:GetFullName())
-                        else
-                            argsStr[i] = string.format("[%d]=%s", i, type(arg))
-                        end
-                    end
-                    sendToDiscord("🎣 " .. method .. " : " .. targetName, "```\n" .. table.concat(argsStr, "\n") .. "\n```", 65280)
+-- Hook EquipToolFromHotbar
+local oldEquipFire = equipRemote.FireServer
+equipRemote.FireServer = function(self, ...)
+    local args = {...}
+    local argsStr = {}
+    for i, arg in ipairs(args) do
+        if type(arg) == "string" then
+            argsStr[i] = string.format("[%d] = %q", i, arg)
+        elseif type(arg) == "number" then
+            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
+        elseif type(arg) == "boolean" then
+            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
+        elseif type(arg) == "table" then
+            -- Coba lihat isi table (mungkin berisi tool UUID atau itemId)
+            local tblStr = {}
+            for k, v in pairs(arg) do
+                if type(v) == "string" then
+                    tblStr[#tblStr+1] = string.format("%s = %q", tostring(k), v)
+                else
+                    tblStr[#tblStr+1] = string.format("%s = %s", tostring(k), tostring(v))
                 end
             end
-            return origHook(self, ...)
-        end))
-    end)
+            argsStr[i] = string.format("[%d] = { %s }", i, table.concat(tblStr, ", "))
+        else
+            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
+        end
+    end
+    sendToDiscord("🎣 EQUIP ROD", string.format("**Remote:** EquipToolFromHotbar\n**Args:**\n%s", table.concat(argsStr, "\n")), 65280)
+    return oldEquipFire(self, ...)
 end
 
-hookAll()
-sendToDiscord("🔍 Debug Started", "Sekarang lakukan equip/unequip rod manual. Hasil akan muncul di sini.", 3447003)
-print("✅ Hook aktif. Silakan equip/unequip rod.")
+-- Hook UnequipToolFromHotbar
+local oldUnequipFire = unequipRemote.FireServer
+unequipRemote.FireServer = function(self, ...)
+    local args = {...}
+    local argsStr = {}
+    for i, arg in ipairs(args) do
+        if type(arg) == "string" then
+            argsStr[i] = string.format("[%d] = %q", i, arg)
+        elseif type(arg) == "number" then
+            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
+        elseif type(arg) == "boolean" then
+            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
+        elseif type(arg) == "table" then
+            local tblStr = {}
+            for k, v in pairs(arg) do
+                if type(v) == "string" then
+                    tblStr[#tblStr+1] = string.format("%s = %q", tostring(k), v)
+                else
+                    tblStr[#tblStr+1] = string.format("%s = %s", tostring(k), tostring(v))
+                end
+            end
+            argsStr[i] = string.format("[%d] = { %s }", i, table.concat(tblStr, ", "))
+        else
+            argsStr[i] = string.format("[%d] = %s", i, tostring(arg))
+        end
+    end
+    sendToDiscord("⚠️ UNEQUIP ROD", string.format("**Remote:** UnequipToolFromHotbar\n**Args:**\n%s", table.concat(argsStr, "\n")), 16776960)
+    return oldUnequipFire(self, ...)
+end
+
+sendToDiscord("✅ DEBUG ACTIVE", "Sekarang coba **equip** dan **unequip** rod dari hotbar secara manual.\nParameter akan muncul di sini.", 3066993)
+
+print("✅ Debug hook aktif. Silakan equip/unequip rod dari hotbar.")
