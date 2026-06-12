@@ -1,61 +1,119 @@
 -- ╔══════════════════════════════════════════════════════════════════╗
--- ║   ZHX MEMORY SCANNER: WEBHOOK EDITION                            ║
+-- ║   ZHX MEMORY SCANNER: IN-GAME UI EDITION (MOBILE FRIENDLY)       ║
 -- ╚══════════════════════════════════════════════════════════════════╝
 
-local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
-
-local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-local httpRequest = (syn and syn.request) or request or http_request or (http and http.request)
-
-if not httpRequest then
-    warn("Executor kamu tidak mendukung HTTP Requests!")
-    return
-end
-
--- Fungsi aman untuk mengirim pesan panjang ke Discord
-local function sendToDiscord(content)
-    pcall(function()
-        httpRequest({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode({
-                username = "ZHX Scanner",
-                content = content
-            })
-        })
-    end)
-end
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 
 -- =====================
--- MEMBUAT MINI UI DEBUG
+-- MEMBUAT MAIN UI PANEL
 -- =====================
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_MemoryScannerWeb"
+sg.Name = "ZHX_MemoryScannerUI"
 sg.ResetOnSpawn = false
 pcall(function() sg.Parent = CoreGui end)
-if not sg.Parent then sg.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui") end
+if not sg.Parent then sg.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
 
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0, 250, 0, 50)
-btn.Position = UDim2.new(0.5, -125, 0, 20)
-btn.BackgroundColor3 = Color3.fromRGB(50, 50, 200)
-btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-btn.Font = Enum.Font.GothamBold
-btn.TextSize = 12
-btn.Text = "🔍 SCAN MEMORY KE DISCORD"
-btn.Parent = sg
-Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 350, 0, 450)
+MainFrame.Position = UDim2.new(0.5, -175, 0.5, -225)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true -- Bisa digeser (drag)
+MainFrame.Parent = sg
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
 
-btn.MouseButton1Click:Connect(function()
-    btn.Text = "MENCARI... (AWAS NGE-LAG BENTAR)"
-    btn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
-    task.wait(0.1)
+local UIStroke = Instance.new("UIStroke", MainFrame)
+UIStroke.Color = Color3.fromRGB(72, 210, 130)
+UIStroke.Thickness = 2
 
-    sendToDiscord("⏳ **Memulai proses scan memori (GetGC)...**")
+-- Header
+local Header = Instance.new("TextLabel")
+Header.Size = UDim2.new(1, 0, 0, 40)
+Header.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+Header.TextColor3 = Color3.fromRGB(72, 210, 130)
+Header.Font = Enum.Font.GothamBold
+Header.TextSize = 14
+Header.Text = " 🔍 ZHX HASHED REMOTE SCANNER"
+Header.TextXAlignment = Enum.TextXAlignment.Left
+Header.Parent = MainFrame
+Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 8)
+local HPadding = Instance.new("UIPadding", Header)
+HPadding.PaddingLeft = UDim.new(0, 10)
+
+-- Tombol Close (X)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -35, 0, 5)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Text = "X"
+CloseBtn.Parent = Header
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+CloseBtn.MouseButton1Click:Connect(function() sg:Destroy() end)
+
+-- Area Log (TextBox bisa di-copy di HP)
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Size = UDim2.new(1, -20, 1, -150)
+ScrollFrame.Position = UDim2.new(0, 10, 0, 50)
+ScrollFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+ScrollFrame.BorderSizePixel = 0
+ScrollFrame.ScrollBarThickness = 4
+ScrollFrame.Parent = MainFrame
+
+local LogBox = Instance.new("TextBox")
+LogBox.Size = UDim2.new(1, -10, 0, 10000) -- Dibuat panjang agar cukup
+LogBox.Position = UDim2.new(0, 5, 0, 5)
+LogBox.BackgroundTransparency = 1
+LogBox.TextColor3 = Color3.fromRGB(200, 200, 200)
+LogBox.Font = Enum.Font.Code
+LogBox.TextSize = 11
+LogBox.TextXAlignment = Enum.TextXAlignment.Left
+LogBox.TextYAlignment = Enum.TextYAlignment.Top
+LogBox.MultiLine = true
+LogBox.ClearTextOnFocus = false
+LogBox.TextEditable = true -- Biar keyboard HP bisa muncul & gampang select all
+LogBox.Text = "-- Klik 'SCAN MEMORY' untuk memulai...\n-- Tahan teks ini untuk menyalin (Copy) manual."
+LogBox.Parent = ScrollFrame
+
+-- Tombol Scan
+local ScanBtn = Instance.new("TextButton")
+ScanBtn.Size = UDim2.new(1, -20, 0, 40)
+ScanBtn.Position = UDim2.new(0, 10, 1, -90)
+ScanBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
+ScanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ScanBtn.Font = Enum.Font.GothamBold
+ScanBtn.TextSize = 13
+ScanBtn.Text = "🔍 SCAN MEMORY"
+ScanBtn.Parent = MainFrame
+Instance.new("UICorner", ScanBtn).CornerRadius = UDim.new(0, 6)
+
+-- Tombol Copy Auto
+local CopyBtn = Instance.new("TextButton")
+CopyBtn.Size = UDim2.new(1, -20, 0, 40)
+CopyBtn.Position = UDim2.new(0, 10, 1, -45)
+CopyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 100)
+CopyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CopyBtn.Font = Enum.Font.GothamBold
+CopyBtn.TextSize = 13
+CopyBtn.Text = "📋 AUTO COPY KE CLIPBOARD"
+CopyBtn.Parent = MainFrame
+Instance.new("UICorner", CopyBtn).CornerRadius = UDim.new(0, 6)
+
+-- =====================
+-- LOGIC SCAN MEMORY
+-- =====================
+ScanBtn.MouseButton1Click:Connect(function()
+    ScanBtn.Text = "⏳ MENCARI... (AWAS LAG)"
+    ScanBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
+    LogBox.Text = "Memulai scan memori, tunggu sebentar...\n-----------------------------------\n"
+    task.wait(0.1) -- Jeda UI
 
     local foundTables = 0
+    local resultText = ""
     local gc = getgc(true)
     
     for i, v in pairs(gc) do
@@ -77,39 +135,45 @@ btn.MouseButton1Click:Connect(function()
 
             if hasRemote and hasStringKey then
                 foundTables = foundTables + 1
-                
-                -- Menyusun pesan agar rapi dan tidak lewat batas karakter Discord
-                local chunk = "🔍 **TABEL KANDIDAT #" .. foundTables .. "** Ditemukan!\n```lua\n"
+                resultText = resultText .. "\n=== TABEL KANDIDAT #" .. foundTables .. " ===\n"
                 
                 for key, val in pairs(v) do
                     if type(key) == "string" and typeof(val) == "Instance" then
                         if val:IsA("RemoteEvent") or val:IsA("RemoteFunction") then
-                            local line = "Kunci: [" .. key .. "] ---> " .. val.ClassName .. " (" .. val.Name .. ")\n"
-                            
-                            -- Jika chunk sudah mendekati batas Discord (2000 max, kita set 1800 agar aman)
-                            if #chunk + #line > 1800 then
-                                chunk = chunk .. "
-```"
-                                sendToDiscord(chunk)
-                                task.wait(1) -- Jeda 1 detik anti rate-limit Discord
-                                chunk = "```lua\n" -- Buka blok kode baru
-                            end
-                            chunk = chunk .. line
+                            resultText = resultText .. '["' .. key .. '"] = ' .. val.Name .. '\n'
                         end
                     end
                 end
-                
-                chunk = chunk .. "
-```"
-                sendToDiscord(chunk)
-                task.wait(1.5)
             end
         end
     end
 
-    btn.Text = "✅ SELESAI! CEK DISCORD"
-    btn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    sendToDiscord("✅ **SCAN SELESAI.** Total tabel mencurigakan yang ditemukan: **" .. foundTables .. "**")
-    
-    task.delay(4, function() sg:Destroy() end)
+    if foundTables > 0 then
+        LogBox.Text = "Berhasil menemukan " .. foundTables .. " tabel kamus!\n" .. resultText
+    else
+        LogBox.Text = "Tidak ada tabel kamus Remote yang ditemukan di memori."
+    end
+
+    ScanBtn.Text = "✅ SELESAI"
+    ScanBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
+end)
+
+-- =====================
+-- LOGIC AUTO COPY
+-- =====================
+CopyBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(LogBox.Text)
+        CopyBtn.Text = "✅ BERHASIL DI-COPY!"
+        CopyBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        task.wait(2)
+        CopyBtn.Text = "📋 AUTO COPY KE CLIPBOARD"
+        CopyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 100)
+    else
+        CopyBtn.Text = "❌ EKSEKUTOR TIDAK SUPPORT AUTO COPY"
+        CopyBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        task.wait(2)
+        CopyBtn.Text = "📋 TAHAN TEKS DI ATAS UNTUK COPY MANUAL"
+        CopyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 100)
+    end
 end)
