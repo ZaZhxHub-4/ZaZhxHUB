@@ -1,103 +1,76 @@
 -- ====================================================
--- ULTIMATE TRACKER: NO STUCK, CONSOLE + WEBHOOK
+-- SCRIPT RECORDER V3 (NO FILTER, FULL DUMP)
+-- Merekam apapun yang masuk ke PromptController
 -- ====================================================
-
-print("\n\n[1] Memulai Ultimate Tracker...")
 
 local HttpService = game:GetService("HttpService")
 local WebhookURL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-local function logBoth(msg)
-    print(msg) -- Print ke F9 Console
+local function sendLog(title, desc)
     pcall(function()
         request({
             Url = WebhookURL, Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🔍 Tracker Log",
-                embeds = {{ description = msg, color = 16776960 }}
+                username = "🎥 Tracker Log",
+                embeds = {{ 
+                    title = title, 
+                    description = string.sub(desc, 1, 4000), 
+                    color = 16776960 
+                }}
             })
         })
     end)
 end
 
-logBoth("[2] Mencari PromptController di getloadedmodules()...")
-
-local PromptController = nil
-for _, mod in ipairs(getloadedmodules()) do
-    if mod.Name == "PromptController" then
-        logBoth("[3] Module PromptController ditemukan di memori! Mencoba memuat (require)...")
-        local ok, result = pcall(require, mod)
-        if ok then
-            PromptController = result
-            logBoth("[4] Require Sukses!")
-        else
-            logBoth("[ERROR] Require gagal: " .. tostring(result))
+-- Fungsi dump aman untuk semua argumen
+local function safeDump(val, depth)
+    depth = depth or 0
+    if depth > 2 then return "{...}" end -- Cegah crash
+    
+    if type(val) == "table" then
+        local str = "{\n"
+        for k, v in pairs(val) do
+            str = str .. string.rep("  ", depth + 1) .. "[" .. tostring(k) .. "] = " .. safeDump(v, depth + 1) .. ",\n"
         end
-        break
+        return str .. string.rep("  ", depth) .. "}"
+    elseif type(val) == "string" then
+        return '"' .. val .. '"'
+    elseif type(val) == "function" then
+        return "[Function]"
+    elseif typeof(val) == "Instance" then
+        return "[Instance: " .. val.ClassName .. " | " .. val.Name .. "]"
+    else
+        return tostring(val)
     end
 end
 
-if not PromptController then
-    logBoth("[ERROR] PromptController belum dimuat oleh game. Coba jalan-jalan atau buka UI lain dulu baru execute ulang.")
-    return
+local RS = game:GetService("ReplicatedStorage")
+local targetModule = RS:WaitForChild("Controllers"):WaitForChild("PromptController")
+local PromptController = require(targetModule)
+
+local function hookTarget(funcName)
+    if type(PromptController[funcName]) == "function" then
+        local oldFunc
+        oldFunc = hookfunction(PromptController[funcName], function(...)
+            local args = {...}
+            local dumpStr = ""
+            
+            -- Kita mulai dari args[2] karena args[1] itu self/module-nya
+            for i = 2, #args do
+                dumpStr = dumpStr .. "Arg[" .. i .. "]: " .. safeDump(args[i]) .. "\n\n"
+            end
+
+            -- Langsung kirim semua data ke discord, tanpa filter apapun!
+            sendLog("📥 RECORD: " .. funcName, "```lua\n" .. dumpStr .. "\n
+```")
+            
+            return oldFunc(...)
+        end)
+    end
 end
 
--- Fungsi dump super aman (hanya 1 level) untuk mencegah crash
-local function miniDump(tbl)
-    local s = "{\n"
-    pcall(function()
-        for k, v in pairs(tbl) do
-            local vStr = tostring(v)
-            if string.len(vStr) > 50 then vStr = string.sub(vStr, 1, 50) .. "..." end
-            s = s .. "  [" .. tostring(k) .. "] = " .. vStr .. " (" .. type(v) .. ")\n"
-        end
-    end)
-    return s .. "}"
-end
+hookTarget("FirePrompt")
+hookTarget("FireChoicePrompt")
 
-local isHooked = false
-
--- Hook FireChoicePrompt
-if type(PromptController.FireChoicePrompt) == "function" then
-    local oldChoice
-    oldChoice = hookfunction(PromptController.FireChoicePrompt, function(...)
-        local args = {...}
-        local logMsg = "🚨 FIRE_CHOICE_PROMPT DIPANGGIL!\nArgumen ke-1: "
-        if type(args[1]) == "table" then
-            logMsg = logMsg .. miniDump(args[1])
-        else
-            logMsg = logMsg .. tostring(args[1])
-        end
-        
-        logBoth(logMsg)
-        return oldChoice(...)
-    end)
-    isHooked = true
-    logBoth("[5] Berhasil Hook FireChoicePrompt!")
-end
-
--- Hook FirePrompt (Jaga-jaga kalau dev memindahkan logicnya ke sini)
-if type(PromptController.FirePrompt) == "function" then
-    local oldPrompt
-    oldPrompt = hookfunction(PromptController.FirePrompt, function(...)
-        local args = {...}
-        local logMsg = "⚠️ FIRE_PROMPT DIPANGGIL!\nArgumen ke-1: "
-        if type(args[1]) == "table" then
-            logMsg = logMsg .. miniDump(args[1])
-        else
-            logMsg = logMsg .. tostring(args[1])
-        end
-        
-        logBoth(logMsg)
-        return oldPrompt(...)
-    end)
-    isHooked = true
-    logBoth("[5] Berhasil Hook FirePrompt!")
-end
-
-if isHooked then
-    logBoth("[6] ✅ SEMUA SIAP! Silakan minta temanmu request trade, biarkan muncul di layar, lalu tolak manual.")
-else
-    logBoth("[ERROR] Tidak ada fungsi Fire yang bisa di-hook.")
-end
+sendLog("✅ SPY V3 AKTIF", "Silakan suruh temanmu request trade sekarang, biarkan pop-up muncul, lalu klik tolak. Semua argumen akan direkam di sini!")
