@@ -1,76 +1,96 @@
 -- ====================================================
--- SCRIPT RECORDER V3 (NO FILTER, FULL DUMP)
--- Merekam apapun yang masuk ke PromptController
+-- SMART AUTO REJECT TRADE (FINAL STRIKE)
+-- Hooking: FirePrompt & FireChoicePrompt
 -- ====================================================
+
+getgenv().AutoRejectTrade = true 
 
 local HttpService = game:GetService("HttpService")
 local WebhookURL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-local function sendLog(title, desc)
+local function sendLog(title, desc, color)
     pcall(function()
         request({
             Url = WebhookURL, Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🎥 Tracker Log",
-                embeds = {{ 
-                    title = title, 
-                    description = string.sub(desc, 1, 4000), 
-                    color = 16776960 
-                }}
+                username = "🛡️ Smart Blocker",
+                embeds = {{ title = title, description = string.sub(desc, 1, 4000), color = color or 16711680 }}
             })
         })
     end)
 end
 
--- Fungsi dump aman untuk semua argumen
-local function safeDump(val, depth)
-    depth = depth or 0
-    if depth > 2 then return "{...}" end -- Cegah crash
-    
-    if type(val) == "table" then
-        local str = "{\n"
-        for k, v in pairs(val) do
-            str = str .. string.rep("  ", depth + 1) .. "[" .. tostring(k) .. "] = " .. safeDump(v, depth + 1) .. ",\n"
-        end
-        return str .. string.rep("  ", depth) .. "}"
-    elseif type(val) == "string" then
-        return '"' .. val .. '"'
-    elseif type(val) == "function" then
-        return "[Function]"
-    elseif typeof(val) == "Instance" then
-        return "[Instance: " .. val.ClassName .. " | " .. val.Name .. "]"
-    else
-        return tostring(val)
+local PromptController = nil
+
+-- 1. Mengambil PromptController dari Memory
+for _, mod in ipairs(getloadedmodules()) do
+    if mod.Name == "PromptController" then
+        pcall(function() PromptController = require(mod) end)
+        break
     end
 end
 
-local RS = game:GetService("ReplicatedStorage")
-local targetModule = RS:WaitForChild("Controllers"):WaitForChild("PromptController")
-local PromptController = require(targetModule)
+if not PromptController then
+    sendLog("❌ ERROR", "PromptController belum dimuat oleh game. Jalan-jalan dulu sebentar lalu execute ulang.")
+    return
+end
 
-local function hookTarget(funcName)
+-- 2. Fungsi Logic Blocker
+local function attachBlocker(funcName)
     if type(PromptController[funcName]) == "function" then
         local oldFunc
         oldFunc = hookfunction(PromptController[funcName], function(...)
             local args = {...}
-            local dumpStr = ""
             
-            -- Kita mulai dari args[2] karena args[1] itu self/module-nya
-            for i = 2, #args do
-                dumpStr = dumpStr .. "Arg[" .. i .. "]: " .. safeDump(args[i]) .. "\n\n"
+            if getgenv().AutoRejectTrade then
+                local isTrade = false
+                local declineFunc = nil
+                local logData = ""
+                
+                -- Mulai dari args[2] karena args[1] adalah 'self'
+                for i = 2, #args do
+                    local v = args[i]
+                    local t = type(v)
+                    
+                    if t == "string" then
+                        logData = logData .. '"' .. v .. '"\n'
+                        local lowerV = string.lower(v)
+                        -- Deteksi teks trade dari bahasa apapun yang digunakan game
+                        if string.find(lowerV, "trade") or string.find(lowerV, "wants to") then
+                            isTrade = true
+                        end
+                    elseif t == "function" then
+                        logData = logData .. "[Function Callback]\n"
+                        -- Kita timpa terus fungsinya. Fungsi TERAKHIR yang masuk ke argumen hampir selalu tombol "No/Decline".
+                        declineFunc = v
+                    end
+                end
+                
+                -- Jika ini benar Trade Request, kita blokir!
+                if isTrade then
+                    if declineFunc then
+                        -- Eksekusi fungsi penolakan secara instan ke server
+                        task.spawn(declineFunc)
+                        sendLog("⛔ TRADE DITOLAK (SUKSES)", "Terdeteksi ada yang request trade:\n```\n" .. logData .. "\n
+```\n✅ *Tombol Decline otomatis ditekan ke server, UI diblokir!*", 3066993)
+                    else
+                        sendLog("⚠️ TRADE DIBLOKIR (Semi)", "Teks Trade terdeteksi:\n```\n" .. logData .. "\n```\n*UI berhasil disembunyikan, tapi tidak ada fungsi callback penolakan yang ditemukan.*", 16776960)
+                    end
+                    
+                    -- Mencegah UI tergambar di layar
+                    return nil
+                end
             end
-
-            -- Langsung kirim semua data ke discord, tanpa filter apapun!
-            sendLog("📥 RECORD: " .. funcName, "```lua\n" .. dumpStr .. "\n
-```")
             
+            -- Jika bukan trade, biarkan lewat
             return oldFunc(...)
         end)
     end
 end
 
-hookTarget("FirePrompt")
-hookTarget("FireChoicePrompt")
+-- Pasang jebakan di kedua fungsi prompt
+attachBlocker("FireChoicePrompt")
+attachBlocker("FirePrompt")
 
-sendLog("✅ SPY V3 AKTIF", "Silakan suruh temanmu request trade sekarang, biarkan pop-up muncul, lalu klik tolak. Semua argumen akan direkam di sini!")
+sendLog("✅ SMART REJECT AKTIF", "Sistem berhasil dipasang! Menunggu request trade dari temanmu...", 3066993)
