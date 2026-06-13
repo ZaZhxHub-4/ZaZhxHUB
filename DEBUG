@@ -7,23 +7,12 @@ local function log(title, desc)
             Url = WH, Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HS:JSONEncode({
-                username = "SPY",
+                username = "SPY2",
                 embeds = {{title = title, description = string.sub(desc, 1, 4000), color = 16776960}}
             })
         })
     end)
 end
-
-local PC
-for _, m in ipairs(getloadedmodules()) do
-    if m.Name == "PromptController" then
-        local ok, r = pcall(require, m)
-        if ok then PC = r end
-        break
-    end
-end
-
-if not PC then log("GAGAL", "PromptController tidak ada") return end
 
 local function dumpArg(v, depth)
     depth = depth or 0
@@ -44,16 +33,31 @@ local function dumpArg(v, depth)
     else return tostring(v) end
 end
 
-local old
-old = hookfunction(PC.FirePrompt, function(...)
-    local args = {...}
-    local out = ""
-    for i = 2, #args do
-        out = out.."Arg["..i.."]: "..dumpArg(args[i]).."\n\n"
+local PC
+for _, m in ipairs(getloadedmodules()) do
+    if m.Name == "PromptController" then
+        local ok, r = pcall(require, m)
+        if ok then PC = r end
+        break
     end
-    if out == "" then out = "(kosong)" end
-    log("FirePrompt DUMP", "```\n"..out.."\n```")
-    return old(...)
-end)
+end
 
-log("SPY AKTIF", "Suruh teman request trade sekarang, biarkan UI muncul, tekan No manual.")
+if not PC then log("GAGAL", "PromptController tidak ada") return end
+
+-- Hook FireChoicePrompt
+if type(PC.FireChoicePrompt) == "function" then
+    local old
+    old = hookfunction(PC.FireChoicePrompt, function(...)
+        local args = {...}
+        local out = ""
+        for i = 2, #args do
+            out = out.."Arg["..i.."]: "..dumpArg(args[i]).."\n\n"
+        end
+        if out == "" then out = "(kosong)" end
+        log("FireChoicePrompt DUMP", "```\n"..out.."\n```")
+        return old(...)
+    end)
+    log("SPY FireChoicePrompt AKTIF", "Suruh teman request trade, tekan No manual, kirim semua log.")
+else
+    log("GAGAL", "FireChoicePrompt tidak ada di PC")
+end
