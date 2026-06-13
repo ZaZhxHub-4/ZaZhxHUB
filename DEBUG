@@ -1,13 +1,9 @@
 -- ====================================================
--- TESTER FINAL: AUTO REJECT TRADE (PURE HOOKING)
--- 100% Anti-Cheat Safe
+-- TESTER TAHAP 3.5: AGGRESSIVE PROMPT SPY
 -- ====================================================
 
 local HttpService = game:GetService("HttpService")
 local WebhookURL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-
--- Global Toggle (Nanti ini yang akan disambungkan ke Toggle UI di script utama)
-getgenv().AutoRejectTrade = true 
 
 local function sendLog(title, desc, color)
     pcall(function()
@@ -16,63 +12,98 @@ local function sendLog(title, desc, color)
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🛡️ Trade Blocker",
+                username = "🕵️ Hook Spy",
                 embeds = {{
                     title = title,
                     description = desc,
-                    color = color or 16711680, -- Merah
-                    footer = {text = "Fish It Auto Reject • " .. os.date("%H:%M:%S")}
+                    color = color or 16776960, -- Kuning
+                    footer = {text = "Fish It Data Spy • " .. os.date("%H:%M:%S")}
                 }}
             })
         })
     end)
 end
 
-local PromptController = nil
+sendLog("⏳ Mencari Module...", "Mengeksekusi pencarian agresif untuk PromptController...", 16776960)
 
--- Mencari PromptController
-for _, module in pairs(getloadedmodules()) do
+local PromptController = nil
+local targetModule = nil
+
+-- Metode 1: Cari di module yang sudah diload
+for _, module in ipairs(getloadedmodules()) do
     if module.Name == "PromptController" then
-        local success, result = pcall(require, module)
-        if success then
-            PromptController = result
+        targetModule = module
+        break
+    end
+end
+
+-- Metode 2: Cari bentuk fisiknya di ReplicatedStorage
+if not targetModule then
+    for _, v in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+        if v:IsA("ModuleScript") and v.Name == "PromptController" then
+            targetModule = v
             break
         end
     end
 end
 
+-- Metode 3: Cari bentuk fisiknya di PlayerGui
+if not targetModule then
+    for _, v in ipairs(game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):GetDescendants()) do
+        if v:IsA("ModuleScript") and v.Name == "PromptController" then
+            targetModule = v
+            break
+        end
+    end
+end
+
+-- Eksekusi Require jika ModuleScript ditemukan
+if targetModule then
+    local success, result = pcall(require, targetModule)
+    if success then
+        PromptController = result
+        sendLog("✅ Ditemukan!", "Module ditemukan di: " .. targetModule:GetFullName(), 3066993)
+    else
+        sendLog("⚠️ Error Require", "Module ditemukan tapi gagal require: " .. tostring(result), 16711680)
+    end
+else
+    -- Metode 4: Deep Memory Search (getgc) - Ini akan mencari table yang punya fungsi Prompt
+    for _, v in ipairs(getgc(true)) do
+        if type(v) == "table" and type(rawget(v, "Prompt")) == "function" and type(rawget(v, "Hide")) == "function" then
+            PromptController = v
+            sendLog("⚠️ Ditemukan via Memory", "Berhasil diculik dari Garbage Collection!", 3066993)
+            break
+        end
+    end
+end
+
+-- Jika berhasil mendapat controller-nya, pasang Hook!
 if PromptController and type(PromptController.Prompt) == "function" then
     local oldPrompt
     oldPrompt = hookfunction(PromptController.Prompt, function(...)
         local args = {...}
+        local debugStr = ""
         
-        -- Cek apakah argumen pertama adalah table (sesuai log discord)
-        if getgenv().AutoRejectTrade and type(args[1]) == "table" then
-            local promptData = args[1]
-            
-            -- Validasi apakah ini benar-benar Trade Request
-            if promptData.Title == "Trade Request" or (promptData.Text and string.find(string.lower(promptData.Text), "trade")) then
-                
-                -- Eksekusi fungsi Decline() ke server agar kita tidak nyangkut dalam status "Trading"
-                if type(promptData.Decline) == "function" then
-                    task.spawn(function()
-                        pcall(promptData.Decline)
-                    end)
+        for i, v in ipairs(args) do
+            local typeV = type(v)
+            debugStr = debugStr .. "Arg["..i.."]: Type=" .. typeV .. " | Value=" .. tostring(v) .. "\n"
+            if typeV == "table" then
+                for k, val in pairs(v) do
+                    local valStr = tostring(val)
+                    -- Batasi panjang string jika itu adalah instance game yang panjang
+                    if string.len(valStr) > 50 then valStr = string.sub(valStr, 1, 50) .. "..." end
+                    debugStr = debugStr .. "   ["..tostring(k).."] = " .. valStr .. " ("..type(val)..")\n"
                 end
-                
-                -- Kirim log ke Discord
-                sendLog("⛔ TRADE DITOLAK OTOMATIS", "Seseorang mencoba mengajak trade:\n**" .. tostring(promptData.Text) .. "**\n\n*Trade berhasil dibatalkan dari server dan UI disembunyikan.*", 16711680)
-                
-                -- Return nil untuk mencegat UI agar tidak di-render di layar
-                return nil
             end
         end
         
-        -- Jika bukan Trade Request (misal prompt disconnect/notifikasi lain) atau fitur mati, biarkan jalan normal
+        -- Kirim laporan tiap kali ada pop-up / prompt muncul di layar
+        sendLog("🔍 SPY: Prompt Dipanggil!", "Data Argumen:\n```lua\n" .. debugStr .. "\n```", 16776960)
+        
         return oldPrompt(...)
     end)
     
-    sendLog("✅ Auto Reject Trade Aktif", "Sistem berhasil dipasang. Menunggu ada yang request trade...", 3066993)
+    sendLog("🎯 SPY SIAP!", "Hook berhasil dipasang ke fungsi Prompt. Silakan suruh temanmu request trade sekarang!", 3066993)
 else
-    sendLog("❌ Gagal Memuat", "PromptController tidak valid.", 16711680)
+    sendLog("❌ Gagal Total", "Semua metode pencarian gagal menemukan PromptController. Game mungkin menggunakan sistem UI yang benar-benar berbeda.", 16711680)
 end
