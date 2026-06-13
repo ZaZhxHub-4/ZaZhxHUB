@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════
---    FISH IT AUTO BOOTH v14.1 by ZaZhx         
+--    FISH IT AUTO BOOTH v14.0 by ZaZhx         
 -- ════════════════════════════════════════════════
 
 if not game:IsLoaded() then
@@ -26,7 +26,7 @@ local pg = lp:WaitForChild("PlayerGui", 9e9)
 
 pcall(function()
     StarterGui:SetCore("SendNotification", {
-        Title = "ZHX AUTO PLAZA v14.1 TEST 4",
+        Title = "ZHX AUTO PLAZA v14.0 ALOLO",
         Text = "Menyiapkan Data & UI (Mohon Tunggu)...",
         Icon = "rbxassetid://78392602281326",
         Duration = 5
@@ -101,7 +101,7 @@ local function sendEmbed(title, desc, color)
                 username = "🐟 ZaZhx Auto Booth",
                 embeds   = {{
                     title  = title, description = desc, color = color or 3066993,
-                    footer = {text = "Fish It Auto Booth v14.1 • " .. os.date("%H:%M:%S")}
+                    footer = {text = "Fish It Auto Booth v14.0 • " .. os.date("%H:%M:%S")}
                 }}
             })
         })
@@ -200,7 +200,6 @@ end
 -- =====================
 local capturedRF, capturedArgPattern, capturedUUIDPos, capturedPricePos, origHook
 local capturing       = false  -- 100% sama v8.8
-local rfCaptureAttempted = false
 local autoOn          = false
 local boothInitializing = false
 local isLoadingConfig = false
@@ -388,7 +387,7 @@ local verticalScale  = 0.2
 
 local Window = Fluent:CreateWindow({
     Title            = "ZHX Hub",
-    SubTitle         = "v14.1",
+    SubTitle         = "v14.0",
     TabWidth         = 130,
     Size             = UDim2.fromOffset(winW, winH),
     Position         = UDim2.new(0.5, -winW/2, verticalScale, -winH/2),
@@ -474,62 +473,21 @@ end
 
 local function listSingleSlot(idx)
     local s = slotData[idx]
-    sendEmbed("🔍 DEBUG Single "..idx,
-        "capturedRF: "..tostring(capturedRF)..
-        "\ncapturedArgPattern: "..tostring(capturedArgPattern)..
-        "\nUUIDPos: "..tostring(capturedUUIDPos).." | PricePos: "..tostring(capturedPricePos)..
-        "\nitemId: "..tostring(s and s.itemId)..
-        "\nactive: "..tostring(s and s.active)..
-        "\nprice: "..tostring(s and s.price), 16776960)
-    if not s.itemId or not s.active or slotListing[idx] or not capturedRF then
-        sendEmbed("⛔ Single "..idx.." SKIP",
-            "itemId nil="..tostring(not s or not s.itemId)..
-            " | active="..tostring(s and s.active)..
-            " | slotListing="..tostring(slotListing[idx])..
-            " | capturedRF nil="..tostring(not capturedRF), 16711680)
-        return false
-    end
+    if not s.itemId or not s.active or slotListing[idx] or not capturedRF then return false end
     local uuid = getAvailableUUIDForItem(s.itemId, getAllUsedUUIDs("single", idx))
-    if not uuid then
-        local uuids = getUUIDsForItemId(s.itemId)
-        sendEmbed("⛔ Single "..idx.." UUID NIL",
-            "itemId: "..tostring(s.itemId)..
-            "\n#uuids di inventory: "..tostring(#uuids), 16711680)
-        s.active=false; return false, "Habis"
-    end
+    if not uuid then s.active=false; return false, "Habis" end
     local invokeArgs = buildInvokeArgs(s.category, uuid, s.price)
-    if not invokeArgs then
-        sendEmbed("⛔ Single "..idx.." invokeArgs NIL", "uuid: "..tostring(uuid), 16711680)
-        return false, "belum siap"
-    end
-    local argsOut = "uuid: "..tostring(uuid).."\n"
-    for i, v in ipairs(invokeArgs) do argsOut = argsOut.."Arg["..i.."]: "..tostring(v).."\n" end
-    sendEmbed("🔧 Single "..idx.." invokeArgs OK", argsOut, 16776960)
+    if not invokeArgs then return false, "belum siap" end
     slotListing[idx] = true
     local ok = pcall(function() capturedRF:InvokeServer(table.unpack(invokeArgs)) end)
     slotListing[idx] = false
-    sendEmbed("📤 Single "..idx.." InvokeServer", "ok: "..tostring(ok), ok and 3066993 or 16711680)
     if ok then s.listedUUID = uuid; return true
     else s.listedUUID = nil; return false end
 end
 
 local function listMultiSlot(mIdx)
     local ms = multiSlotData[mIdx]
-    sendEmbed("🔍 DEBUG Multi "..mIdx,
-        "capturedRF: "..tostring(capturedRF)..
-        "\ncapturedArgPattern: "..tostring(capturedArgPattern)..
-        "\nms.active: "..tostring(ms.active)..
-        "\n#ms.items: "..tostring(#ms.items)..
-        "\nmultiListing: "..tostring(multiListing[mIdx])..
-        "\nprice: "..tostring(ms.price), 16776960)
-    if not ms.active or #ms.items==0 or multiListing[mIdx] or not capturedRF then
-        sendEmbed("⛔ Multi "..mIdx.." SKIP",
-            "ms.active="..tostring(ms.active)..
-            " | items="..tostring(#ms.items)..
-            " | multiListing="..tostring(multiListing[mIdx])..
-            " | capturedRF nil="..tostring(not capturedRF), 16711680)
-        return false
-    end
+    if not ms.active or #ms.items==0 or multiListing[mIdx] or not capturedRF then return false end
     local totalItems = #ms.items
     local found = false
     for _ = 1, totalItems do
@@ -543,26 +501,15 @@ local function listMultiSlot(mIdx)
     local used = getAllUsedUUIDs("multi", mIdx)
     local uuid = getAvailableUUIDForItem(it.itemId, used)
     if not uuid then
-        local uuids = getUUIDsForItemId(it.itemId)
-        sendEmbed("⛔ Multi "..mIdx.." UUID NIL",
-            "itemId: "..tostring(it.itemId)..
-            "\n#uuids di inventory: "..tostring(#uuids), 16711680)
         ms.currentItemIdx = ms.currentItemIdx + 1
         if ms.currentItemIdx > totalItems then ms.currentItemIdx = 1 end
         return false, "item saat ini habis"
     end
     local invokeArgs = buildInvokeArgs(it.category, uuid, ms.price)
-    if not invokeArgs then
-        sendEmbed("⛔ Multi "..mIdx.." invokeArgs NIL", "uuid: "..tostring(uuid), 16711680)
-        return false, "belum siap"
-    end
-    local argsOut = "uuid: "..tostring(uuid).."\n"
-    for i, v in ipairs(invokeArgs) do argsOut = argsOut.."Arg["..i.."]: "..tostring(v).."\n" end
-    sendEmbed("🔧 Multi "..mIdx.." invokeArgs OK", argsOut, 16776960)
+    if not invokeArgs then return false, "belum siap" end
     multiListing[mIdx] = true
     local ok = pcall(function() capturedRF:InvokeServer(table.unpack(invokeArgs)) end)
     multiListing[mIdx] = false
-    sendEmbed("📤 Multi "..mIdx.." InvokeServer", "ok: "..tostring(ok), ok and 3066993 or 16711680)
     if ok then ms.listedUUID = uuid; return true
     else ms.listedUUID = nil; return false end
 end
@@ -962,12 +909,53 @@ Tabs.Setup:AddButton({
 
 Tabs.Setup:AddDivider()
 
+-- [LANGKAH 2] TANGKAP SINYAL — 100% SAMA PERSIS v8.8
+Tabs.Setup:AddParagraph({
+    Title   = "Langkah 2: Tangkap Sinyal",
+    Content = "Buka booth di game → pajang 1 item manual → tekan tombol di bawah."
+})
 
+Tabs.Setup:AddButton({
+    Title = "⚡ TANGKAP SINYAL BOOTH",
+    Callback = function()
+        if capturedRF then
+            Fluent:Notify({Title="Info", Content="Sinyal sudah ditangkap!", Type="Warning", Duration=2})
+            return
+        end
+        if capturing then return end
+        capturing = true
+        Fluent:Notify({Title="⏳ Menunggu", Content="Buka booth & pajang 1 item manual sekarang.", Type="Info", Duration=3})
+        pcall(function()
+            setthreadidentity(6)
+            origHook = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+                if getnamecallmethod() == "InvokeServer" then
+                    local args = {...}
+                    local up, pp = detectArgPositions(args)
+                    if up and pp and not capturedRF then
+                        capturedRF          = self
+                        capturedArgPattern  = args
+                        capturedUUIDPos     = up
+                        capturedPricePos    = pp
+                        task.spawn(function()
+                            pcall(function() hookmetamethod(game, "__namecall", origHook) end)
+                            origHook  = nil
+                            capturing = false
+                            Fluent:Notify({Title="✅ Sukses", Content="Sinyal tertangkap! Lanjut Langkah 3.", Type="Success", Duration=2})
+                        end)
+                    end
+                end
+                return origHook(self, ...)
+            end))
+        end)
+    end
+})
+
+Tabs.Setup:AddDivider()
 
 -- [LANGKAH 3] MUAT INVENTORY
 Tabs.Setup:AddParagraph({
-    Title   = "Langkah 2: Muat Inventory",
-    Content = "Tekan tombol dibawah ini untuk memuat daftar item dan menangkap sinyal booth otomatis."
+    Title   = "Langkah 3: Muat Inventory",
+    Content = "Tekan ini untuk memuat daftar item dari tas ke semua dropdown."
 })
 
 Tabs.Setup:AddButton({
@@ -995,93 +983,22 @@ Tabs.Setup:AddButton({
         for m = 1, MAX_MULTI do rebuildMultiTagsLabel(m) end
         updateAllUIStatus()
         Fluent:Notify({
-            Title   = "✅ Item Dimuat",
-            Content = tostring(#list).." item dimuat. Menangkap sinyal booth...",
-            Type    = "Info", Duration = 3
+            Title   = "✅ Berhasil",
+            Content = tostring(#list).." item dimuat. Isi slot di tab lainnya.",
+            Type    = "Success", Duration = 3
         })
-
-        -- Auto capture RF
-if rfCaptureAttempted then return end
-rfCaptureAttempted = true
-if capturedRF then return end
-
-if not checkBoothOwnership() then
-    Fluent:Notify({Title="⛔ Belum Claim Booth", Content="Claim booth dulu!", Type="Error", Duration=3})
-    return
-end
-
-local baitItem = nil
-local inv = PlayerData:Get("Inventory")
-if inv and inv.Items then
-    for _, item in ipairs(inv.Items) do
-        local cat = getItemCategory(item.Id)
-        if cat == "Enchant Stones" then
-            baitItem = {uuid=item.UUID, itemId=item.Id, category=cat}; break
-        end
-    end
-    if not baitItem then
-        for _, item in ipairs(inv.Items) do
-            local cat = getItemCategory(item.Id)
-            if cat == "Fish" then
-                baitItem = {uuid=item.UUID, itemId=item.Id, category=cat}; break
-            end
-        end
-    end
-end
-
-if not baitItem then
-    Fluent:Notify({Title="⛔ Gagal", Content="Tidak ada item di inventory!", Type="Error", Duration=3})
-    return
-end
-
-local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
-local createRF = net["RF/Trading/CreateSaleListing"]
-if not createRF then
-    Fluent:Notify({Title="⛔ Gagal", Content="RF tidak ditemukan.", Type="Error", Duration=3})
-    return
-end
-
--- Tangkap args via hook, RF langsung dari createRF
-local _autoCaptureHook = nil
-local _captureComplete = false
-capturing = true
-_autoCaptureHook = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    if getnamecallmethod() == "InvokeServer" and not _captureComplete then
-        local args = {...}
-        local up, pp = detectArgPositions(args)
-        if up and pp then
-            -- Gunakan createRF langsung, bukan self dari hook
-            capturedRF         = createRF
-            capturedArgPattern = args
-            capturedUUIDPos    = up
-            capturedPricePos   = pp
-            _captureComplete   = true
-            task.spawn(function()
-                task.wait(0.3)
-                capturing = false
-                Fluent:Notify({Title="✅ Siap", Content="Sinyal tertangkap!", Type="Success", Duration=3})
-            end)
-        end
-    end
-    return _autoCaptureHook(self, ...)
-end))
-
-task.wait(0.8)
-pcall(function()
-    createRF:InvokeServer("Booth", baitItem.category, baitItem.uuid, 1000)
-end)
     end
 })
 
 Tabs.Setup:AddDivider()
 
--- [LANGKAH 3] AUTO BOOTH TOGGLE
+-- [LANGKAH 4] AUTO BOOTH TOGGLE
 Tabs.Setup:AddToggle("AutoBoothToggle", {
     Title = "▶ MULAI AUTO BOOTH", Default = false,
     Callback = function(state)
         if state then
             if not capturedRF then
-                Fluent:Notify({Title="⛔ Stop", Content="Muat daftar item dulu (Langkah 2)!", Type="Error", Duration=2})
+                Fluent:Notify({Title="⛔ Stop", Content="Tangkap sinyal dulu (Langkah 2)!", Type="Error", Duration=2})
                 task.defer(function() pcall(function() Window.Elements["AutoBoothToggle"]:SetValue(false) end) end)
                 return
             end
@@ -1877,4 +1794,4 @@ end
 -- FINAL INIT
 -- =====================
 Window:SelectTab(1)
-print("🐟 ZhxHub Auto Booth v14.1 [Stable] — "..#configNameList.." config dimuat")
+print("🐟 ZhxHub Auto Booth v14.0 [Stable] — "..#configNameList.." config dimuat")
