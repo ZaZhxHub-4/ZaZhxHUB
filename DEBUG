@@ -14,15 +14,7 @@ end
 
 for _, m in ipairs(getloadedmodules()) do
     if m.Name == "TradeBoothController" then
-        local ok, mod = pcall(require, m)
-        if ok and type(mod) == "table" then
-            -- Cek semua keys termasuk non-function
-            local out = ""
-            for k, v in pairs(mod) do
-                out = out..tostring(k)..": "..type(v).."\n"
-            end
-            sendWebhook("TradeBoothController keys:\n"..out)
-        end
+        sendWebhook(decompile(m))
         break
     end
 end
