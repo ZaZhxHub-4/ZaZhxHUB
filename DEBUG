@@ -1,109 +1,61 @@
--- ====================================================
--- TESTER TAHAP 3.5: AGGRESSIVE PROMPT SPY
--- ====================================================
-
 local HttpService = game:GetService("HttpService")
 local WebhookURL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-local function sendLog(title, desc, color)
+local function sendLog(title, desc)
     pcall(function()
         request({
             Url = WebhookURL,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🕵️ Hook Spy",
+                username = "🗂️ Module Dumper",
                 embeds = {{
                     title = title,
                     description = desc,
-                    color = color or 16776960, -- Kuning
-                    footer = {text = "Fish It Data Spy • " .. os.date("%H:%M:%S")}
+                    color = 3066993
                 }}
             })
         })
     end)
 end
 
-sendLog("⏳ Mencari Module...", "Mengeksekusi pencarian agresif untuk PromptController...", 16776960)
+local RS = game:GetService("ReplicatedStorage")
+local Controllers = RS:FindFirstChild("Controllers")
+local modulePath = Controllers and Controllers:FindFirstChild("PromptController")
 
-local PromptController = nil
-local targetModule = nil
-
--- Metode 1: Cari di module yang sudah diload
-for _, module in ipairs(getloadedmodules()) do
-    if module.Name == "PromptController" then
-        targetModule = module
-        break
-    end
-end
-
--- Metode 2: Cari bentuk fisiknya di ReplicatedStorage
-if not targetModule then
-    for _, v in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
-        if v:IsA("ModuleScript") and v.Name == "PromptController" then
-            targetModule = v
-            break
-        end
-    end
-end
-
--- Metode 3: Cari bentuk fisiknya di PlayerGui
-if not targetModule then
-    for _, v in ipairs(game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):GetDescendants()) do
-        if v:IsA("ModuleScript") and v.Name == "PromptController" then
-            targetModule = v
-            break
-        end
-    end
-end
-
--- Eksekusi Require jika ModuleScript ditemukan
-if targetModule then
-    local success, result = pcall(require, targetModule)
+if modulePath then
+    local success, result = pcall(require, modulePath)
     if success then
-        PromptController = result
-        sendLog("✅ Ditemukan!", "Module ditemukan di: " .. targetModule:GetFullName(), 3066993)
-    else
-        sendLog("⚠️ Error Require", "Module ditemukan tapi gagal require: " .. tostring(result), 16711680)
-    end
-else
-    -- Metode 4: Deep Memory Search (getgc) - Ini akan mencari table yang punya fungsi Prompt
-    for _, v in ipairs(getgc(true)) do
-        if type(v) == "table" and type(rawget(v, "Prompt")) == "function" and type(rawget(v, "Hide")) == "function" then
-            PromptController = v
-            sendLog("⚠️ Ditemukan via Memory", "Berhasil diculik dari Garbage Collection!", 3066993)
-            break
-        end
-    end
-end
-
--- Jika berhasil mendapat controller-nya, pasang Hook!
-if PromptController and type(PromptController.Prompt) == "function" then
-    local oldPrompt
-    oldPrompt = hookfunction(PromptController.Prompt, function(...)
-        local args = {...}
-        local debugStr = ""
+        local dump = ""
         
-        for i, v in ipairs(args) do
-            local typeV = type(v)
-            debugStr = debugStr .. "Arg["..i.."]: Type=" .. typeV .. " | Value=" .. tostring(v) .. "\n"
-            if typeV == "table" then
-                for k, val in pairs(v) do
-                    local valStr = tostring(val)
-                    -- Batasi panjang string jika itu adalah instance game yang panjang
-                    if string.len(valStr) > 50 then valStr = string.sub(valStr, 1, 50) .. "..." end
-                    debugStr = debugStr .. "   ["..tostring(k).."] = " .. valStr .. " ("..type(val)..")\n"
+        -- Cek isi utama table
+        for k, v in pairs(result) do
+            dump = dump .. tostring(k) .. " : [" .. type(v) .. "]\n"
+        end
+        
+        -- Terkadang developer menaruh fungsi di dalam Metatable (__index)
+        local mt = getmetatable(result)
+        if mt then
+            dump = dump .. "\n--- METATABLE ---\n"
+            for k, v in pairs(mt) do
+                dump = dump .. tostring(k) .. " : [" .. type(v) .. "]\n"
+            end
+            if type(mt.__index) == "table" then
+                dump = dump .. "\n--- __index ---\n"
+                for k, v in pairs(mt.__index) do
+                    dump = dump .. tostring(k) .. " : [" .. type(v) .. "]\n"
                 end
             end
         end
+
+        if dump == "" then 
+            dump = "Table kosong. Mungkin module ini di-obfuscate atau dikunci." 
+        end
         
-        -- Kirim laporan tiap kali ada pop-up / prompt muncul di layar
-        sendLog("🔍 SPY: Prompt Dipanggil!", "Data Argumen:\n```lua\n" .. debugStr .. "\n```", 16776960)
-        
-        return oldPrompt(...)
-    end)
-    
-    sendLog("🎯 SPY SIAP!", "Hook berhasil dipasang ke fungsi Prompt. Silakan suruh temanmu request trade sekarang!", 3066993)
+        sendLog("✅ Berhasil Dump PromptController", "Isi fungsinya adalah:\n```lua\n" .. dump .. "\n```")
+    else
+        sendLog("❌ Gagal Require", "Pesan Error: " .. tostring(result))
+    end
 else
-    sendLog("❌ Gagal Total", "Semua metode pencarian gagal menemukan PromptController. Game mungkin menggunakan sistem UI yang benar-benar berbeda.", 16711680)
+    sendLog("❌ Tidak Ditemukan", "Path ke ReplicatedStorage.Controllers.PromptController tidak valid.")
 end
