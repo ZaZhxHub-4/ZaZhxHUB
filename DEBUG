@@ -26,7 +26,7 @@ local pg = lp:WaitForChild("PlayerGui", 9e9)
 
 pcall(function()
     StarterGui:SetCore("SendNotification", {
-        Title = "ZHX AUTO PLAZA v14.1 TEST",
+        Title = "ZHX AUTO PLAZA v14.1 TEST 2",
         Text = "Menyiapkan Data & UI (Mohon Tunggu)...",
         Icon = "rbxassetid://78392602281326",
         Duration = 5
@@ -474,28 +474,62 @@ end
 
 local function listSingleSlot(idx)
     local s = slotData[idx]
-    sendEmbed("DEBUG listSingle "..idx, 
-    "capturedRF: "..tostring(capturedRF)..
-    "\ncapturedArgPattern: "..tostring(capturedArgPattern)..
-    "\nUUIDPos: "..tostring(capturedUUIDPos)..
-    "\nPricePos: "..tostring(capturedPricePos)..
-    "\nitemId: "..tostring(s and s.itemId)..
-    "\nactive: "..tostring(s and s.active), 3066993)
-    if not s.itemId or not s.active or slotListing[idx] or not capturedRF then return false end
+    sendEmbed("🔍 DEBUG Single "..idx,
+        "capturedRF: "..tostring(capturedRF)..
+        "\ncapturedArgPattern: "..tostring(capturedArgPattern)..
+        "\nUUIDPos: "..tostring(capturedUUIDPos).." | PricePos: "..tostring(capturedPricePos)..
+        "\nitemId: "..tostring(s and s.itemId)..
+        "\nactive: "..tostring(s and s.active)..
+        "\nprice: "..tostring(s and s.price), 16776960)
+    if not s.itemId or not s.active or slotListing[idx] or not capturedRF then
+        sendEmbed("⛔ Single "..idx.." SKIP",
+            "itemId nil="..tostring(not s or not s.itemId)..
+            " | active="..tostring(s and s.active)..
+            " | slotListing="..tostring(slotListing[idx])..
+            " | capturedRF nil="..tostring(not capturedRF), 16711680)
+        return false
+    end
     local uuid = getAvailableUUIDForItem(s.itemId, getAllUsedUUIDs("single", idx))
-    if not uuid then s.active=false; return false, "Habis" end
+    if not uuid then
+        local uuids = getUUIDsForItemId(s.itemId)
+        sendEmbed("⛔ Single "..idx.." UUID NIL",
+            "itemId: "..tostring(s.itemId)..
+            "\n#uuids di inventory: "..tostring(#uuids), 16711680)
+        s.active=false; return false, "Habis"
+    end
     local invokeArgs = buildInvokeArgs(s.category, uuid, s.price)
-    if not invokeArgs then return false, "belum siap" end
+    if not invokeArgs then
+        sendEmbed("⛔ Single "..idx.." invokeArgs NIL", "uuid: "..tostring(uuid), 16711680)
+        return false, "belum siap"
+    end
+    local argsOut = "uuid: "..tostring(uuid).."\n"
+    for i, v in ipairs(invokeArgs) do argsOut = argsOut.."Arg["..i.."]: "..tostring(v).."\n" end
+    sendEmbed("🔧 Single "..idx.." invokeArgs OK", argsOut, 16776960)
     slotListing[idx] = true
     local ok = pcall(function() capturedRF:InvokeServer(table.unpack(invokeArgs)) end)
     slotListing[idx] = false
+    sendEmbed("📤 Single "..idx.." InvokeServer", "ok: "..tostring(ok), ok and 3066993 or 16711680)
     if ok then s.listedUUID = uuid; return true
     else s.listedUUID = nil; return false end
 end
 
 local function listMultiSlot(mIdx)
     local ms = multiSlotData[mIdx]
-    if not ms.active or #ms.items==0 or multiListing[mIdx] or not capturedRF then return false end
+    sendEmbed("🔍 DEBUG Multi "..mIdx,
+        "capturedRF: "..tostring(capturedRF)..
+        "\ncapturedArgPattern: "..tostring(capturedArgPattern)..
+        "\nms.active: "..tostring(ms.active)..
+        "\n#ms.items: "..tostring(#ms.items)..
+        "\nmultiListing: "..tostring(multiListing[mIdx])..
+        "\nprice: "..tostring(ms.price), 16776960)
+    if not ms.active or #ms.items==0 or multiListing[mIdx] or not capturedRF then
+        sendEmbed("⛔ Multi "..mIdx.." SKIP",
+            "ms.active="..tostring(ms.active)..
+            " | items="..tostring(#ms.items)..
+            " | multiListing="..tostring(multiListing[mIdx])..
+            " | capturedRF nil="..tostring(not capturedRF), 16711680)
+        return false
+    end
     local totalItems = #ms.items
     local found = false
     for _ = 1, totalItems do
@@ -509,15 +543,26 @@ local function listMultiSlot(mIdx)
     local used = getAllUsedUUIDs("multi", mIdx)
     local uuid = getAvailableUUIDForItem(it.itemId, used)
     if not uuid then
+        local uuids = getUUIDsForItemId(it.itemId)
+        sendEmbed("⛔ Multi "..mIdx.." UUID NIL",
+            "itemId: "..tostring(it.itemId)..
+            "\n#uuids di inventory: "..tostring(#uuids), 16711680)
         ms.currentItemIdx = ms.currentItemIdx + 1
         if ms.currentItemIdx > totalItems then ms.currentItemIdx = 1 end
         return false, "item saat ini habis"
     end
     local invokeArgs = buildInvokeArgs(it.category, uuid, ms.price)
-    if not invokeArgs then return false, "belum siap" end
+    if not invokeArgs then
+        sendEmbed("⛔ Multi "..mIdx.." invokeArgs NIL", "uuid: "..tostring(uuid), 16711680)
+        return false, "belum siap"
+    end
+    local argsOut = "uuid: "..tostring(uuid).."\n"
+    for i, v in ipairs(invokeArgs) do argsOut = argsOut.."Arg["..i.."]: "..tostring(v).."\n" end
+    sendEmbed("🔧 Multi "..mIdx.." invokeArgs OK", argsOut, 16776960)
     multiListing[mIdx] = true
     local ok = pcall(function() capturedRF:InvokeServer(table.unpack(invokeArgs)) end)
     multiListing[mIdx] = false
+    sendEmbed("📤 Multi "..mIdx.." InvokeServer", "ok: "..tostring(ok), ok and 3066993 or 16711680)
     if ok then ms.listedUUID = uuid; return true
     else ms.listedUUID = nil; return false end
 end
