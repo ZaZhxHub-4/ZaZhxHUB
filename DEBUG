@@ -1,118 +1,88 @@
 -- ====================================================
--- TESTER FINAL v2: AUTO REJECT TRADE (PURE HOOKING)
--- Target: FireChoicePrompt
--- 100% Stealth / Anti-Cheat Safe
+-- SCRIPT RECORDER: CCTV PROMPT CONTROLLER
+-- Merekam aktivitas Trade dari muncul sampai ditolak
 -- ====================================================
 
 local HttpService = game:GetService("HttpService")
 local WebhookURL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
--- Global Toggle
-getgenv().AutoRejectTrade = true 
-
-local function sendLog(title, desc, color)
+local function sendLog(title, desc)
     pcall(function()
         request({
             Url = WebhookURL,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🛡️ Trade Blocker",
+                username = "🎥 Trade Recorder",
                 embeds = {{
                     title = title,
-                    description = desc,
-                    color = color or 16711680,
-                    footer = {text = "Fish It Auto Reject • " .. os.date("%H:%M:%S")}
+                    -- Discord membatasi deskripsi max 4096 karakter
+                    description = string.sub(desc, 1, 4000), 
+                    color = 16776960
                 }}
             })
         })
     end)
 end
 
--- Ambil Module langsung dari path yang sudah kita temukan
 local RS = game:GetService("ReplicatedStorage")
 local targetModule = RS:WaitForChild("Controllers"):WaitForChild("PromptController")
 local PromptController = require(targetModule)
 
-if PromptController and type(PromptController.FireChoicePrompt) == "function" then
+-- Fungsi untuk membongkar isi table sampai ke dalam (Deep Dump)
+local function serialize(val, depth)
+    depth = depth or 0
+    if depth > 4 then return tostring(val) end -- Batasi kedalaman agar tidak crash
     
-    local oldFireChoice
-    oldFireChoice = hookfunction(PromptController.FireChoicePrompt, function(...)
-        local args = {...}
-        local isTrade = false
-        local declineCallback = nil
-        local foundText = "Tidak ada teks"
-
-        -- Fungsi detektif untuk membedah argumen yang dikirim game
-        local function scanData(data)
-            for k, v in pairs(data) do
-                local typeV = type(v)
-                local strV = tostring(v)
-                
-                -- Cari indikasi pesan Trade
-                if typeV == "string" then
-                    local lowerStr = string.lower(strV)
-                    if string.find(lowerStr, "trade") or string.find(lowerStr, "request from") then
-                        isTrade = true
-                        foundText = strV
-                    end
-                    
-                -- Cari fungsi callback untuk tombol Decline/No
-                elseif typeV == "function" then
-                    local lowerK = string.lower(tostring(k))
-                    -- Game biasanya menamai indeks callback dengan "No", "Decline", atau "Cancel"
-                    if string.find(lowerK, "no") or string.find(lowerK, "decline") or string.find(lowerK, "cancel") then
-                        declineCallback = v
-                    end
-                
-                -- Jika ada table di dalam table, bongkar lagi
-                elseif typeV == "table" then
-                    scanData(v)
-                end
-            end
+    if type(val) == "table" then
+        local str = "{\n"
+        for k, v in pairs(val) do
+            str = str .. string.rep("  ", depth + 1) .. "[" .. tostring(k) .. "] = " .. serialize(v, depth + 1) .. ",\n"
         end
-
-        -- Mulai pembedahan jika fitur menyala
-        if getgenv().AutoRejectTrade then
-            for _, v in ipairs(args) do
-                if type(v) == "table" then
-                    scanData(v)
-                elseif type(v) == "string" then
-                    local lowerStr = string.lower(tostring(v))
-                    if string.find(lowerStr, "trade") or string.find(lowerStr, "request from") then
-                        isTrade = true
-                        foundText = tostring(v)
-                    end
-                end
-            end
-        end
-
-        -- EKSEKUSI BLOKIR
-        if getgenv().AutoRejectTrade and isTrade then
-            local actionLog = "**Pesan Terdeteksi:**\n" .. foundText
-            
-            -- Jika kita menemukan fungsi tombol "No", paksa eksekusi secara background!
-            if declineCallback then
-                task.spawn(function()
-                    pcall(declineCallback)
-                end)
-                actionLog = actionLog .. "\n\n✅ *Sistem berhasil menemukan dan menekan tombol 'No' (Decline) secara virtual ke server.*"
-            else
-                actionLog = actionLog .. "\n\n⚠️ *Fungsi Decline spesifik tidak ditemukan di memori, tapi UI tetap diblokir.*"
-            end
-
-            -- Kirim laporan ke Discord
-            sendLog("⛔ TRADE DIBLOKIR TOTAL", actionLog, 16711680)
-            
-            -- RETURN NIL: Ini akan memotong render UI, layar akan tetap bersih!
-            return nil
-        end
-
-        -- Jika bukan trade request, biarkan UI-nya tetap berjalan seperti biasa
-        return oldFireChoice(...)
-    end)
-    
-    sendLog("🎯 AUTO REJECT SIAP!", "Hook berhasil ditanam ke dalam 'FireChoicePrompt'. Menunggu korban...", 3066993)
-else
-    sendLog("❌ Gagal Hook", "Fungsi FireChoicePrompt tidak terdeteksi meskipun module ditemukan.", 16711680)
+        return str .. string.rep("  ", depth) .. "}"
+    elseif type(val) == "string" then
+        return '"' .. val .. '"'
+    elseif type(val) == "function" then
+        return "[Function]"
+    elseif typeof(val) == "Instance" then
+        return "[Instance: " .. val.ClassName .. " | " .. val.Name .. "]"
+    else
+        return tostring(val)
+    end
 end
+
+-- Pasang CCTV di SEMUA fungsi dalam PromptController
+local hookedCount = 0
+for funcName, funcObj in pairs(PromptController) do
+    if type(funcObj) == "function" then
+        local oldFunc
+        oldFunc = hookfunction(PromptController[funcName], function(...)
+            local args = {...}
+            local dumpStr = ""
+            local isTradeRelated = false
+
+            -- Bongkar semua argumen
+            for i, v in ipairs(args) do
+                local serializedData = serialize(v)
+                dumpStr = dumpStr .. "Arg["..i.."]: " .. serializedData .. "\n\n"
+                
+                -- Jika di dalam data ini ada kata "trade", tandai untuk direkam!
+                if string.find(string.lower(serializedData), "trade") then
+                    isTradeRelated = true
+                end
+            end
+
+            -- Jika ini berhubungan dengan Trade, kirim rekamannya ke Discord
+            if isTradeRelated then
+                sendLog("🎥 TEREKAM: " .. tostring(funcName), "```lua\n" .. dumpStr .. "\n
+```")
+            end
+
+            -- Kembalikan fungsi asli agar game berjalan normal (kamu bisa klik 'No' secara manual)
+            return oldFunc(...)
+        end)
+        hookedCount = hookedCount + 1
+    end
+end
+
+sendLog("🎥 RECORDER SIAP!", "CCTV dipasang pada " .. hookedCount .. " fungsi PromptController.\n\nSilakan test: Suruh temanmu ajak Trade -> Biarkan muncul -> Klik tombol 'No'. Kita lihat log aslinya!")
