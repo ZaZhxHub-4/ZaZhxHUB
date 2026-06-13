@@ -1,65 +1,53 @@
-local HS = game:GetService("HttpService")
-local WH = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+-- ====================================================
+-- SMART AUTO REJECT TRADE (FINAL STRIKE - V5)
+-- Target: FirePrompt (Sesuai Log Asli)
+-- ====================================================
 
-local function log(title, desc)
+getgenv().AutoRejectTrade = true 
+
+local HttpService = game:GetService("HttpService")
+local WebhookURL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+
+local function sendLog(title, desc, color)
     pcall(function()
         request({
-            Url = WH, Method = "POST",
+            Url = WebhookURL, Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
-            Body = HS:JSONEncode({
-                username = "SPY",
-                embeds = {{title = title, description = string.sub(desc, 1, 4000), color = 16776960}}
+            Body = HttpService:JSONEncode({
+                username = "🛡️ Smart Blocker",
+                embeds = {{ title = title, description = desc, color = color or 16711680 }}
             })
         })
     end)
 end
 
-local PC
-for _, m in ipairs(getloadedmodules()) do
-    if m.Name == "PromptController" then
-        local ok, r = pcall(require, m)
-        if ok then PC = r end
+-- Ambil PromptController dari memori
+local PromptController = nil
+for _, mod in ipairs(getloadedmodules()) do
+    if mod.Name == "PromptController" then
+        pcall(function() PromptController = require(mod) end)
         break
     end
 end
 
-if not PC then log("GAGAL", "PromptController tidak ada di getloadedmodules"); return end
-
-local function dumpArg(v, depth)
-    depth = depth or 0
-    if depth > 2 then return "..." end
-    local t = type(v)
-    if t == "string" then return '"'..v..'"'
-    elseif t == "number" then return tostring(v)
-    elseif t == "boolean" then return tostring(v)
-    elseif t == "function" then return "[function]"
-    elseif t == "table" then
-        local s = "{\n"
-        for k, val in pairs(v) do
-            s = s .. string.rep("  ", depth+1).."["..tostring(k).."] = "..dumpArg(val, depth+1).."\n"
-        end
-        return s .. string.rep("  ", depth).."}"
-    elseif typeof(v) == "Instance" then
-        return "[Instance:"..v.ClassName..":"..v.Name.."]"
-    else
-        return tostring(v)
-    end
-end
-
-for _, funcName in ipairs({"FirePrompt", "FireChoicePrompt"}) do
-    if type(PC[funcName]) == "function" then
-        local old
-        old = hookfunction(PC[funcName], function(...)
-            local args = {...}
-            local out = ""
-            -- skip args[1] (self), dump sisanya
-            for i = 2, #args do
-                out = out .. "Arg["..i.."]: "..dumpArg(args[i]).."\n\n"
+if PromptController and type(PromptController.FirePrompt) == "function" then
+    local oldFirePrompt
+    oldFirePrompt = hookfunction(PromptController.FirePrompt, function(self, ...)
+        local args = {...}
+        
+        -- Filter berdasarkan log asli: Argumen ke-2 adalah string pesan
+        if getgenv().AutoRejectTrade and type(args[1]) == "string" then
+            local msg = string.lower(args[1])
+            if string.find(msg, "trade request") then
+                sendLog("⛔ TRADE BLOCKED", "UI Trade berhasil diblokir!\nPesan: **" .. args[1] .. "**", 16711680)
+                return nil -- Memotong eksekusi agar UI tidak muncul
             end
-            if out == "" then out = "(tidak ada argumen selain self)" end
-            log("CALLED: "..funcName, "```\n"..out.."\n```")
-            return old(...)
-        end)
-        log("HOOK OK", funcName.." berhasil di-hook. Suruh teman request trade sekarang.")
-    end
+        end
+        
+        return oldFirePrompt(self, ...)
+    end)
+    
+    sendLog("✅ SMART REJECT V5 AKTIF", "Sistem siap memblokir FirePrompt secara stealth.", 3066993)
+else
+    sendLog("❌ GAGAL HOOK", "FirePrompt tidak ditemukan di PromptController.", 16711680)
 end
