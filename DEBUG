@@ -12,32 +12,29 @@ local function sendWebhook(msg)
     end)
 end
 
-local listening = false
-local namecallHook
-namecallHook = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    if method == "InvokeServer" and listening then
-        local args = {...}
-        local out = "InvokeServer: "..tostring(self).."\n"
-        for i, v in ipairs(args) do out = out.."Arg["..i.."]: "..tostring(v).."\n" end
-        sendWebhook(out)
-    end
-    return namecallHook(self, ...)
-end))
+local targetModules = {"BoothShopController", "TradeBoothController", "Booth", "BoothShop", "TradeBoothController"}
 
 for _, m in ipairs(getloadedmodules()) do
-    if m.Name == "TradeBoothController" then
-        local ok, mod = pcall(require, m)
-        if ok then
-            local origUpdate = mod.UpdateSelectedItem
-            mod.UpdateSelectedItem = function(...)
-                listening = true
-                local result = origUpdate(...)
-                task.delay(3, function() listening = false end)
-                return result
+    for _, target in ipairs(targetModules) do
+        if m.Name == target then
+            local ok, mod = pcall(require, m)
+            if ok and type(mod) == "table" then
+                for k, v in pairs(mod) do
+                    if type(v) == "function" then
+                        local orig = v
+                        local modName = m.Name
+                        local funcName = k
+                        mod[k] = function(...)
+                            sendWebhook("CALLED: "..modName.."."..funcName)
+                            return orig(...)
+                        end
+                    end
+                end
+                sendWebhook("Hooked: "..m.Name)
             end
-            sendWebhook("Hook siap. Buka Edit Booth, pilih item, tekan Sell.")
+            break
         end
-        break
     end
 end
+
+sendWebhook("Semua hook siap. Buka Edit Booth, pilih item, tekan Sell.")
