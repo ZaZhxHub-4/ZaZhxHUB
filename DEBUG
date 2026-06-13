@@ -1,6 +1,5 @@
 -- ====================================================
--- SCRIPT RECORDER: CCTV PROMPT CONTROLLER
--- Merekam aktivitas Trade dari muncul sampai ditolak
+-- SAFE RECORDER v2: NO FILTER, NO CRASH
 -- ====================================================
 
 local HttpService = game:GetService("HttpService")
@@ -13,10 +12,9 @@ local function sendLog(title, desc)
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🎥 Trade Recorder",
+                username = "🎥 Safe Recorder",
                 embeds = {{
                     title = title,
-                    -- Discord membatasi deskripsi max 4096 karakter
                     description = string.sub(desc, 1, 4000), 
                     color = 16776960
                 }}
@@ -29,15 +27,21 @@ local RS = game:GetService("ReplicatedStorage")
 local targetModule = RS:WaitForChild("Controllers"):WaitForChild("PromptController")
 local PromptController = require(targetModule)
 
--- Fungsi untuk membongkar isi table sampai ke dalam (Deep Dump)
-local function serialize(val, depth)
+-- Anti-Crash Table Dumper
+local function safeDump(val, depth, seen)
     depth = depth or 0
-    if depth > 4 then return tostring(val) end -- Batasi kedalaman agar tidak crash
+    seen = seen or {}
+    
+    -- Batasi kedalaman agar tidak membebani executor
+    if depth > 3 then return "{...}" end
     
     if type(val) == "table" then
+        if seen[val] then return "{Cyclic/Berulang}" end
+        seen[val] = true
+        
         local str = "{\n"
         for k, v in pairs(val) do
-            str = str .. string.rep("  ", depth + 1) .. "[" .. tostring(k) .. "] = " .. serialize(v, depth + 1) .. ",\n"
+            str = str .. string.rep("  ", depth + 1) .. "[" .. tostring(k) .. "] = " .. safeDump(v, depth + 1, seen) .. ",\n"
         end
         return str .. string.rep("  ", depth) .. "}"
     elseif type(val) == "string" then
@@ -45,44 +49,30 @@ local function serialize(val, depth)
     elseif type(val) == "function" then
         return "[Function]"
     elseif typeof(val) == "Instance" then
-        return "[Instance: " .. val.ClassName .. " | " .. val.Name .. "]"
+        return "[Instance: " .. val.ClassName .. "]"
     else
         return tostring(val)
     end
 end
 
--- Pasang CCTV di SEMUA fungsi dalam PromptController
-local hookedCount = 0
-for funcName, funcObj in pairs(PromptController) do
-    if type(funcObj) == "function" then
-        local oldFunc
-        oldFunc = hookfunction(PromptController[funcName], function(...)
-            local args = {...}
-            local dumpStr = ""
-            local isTradeRelated = false
+if type(PromptController.FireChoicePrompt) == "function" then
+    local oldFireChoice
+    oldFireChoice = hookfunction(PromptController.FireChoicePrompt, function(...)
+        local args = {...}
+        local dumpStr = ""
+        
+        for i, v in ipairs(args) do
+            dumpStr = dumpStr .. "Arg["..i.."]: " .. safeDump(v) .. "\n\n"
+        end
 
-            -- Bongkar semua argumen
-            for i, v in ipairs(args) do
-                local serializedData = serialize(v)
-                dumpStr = dumpStr .. "Arg["..i.."]: " .. serializedData .. "\n\n"
-                
-                -- Jika di dalam data ini ada kata "trade", tandai untuk direkam!
-                if string.find(string.lower(serializedData), "trade") then
-                    isTradeRelated = true
-                end
-            end
-
-            -- Jika ini berhubungan dengan Trade, kirim rekamannya ke Discord
-            if isTradeRelated then
-                sendLog("🎥 TEREKAM: " .. tostring(funcName), "```lua\n" .. dumpStr .. "\n
+        -- TANPA FILTER APAPUN. Langsung kirim ke Discord setiap kali FireChoicePrompt dipanggil.
+        sendLog("📥 RECORD: FireChoicePrompt", "```lua\n" .. dumpStr .. "\n
 ```")
-            end
 
-            -- Kembalikan fungsi asli agar game berjalan normal (kamu bisa klik 'No' secara manual)
-            return oldFunc(...)
-        end)
-        hookedCount = hookedCount + 1
-    end
+        return oldFireChoice(...)
+    end)
+    
+    sendLog("✅ SAFE RECORDER AKTIF", "Berhasil memasang Hook. Silakan suruh temanmu request trade sekarang. Log akan langsung masuk ke sini.")
+else
+    sendLog("❌ ERROR", "Fungsi FireChoicePrompt tidak ada di module.")
 end
-
-sendLog("🎥 RECORDER SIAP!", "CCTV dipasang pada " .. hookedCount .. " fungsi PromptController.\n\nSilakan test: Suruh temanmu ajak Trade -> Biarkan muncul -> Klik tombol 'No'. Kita lihat log aslinya!")
