@@ -1,11 +1,8 @@
 -- ====================================================
--- TESTER: AUTO REJECT TRADE (PURE MODULE HOOKING)
--- 100% Anti-Cheat Safe (Tanpa Simulasi Klik UI)
+-- TESTER TAHAP 3: PROMPT CONTROLLER SPY (RAW LOGGER)
 -- ====================================================
 
 local HttpService = game:GetService("HttpService")
-
--- Menggunakan Webhook rahasia dari script v14 utama (Tongki)
 local WebhookURL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
 local function sendLog(title, desc, color)
@@ -15,23 +12,20 @@ local function sendLog(title, desc, color)
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🧪 Hook Tester",
+                username = "🕵️ Hook Spy",
                 embeds = {{
                     title = title,
                     description = desc,
-                    color = color or 16711680, -- Default Merah
-                    footer = {text = "Fish It Auto Reject Tester • " .. os.date("%H:%M:%S")}
+                    color = color or 16776960, -- Kuning
+                    footer = {text = "Fish It Data Spy • " .. os.date("%H:%M:%S")}
                 }}
             })
         })
     end)
 end
 
-sendLog("🧪 Memulai Inject", "Mencari PromptController di memory (Metode Hook)...", 3066993)
-
 local PromptController = nil
 
--- 1. Mencari PromptController dari module yang sudah dimuat oleh game
 for _, module in pairs(getloadedmodules()) do
     if module.Name == "PromptController" then
         local success, result = pcall(require, module)
@@ -42,69 +36,33 @@ for _, module in pairs(getloadedmodules()) do
     end
 end
 
-if PromptController then
-    -- Kirim isi dari PromptController ke Discord agar kita tahu fungsi apa saja yang ada
-    local keys = {}
-    for k, v in pairs(PromptController) do
-        table.insert(keys, tostring(k) .. " [" .. type(v) .. "]")
-    end
-    sendLog("✅ PromptController Ditemukan", "Isi Module:\n```\n" .. table.concat(keys, "\n") .. "\n```", 3066993)
-    
-    -- 2. Memasang Hook ke fungsi-fungsi yang berpotensi memanggil UI Prompt
-    local targetFunctions = {"Prompt", "Show", "New", "Create", "TradeRequest"}
-    local hookedCount = 0
-    
-    for _, funcName in ipairs(targetFunctions) do
-        if type(PromptController[funcName]) == "function" then
-            local oldFunc
-            oldFunc = hookfunction(PromptController[funcName], function(...)
-                local args = {...}
-                local isTrade = false
-                local debugInfo = ""
-                
-                -- Analisa semua argument yang masuk ke fungsi ini
-                for i, v in ipairs(args) do
-                    debugInfo = debugInfo .. "Arg["..i.."]: " .. tostring(v) .. " ("..type(v)..")\n"
-                    if type(v) == "string" then
-                        local lowerStr = string.lower(v)
-                        if string.find(lowerStr, "trade") or string.find(lowerStr, "request") then
-                            isTrade = true
-                        end
-                    elseif type(v) == "table" then
-                        for tk, tv in pairs(v) do
-                            local valStr = tostring(tv)
-                            debugInfo = debugInfo .. "  ["..tostring(tk).."] = " .. valStr .. " ("..type(tv)..")\n"
-                            if type(tv) == "string" then
-                                local lowerStr = string.lower(tv)
-                                if string.find(lowerStr, "trade") or string.find(lowerStr, "request") then
-                                    isTrade = true
-                                end
-                            end
-                        end
-                    end
+if PromptController and type(PromptController.Prompt) == "function" then
+    local oldPrompt
+    oldPrompt = hookfunction(PromptController.Prompt, function(...)
+        local args = {...}
+        local debugStr = ""
+        
+        -- Membedah semua argumen yang masuk ke fungsi Prompt
+        for i, v in ipairs(args) do
+            local typeV = type(v)
+            debugStr = debugStr .. "Arg["..i.."]: Type = " .. typeV .. " | Value = " .. tostring(v) .. "\n"
+            
+            -- Jika argumen berupa table, kita bedah isinya selapis
+            if typeV == "table" then
+                for k, val in pairs(v) do
+                    debugStr = debugStr .. "   ["..tostring(k).."] = " .. tostring(val) .. " ("..type(val)..")\n"
                 end
-                
-                -- Jika data yang ditangkap mengindikasikan ini adalah Trade Request
-                if isTrade then
-                    sendLog("🛡️ TRADE DIBLOKIR (Hooked)", "Fungsi yang dicegat: **" .. funcName .. "**\n\n**Data Arguments (Bypass Rendering):**\n```\n" .. debugInfo .. "\n```", 16711680)
-                    
-                    -- KUNCI UTAMA: Kita mengembalikan 'nil' agar script game gagal mengeksekusi UI-nya
-                    -- Dengan begini, pop-up tidak akan pernah tergambar (render) di layar.
-                    return nil 
-                end
-                
-                -- Jika bukan trade (misal prompt sistem lain), biarkan berjalan normal
-                return oldFunc(...)
-            end)
-            hookedCount = hookedCount + 1
+            end
         end
-    end
+        
+        -- Kirim hasil intaian ke Discord
+        sendLog("🔍 SPY: Fungsi Prompt Dipanggil!", "Data yang dikirim game:\n```lua\n" .. debugStr .. "\n```", 16776960)
+        
+        -- Biarkan UI tetap muncul agar game tidak error saat testing
+        return oldPrompt(...)
+    end)
     
-    if hookedCount > 0 then
-        sendLog("🔗 Hook Terpasang", "Berhasil memasang penahan di " .. tostring(hookedCount) .. " fungsi PromptController. Menunggu ada yang trade...", 3066993)
-    else
-        sendLog("⚠️ Warning", "PromptController ditemukan, tapi tidak memiliki fungsi standar (Prompt/Show).", 16711680)
-    end
+    sendLog("✅ Spy Terpasang", "Hook berhasil ditanam ke fungsi Prompt. Silakan suruh temanmu request trade sekarang!", 3066993)
 else
-    sendLog("❌ Gagal", "PromptController tidak ditemukan via getloadedmodules(). Mungkin perlu metode getgc().", 16711680)
+    sendLog("❌ Gagal", "PromptController tidak ditemukan atau tidak memiliki fungsi 'Prompt'.", 16711680)
 end
