@@ -26,7 +26,7 @@ local pg = lp:WaitForChild("PlayerGui", 9e9)
 
 pcall(function()
     StarterGui:SetCore("SendNotification", {
-        Title = "ZHX AUTO PLAZA v14.1",
+        Title = "ZHX AUTO PLAZA v14.1 TEST",
         Text = "Menyiapkan Data & UI (Mohon Tunggu)...",
         Icon = "rbxassetid://78392602281326",
         Duration = 5
