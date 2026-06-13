@@ -26,7 +26,7 @@ local pg = lp:WaitForChild("PlayerGui", 9e9)
 
 pcall(function()
     StarterGui:SetCore("SendNotification", {
-        Title = "ZHX AUTO PLAZA v14.1 TEST 3",
+        Title = "ZHX AUTO PLAZA v14.1 TEST 4",
         Text = "Menyiapkan Data & UI (Mohon Tunggu)...",
         Icon = "rbxassetid://78392602281326",
         Duration = 5
@@ -1001,50 +1001,48 @@ Tabs.Setup:AddButton({
         })
 
         -- Auto capture RF
-        if rfCaptureAttempted then return end
+if rfCaptureAttempted then return end
 rfCaptureAttempted = true
 if capturedRF then return end
 
-        if not checkBoothOwnership() then
-            Fluent:Notify({Title="⛔ Belum Claim Booth", Content="Claim booth dulu sebelum muat item!", Type="Error", Duration=3})
-            return
-        end
+if not checkBoothOwnership() then
+    Fluent:Notify({Title="⛔ Belum Claim Booth", Content="Claim booth dulu!", Type="Error", Duration=3})
+    return
+end
 
-        -- Cari item pancingan
-        local baitItem = nil
-        local inv = PlayerData:Get("Inventory")
-        if inv and inv.Items then
-            for _, item in ipairs(inv.Items) do
-                local cat = getItemCategory(item.Id)
-                if cat == "Enchant Stones" then
-                    baitItem = {uuid = item.UUID, itemId = item.Id, category = cat}
-                    break
-                end
-            end
-            if not baitItem then
-                for _, item in ipairs(inv.Items) do
-                    local cat = getItemCategory(item.Id)
-                    if cat == "Fish" then
-                        baitItem = {uuid = item.UUID, itemId = item.Id, category = cat}
-                        break
-                    end
-                end
+local baitItem = nil
+local inv = PlayerData:Get("Inventory")
+if inv and inv.Items then
+    for _, item in ipairs(inv.Items) do
+        local cat = getItemCategory(item.Id)
+        if cat == "Enchant Stones" then
+            baitItem = {uuid=item.UUID, itemId=item.Id, category=cat}; break
+        end
+    end
+    if not baitItem then
+        for _, item in ipairs(inv.Items) do
+            local cat = getItemCategory(item.Id)
+            if cat == "Fish" then
+                baitItem = {uuid=item.UUID, itemId=item.Id, category=cat}; break
             end
         end
+    end
+end
 
-        if not baitItem then
-            Fluent:Notify({Title="⛔ Gagal", Content="Tidak ada item Enchant Stones atau Fish di inventory!", Type="Error", Duration=3})
-            return
-        end
+if not baitItem then
+    Fluent:Notify({Title="⛔ Gagal", Content="Tidak ada item di inventory!", Type="Error", Duration=3})
+    return
+end
 
-        local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
-        local createRF = net["RF/Trading/CreateSaleListing"]
-        if not createRF then
-            Fluent:Notify({Title="⛔ Gagal", Content="RF booth tidak ditemukan.", Type="Error", Duration=3})
-            return
-        end
+local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+local createRF = net["RF/Trading/CreateSaleListing"]
+if not createRF then
+    Fluent:Notify({Title="⛔ Gagal", Content="RF tidak ditemukan.", Type="Error", Duration=3})
+    return
+end
 
-        local _autoCaptureHook = nil
+-- Tangkap args via hook, RF langsung dari createRF
+local _autoCaptureHook = nil
 local _captureComplete = false
 capturing = true
 _autoCaptureHook = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
@@ -1052,7 +1050,8 @@ _autoCaptureHook = hookmetamethod(game, "__namecall", newcclosure(function(self,
         local args = {...}
         local up, pp = detectArgPositions(args)
         if up and pp then
-            capturedRF         = self
+            -- Gunakan createRF langsung, bukan self dari hook
+            capturedRF         = createRF
             capturedArgPattern = args
             capturedUUIDPos    = up
             capturedPricePos   = pp
@@ -1060,7 +1059,7 @@ _autoCaptureHook = hookmetamethod(game, "__namecall", newcclosure(function(self,
             task.spawn(function()
                 task.wait(0.3)
                 capturing = false
-                Fluent:Notify({Title="✅ Siap", Content="Sinyal tertangkap! Lanjut isi slot & mulai auto booth.", Type="Success", Duration=3})
+                Fluent:Notify({Title="✅ Siap", Content="Sinyal tertangkap!", Type="Success", Duration=3})
             end)
         end
     end
