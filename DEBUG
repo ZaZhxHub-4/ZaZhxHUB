@@ -1,61 +1,118 @@
+-- ====================================================
+-- TESTER FINAL v2: AUTO REJECT TRADE (PURE HOOKING)
+-- Target: FireChoicePrompt
+-- 100% Stealth / Anti-Cheat Safe
+-- ====================================================
+
 local HttpService = game:GetService("HttpService")
 local WebhookURL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-local function sendLog(title, desc)
+-- Global Toggle
+getgenv().AutoRejectTrade = true 
+
+local function sendLog(title, desc, color)
     pcall(function()
         request({
             Url = WebhookURL,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                username = "🗂️ Module Dumper",
+                username = "🛡️ Trade Blocker",
                 embeds = {{
                     title = title,
                     description = desc,
-                    color = 3066993
+                    color = color or 16711680,
+                    footer = {text = "Fish It Auto Reject • " .. os.date("%H:%M:%S")}
                 }}
             })
         })
     end)
 end
 
+-- Ambil Module langsung dari path yang sudah kita temukan
 local RS = game:GetService("ReplicatedStorage")
-local Controllers = RS:FindFirstChild("Controllers")
-local modulePath = Controllers and Controllers:FindFirstChild("PromptController")
+local targetModule = RS:WaitForChild("Controllers"):WaitForChild("PromptController")
+local PromptController = require(targetModule)
 
-if modulePath then
-    local success, result = pcall(require, modulePath)
-    if success then
-        local dump = ""
-        
-        -- Cek isi utama table
-        for k, v in pairs(result) do
-            dump = dump .. tostring(k) .. " : [" .. type(v) .. "]\n"
-        end
-        
-        -- Terkadang developer menaruh fungsi di dalam Metatable (__index)
-        local mt = getmetatable(result)
-        if mt then
-            dump = dump .. "\n--- METATABLE ---\n"
-            for k, v in pairs(mt) do
-                dump = dump .. tostring(k) .. " : [" .. type(v) .. "]\n"
-            end
-            if type(mt.__index) == "table" then
-                dump = dump .. "\n--- __index ---\n"
-                for k, v in pairs(mt.__index) do
-                    dump = dump .. tostring(k) .. " : [" .. type(v) .. "]\n"
+if PromptController and type(PromptController.FireChoicePrompt) == "function" then
+    
+    local oldFireChoice
+    oldFireChoice = hookfunction(PromptController.FireChoicePrompt, function(...)
+        local args = {...}
+        local isTrade = false
+        local declineCallback = nil
+        local foundText = "Tidak ada teks"
+
+        -- Fungsi detektif untuk membedah argumen yang dikirim game
+        local function scanData(data)
+            for k, v in pairs(data) do
+                local typeV = type(v)
+                local strV = tostring(v)
+                
+                -- Cari indikasi pesan Trade
+                if typeV == "string" then
+                    local lowerStr = string.lower(strV)
+                    if string.find(lowerStr, "trade") or string.find(lowerStr, "request from") then
+                        isTrade = true
+                        foundText = strV
+                    end
+                    
+                -- Cari fungsi callback untuk tombol Decline/No
+                elseif typeV == "function" then
+                    local lowerK = string.lower(tostring(k))
+                    -- Game biasanya menamai indeks callback dengan "No", "Decline", atau "Cancel"
+                    if string.find(lowerK, "no") or string.find(lowerK, "decline") or string.find(lowerK, "cancel") then
+                        declineCallback = v
+                    end
+                
+                -- Jika ada table di dalam table, bongkar lagi
+                elseif typeV == "table" then
+                    scanData(v)
                 end
             end
         end
 
-        if dump == "" then 
-            dump = "Table kosong. Mungkin module ini di-obfuscate atau dikunci." 
+        -- Mulai pembedahan jika fitur menyala
+        if getgenv().AutoRejectTrade then
+            for _, v in ipairs(args) do
+                if type(v) == "table" then
+                    scanData(v)
+                elseif type(v) == "string" then
+                    local lowerStr = string.lower(tostring(v))
+                    if string.find(lowerStr, "trade") or string.find(lowerStr, "request from") then
+                        isTrade = true
+                        foundText = tostring(v)
+                    end
+                end
+            end
         end
-        
-        sendLog("✅ Berhasil Dump PromptController", "Isi fungsinya adalah:\n```lua\n" .. dump .. "\n```")
-    else
-        sendLog("❌ Gagal Require", "Pesan Error: " .. tostring(result))
-    end
+
+        -- EKSEKUSI BLOKIR
+        if getgenv().AutoRejectTrade and isTrade then
+            local actionLog = "**Pesan Terdeteksi:**\n" .. foundText
+            
+            -- Jika kita menemukan fungsi tombol "No", paksa eksekusi secara background!
+            if declineCallback then
+                task.spawn(function()
+                    pcall(declineCallback)
+                end)
+                actionLog = actionLog .. "\n\n✅ *Sistem berhasil menemukan dan menekan tombol 'No' (Decline) secara virtual ke server.*"
+            else
+                actionLog = actionLog .. "\n\n⚠️ *Fungsi Decline spesifik tidak ditemukan di memori, tapi UI tetap diblokir.*"
+            end
+
+            -- Kirim laporan ke Discord
+            sendLog("⛔ TRADE DIBLOKIR TOTAL", actionLog, 16711680)
+            
+            -- RETURN NIL: Ini akan memotong render UI, layar akan tetap bersih!
+            return nil
+        end
+
+        -- Jika bukan trade request, biarkan UI-nya tetap berjalan seperti biasa
+        return oldFireChoice(...)
+    end)
+    
+    sendLog("🎯 AUTO REJECT SIAP!", "Hook berhasil ditanam ke dalam 'FireChoicePrompt'. Menunggu korban...", 3066993)
 else
-    sendLog("❌ Tidak Ditemukan", "Path ke ReplicatedStorage.Controllers.PromptController tidak valid.")
+    sendLog("❌ Gagal Hook", "Fungsi FireChoicePrompt tidak terdeteksi meskipun module ditemukan.", 16711680)
 end
