@@ -26,7 +26,7 @@ local pg = lp:WaitForChild("PlayerGui", 9e9)
 
 pcall(function()
     StarterGui:SetCore("SendNotification", {
-        Title = "ZHX AUTO PLAZA v14.1 TEST 2",
+        Title = "ZHX AUTO PLAZA v14.1 TEST 3",
         Text = "Menyiapkan Data & UI (Mohon Tunggu)...",
         Icon = "rbxassetid://78392602281326",
         Duration = 5
@@ -1045,27 +1045,26 @@ if capturedRF then return end
         end
 
         local _autoCaptureHook = nil
+local _captureComplete = false
 capturing = true
 _autoCaptureHook = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    if method == "InvokeServer" then
+    if getnamecallmethod() == "InvokeServer" and not _captureComplete then
         local args = {...}
         local up, pp = detectArgPositions(args)
-        if up and pp and not capturedRF then
+        if up and pp then
             capturedRF         = self
             capturedArgPattern = args
             capturedUUIDPos    = up
             capturedPricePos   = pp
+            _captureComplete   = true
             task.spawn(function()
-                task.wait(0.5)
-                pcall(function() hookmetamethod(game, "__namecall", _autoCaptureHook) end)
-                _autoCaptureHook = nil
+                task.wait(0.3)
                 capturing = false
                 Fluent:Notify({Title="✅ Siap", Content="Sinyal tertangkap! Lanjut isi slot & mulai auto booth.", Type="Success", Duration=3})
             end)
         end
     end
-    if _autoCaptureHook then return _autoCaptureHook(self, ...) end
+    return _autoCaptureHook(self, ...)
 end))
 
 task.wait(0.8)
