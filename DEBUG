@@ -1,96 +1,65 @@
--- ====================================================
--- SMART AUTO REJECT TRADE (FINAL STRIKE)
--- Hooking: FirePrompt & FireChoicePrompt
--- ====================================================
+local HS = game:GetService("HttpService")
+local WH = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-getgenv().AutoRejectTrade = true 
-
-local HttpService = game:GetService("HttpService")
-local WebhookURL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-
-local function sendLog(title, desc, color)
+local function log(title, desc)
     pcall(function()
         request({
-            Url = WebhookURL, Method = "POST",
+            Url = WH, Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode({
-                username = "🛡️ Smart Blocker",
-                embeds = {{ title = title, description = string.sub(desc, 1, 4000), color = color or 16711680 }}
+            Body = HS:JSONEncode({
+                username = "SPY",
+                embeds = {{title = title, description = string.sub(desc, 1, 4000), color = 16776960}}
             })
         })
     end)
 end
 
-local PromptController = nil
-
--- 1. Mengambil PromptController dari Memory
-for _, mod in ipairs(getloadedmodules()) do
-    if mod.Name == "PromptController" then
-        pcall(function() PromptController = require(mod) end)
+local PC
+for _, m in ipairs(getloadedmodules()) do
+    if m.Name == "PromptController" then
+        local ok, r = pcall(require, m)
+        if ok then PC = r end
         break
     end
 end
 
-if not PromptController then
-    sendLog("❌ ERROR", "PromptController belum dimuat oleh game. Jalan-jalan dulu sebentar lalu execute ulang.")
-    return
-end
+if not PC then log("GAGAL", "PromptController tidak ada di getloadedmodules"); return end
 
--- 2. Fungsi Logic Blocker
-local function attachBlocker(funcName)
-    if type(PromptController[funcName]) == "function" then
-        local oldFunc
-        oldFunc = hookfunction(PromptController[funcName], function(...)
-            local args = {...}
-            
-            if getgenv().AutoRejectTrade then
-                local isTrade = false
-                local declineFunc = nil
-                local logData = ""
-                
-                -- Mulai dari args[2] karena args[1] adalah 'self'
-                for i = 2, #args do
-                    local v = args[i]
-                    local t = type(v)
-                    
-                    if t == "string" then
-                        logData = logData .. '"' .. v .. '"\n'
-                        local lowerV = string.lower(v)
-                        -- Deteksi teks trade dari bahasa apapun yang digunakan game
-                        if string.find(lowerV, "trade") or string.find(lowerV, "wants to") then
-                            isTrade = true
-                        end
-                    elseif t == "function" then
-                        logData = logData .. "[Function Callback]\n"
-                        -- Kita timpa terus fungsinya. Fungsi TERAKHIR yang masuk ke argumen hampir selalu tombol "No/Decline".
-                        declineFunc = v
-                    end
-                end
-                
-                -- Jika ini benar Trade Request, kita blokir!
-                if isTrade then
-                    if declineFunc then
-                        -- Eksekusi fungsi penolakan secara instan ke server
-                        task.spawn(declineFunc)
-                        sendLog("⛔ TRADE DITOLAK (SUKSES)", "Terdeteksi ada yang request trade:\n```\n" .. logData .. "\n
-```\n✅ *Tombol Decline otomatis ditekan ke server, UI diblokir!*", 3066993)
-                    else
-                        sendLog("⚠️ TRADE DIBLOKIR (Semi)", "Teks Trade terdeteksi:\n```\n" .. logData .. "\n```\n*UI berhasil disembunyikan, tapi tidak ada fungsi callback penolakan yang ditemukan.*", 16776960)
-                    end
-                    
-                    -- Mencegah UI tergambar di layar
-                    return nil
-                end
-            end
-            
-            -- Jika bukan trade, biarkan lewat
-            return oldFunc(...)
-        end)
+local function dumpArg(v, depth)
+    depth = depth or 0
+    if depth > 2 then return "..." end
+    local t = type(v)
+    if t == "string" then return '"'..v..'"'
+    elseif t == "number" then return tostring(v)
+    elseif t == "boolean" then return tostring(v)
+    elseif t == "function" then return "[function]"
+    elseif t == "table" then
+        local s = "{\n"
+        for k, val in pairs(v) do
+            s = s .. string.rep("  ", depth+1).."["..tostring(k).."] = "..dumpArg(val, depth+1).."\n"
+        end
+        return s .. string.rep("  ", depth).."}"
+    elseif typeof(v) == "Instance" then
+        return "[Instance:"..v.ClassName..":"..v.Name.."]"
+    else
+        return tostring(v)
     end
 end
 
--- Pasang jebakan di kedua fungsi prompt
-attachBlocker("FireChoicePrompt")
-attachBlocker("FirePrompt")
-
-sendLog("✅ SMART REJECT AKTIF", "Sistem berhasil dipasang! Menunggu request trade dari temanmu...", 3066993)
+for _, funcName in ipairs({"FirePrompt", "FireChoicePrompt"}) do
+    if type(PC[funcName]) == "function" then
+        local old
+        old = hookfunction(PC[funcName], function(...)
+            local args = {...}
+            local out = ""
+            -- skip args[1] (self), dump sisanya
+            for i = 2, #args do
+                out = out .. "Arg["..i.."]: "..dumpArg(args[i]).."\n\n"
+            end
+            if out == "" then out = "(tidak ada argumen selain self)" end
+            log("CALLED: "..funcName, "```\n"..out.."\n```")
+            return old(...)
+        end)
+        log("HOOK OK", funcName.." berhasil di-hook. Suruh teman request trade sekarang.")
+    end
+end
