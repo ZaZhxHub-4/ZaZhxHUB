@@ -101,7 +101,7 @@ local function sendEmbed(title, desc, color)
                 username = "🐟 ZaZhx Auto Booth",
                 embeds   = {{
                     title  = title, description = desc, color = color or 3066993,
-                    footer = {text = "Fish It Auto Booth v14.0 • " .. os.date("%H:%M:%S")}
+                    footer = {text = "Fish It Auto Booth v14.1 • " .. os.date("%H:%M:%S")}
                 }}
             })
         })
@@ -388,7 +388,7 @@ local verticalScale  = 0.2
 
 local Window = Fluent:CreateWindow({
     Title            = "ZHX Hub",
-    SubTitle         = "v14.0",
+    SubTitle         = "v14.1",
     TabWidth         = 130,
     Size             = UDim2.fromOffset(winW, winH),
     Position         = UDim2.new(0.5, -winW/2, verticalScale, -winH/2),
@@ -1827,4 +1827,4 @@ end
 -- FINAL INIT
 -- =====================
 Window:SelectTab(1)
-print("🐟 ZhxHub Auto Booth v14.0 [Stable] — "..#configNameList.." config dimuat")
+print("🐟 ZhxHub Auto Booth v14.1 [Stable] — "..#configNameList.." config dimuat")
