@@ -1,199 +1,415 @@
-local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-local HS = game:GetService("HttpService")
+-- ══════════════════════════════════════════════════════════════════
+--   ZHX HUB - COMPKILLER UI TEST SCRIPT
+--   Tujuan: Test visual + kompatibilitas fitur UI dengan sistem booth
+--   Bukan script final - hanya untuk preview & validasi
+-- ══════════════════════════════════════════════════════════════════
 
-local function sendLog(title, desc)
-    pcall(function()
-        request({
-            Url = WEBHOOK, Method = "POST", Headers = {["Content-Type"] = "application/json"},
-            Body = HS:JSONEncode({ embeds = {{ title = title, description = "```\n" .. string.sub(tostring(desc), 1, 3900) .. "\n```", color = 16776960, footer = { text = "ZHX Debugger" } }} })
-        })
-    end)
-end
+local Compkiller = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/4lpaca-pin/CompKiller/refs/heads/main/src/source.luau"
+))()
 
-local out = {"🔬 START TEST FASE 3.5 (UI FINALIZATION)"}
-local CoreGui = game:GetService("CoreGui")
-local Players = game:GetService("Players")
-local lp = Players.LocalPlayer
-local pg = lp:WaitForChild("PlayerGui")
-local UIS = game:GetService("UserInputService")
+-- ══════════════════════════════════
+-- NOTIFIER
+-- ══════════════════════════════════
+local Notifier = Compkiller.newNotify()
 
--- 1. TANGKAL LAYAR HITAM/LOGO LOADING KYRILIB DARI AWAL
+-- ══════════════════════════════════
+-- LOADER
+-- ══════════════════════════════════
+Compkiller:Loader("rbxassetid://78392602281326", 2).yield()
+
+-- ══════════════════════════════════
+-- WINDOW
+-- ══════════════════════════════════
+local Window = Compkiller.new({
+    Name    = "ZHX Hub | Fish It Plaza",
+    Keybind = "RightControl",
+    Logo    = "rbxassetid://78392602281326",
+    Scale   = Compkiller.Scale.Window,
+    TextSize = 15,
+})
+
+-- ══════════════════════════════════
+-- WATERMARK
+-- ══════════════════════════════════
+local Watermark = Window:Watermark()
+Watermark:AddText({ Icon = "user",   Text = "ZaZhx" })
+Watermark:AddText({ Icon = "server", Text = "v16 TEST" })
+local wmTime = Watermark:AddText({ Icon = "timer", Text = "00:00:00" })
 task.spawn(function()
-    local killConn
-    killConn = CoreGui.DescendantAdded:Connect(function(obj)
-        if obj:IsA("ScreenGui") and obj.Name == "kyrilib" then
-            -- Pantau anak-anaknya yang muncul duluan (logo/teks)
-            obj.DescendantAdded:Connect(function(child)
-                if child:IsA("TextLabel") and child.Text:lower():find("kyri") then
-                    if child.Parent:IsA("Frame") and child.Parent.Size.X.Scale > 0.5 then
-                        child.Parent:Destroy()
-                    end
-                end
-            end)
+    while true do task.wait(1)
+        wmTime:SetText(Compkiller:GetTimeNow())
+    end
+end)
+
+-- ══════════════════════════════════
+-- NOTIF SELAMAT DATANG
+-- ══════════════════════════════════
+Notifier.new({
+    Title    = "ZHX Hub Test",
+    Content  = "UI CompKiller berhasil dimuat! Cek semua tab.",
+    Duration = 5,
+    Icon     = "rbxassetid://78392602281326"
+})
+
+-- ══════════════════════════════════════════════════════════════════
+-- KATEGORI: MAIN
+-- ══════════════════════════════════════════════════════════════════
+Window:DrawCategory({ Name = "Main" })
+
+-- ══════════════════════════════════
+-- TAB: SETUP
+-- ══════════════════════════════════
+local TabSetup = Window:DrawTab({
+    Name           = "Setup",
+    Icon           = "bolt",
+    Type           = "Single",
+    EnableScrolling = true
+})
+
+local SecSetup = TabSetup:DrawSection({ Name = "Persiapan Sistem" })
+
+SecSetup:AddParagraph({
+    Title   = "⚠ Peringatan",
+    Content = "Matikan Auto Booth sebelum mengubah pengaturan slot!"
+})
+
+SecSetup:AddButton({
+    Name     = "🏪 AUTO CLAIM BOOTH",
+    Callback = function()
+        Notifier.new({ Title = "Claim Booth", Content = "Mencari booth kosong...", Duration = 3 })
+        -- [NANTI: logika tryClaimBooth()]
+        task.wait(1)
+        Notifier.new({ Title = "✅ Berhasil", Content = "Booth berhasil diklaim!", Duration = 3 })
+    end
+})
+
+SecSetup:AddButton({
+    Name     = "🔄 MUAT DAFTAR ITEM",
+    Callback = function()
+        Notifier.new({ Title = "Memuat...", Content = "Membaca inventory...", Duration = 2 })
+        -- [NANTI: logika refreshInventoryUI()]
+        task.wait(1)
+        Notifier.new({ Title = "✅ Item Dimuat", Content = "42 item siap digunakan.", Duration = 3 })
+    end
+})
+
+SecSetup:AddToggle({
+    Name     = "▶ MULAI AUTO BOOTH",
+    Flag     = "AutoBoothToggle",
+    Default  = false,
+    Callback = function(state)
+        if state then
+            Notifier.new({ Title = "▶ Auto Booth", Content = "Sistem aktif!", Duration = 2 })
+        else
+            Notifier.new({ Title = "⏹ Auto Booth", Content = "Sistem dihentikan.", Duration = 2 })
         end
-    end)
-    task.wait(5)
-    killConn:Disconnect()
-end)
-
--- Load UI
-local kyri = loadstring(game:HttpGet("https://kyrilib.dev/kyrilib/"))()
-local w = kyri.new("ZHX Final UI Test", {Theme = {}})
-w:tab("Test Area", "box")
-
-task.wait(1.5)
-
--- =========================================
--- MENCARI MAIN GUI KYRILIB
--- =========================================
-local mainGui
-for _, child in ipairs(CoreGui:GetChildren()) do
-    if child:IsA("ScreenGui") and child.Name:lower():find("kyri") then mainGui = child; break end
-end
-if not mainGui then
-    for _, child in ipairs(pg:GetChildren()) do
-        if child:IsA("ScreenGui") and child.Name:lower():find("kyri") then mainGui = child; break end
+        -- [NANTI: logika autoOn = state + loop booth]
     end
-end
+})
 
--- =========================================
--- 2. PEMUSNAHAN TOMBOL MOBILE "KYRI" & MINIMIZE
--- =========================================
-local killedMobile = 0
--- Cari di SELURUH CoreGui dan PlayerGui (karena dipisah oleh KyriLib)
-local function huntParasite(parentFolder)
-    for _, gui in ipairs(parentFolder:GetChildren()) do
-        if gui:IsA("ScreenGui") and gui.Name ~= "ZHX_ToggleGui" then
-            for _, obj in ipairs(gui:GetDescendants()) do
-                -- Eksekusi tombol minimize (logo - atau _)
-                if obj:IsA("TextButton") and (obj.Text == "-" or obj.Text == "−" or obj.Text == "_") then
-                    pcall(function() obj:Destroy() end)
-                end
-                
-                -- Eksekusi tombol bulat Kyri di HP
-                if (obj:IsA("TextButton") or obj:IsA("ImageButton")) then
-                    -- Ciri khas: teks "Kyri" atau bentuk lingkaran kecil yang letaknya melayang
-                    local hasKyriText = (obj:IsA("TextButton") and obj.Text:lower():find("kyri"))
-                    local isFloatingCircle = (obj.AbsoluteSize.X > 30 and obj.AbsoluteSize.X < 70 and obj.AbsoluteSize.Y > 30 and obj.AbsoluteSize.Y < 70)
-                    
-                    if (hasKyriText or isFloatingCircle) and not obj:FindFirstAncestorOfClass("ScrollingFrame") then
-                        -- Pastikan ini bukan bagian dari menu dalam panel
-                        if obj.AbsolutePosition.Y > 0 then
-                            pcall(function() obj.Parent.Enabled = false end) -- Matikan ScreenGui-nya
-                            pcall(function() obj:Destroy() end)
-                            killedMobile = killedMobile + 1
-                        end
-                    end
-                end
-            end
+SecSetup:AddButton({
+    Name     = "🗑️ HAPUS ITEM DI BOOTH",
+    Callback = function()
+        Notifier.new({ Title = "Menghapus...", Content = "Menghapus semua listing booth...", Duration = 3 })
+        -- [NANTI: logika delete RF]
+    end
+})
+
+-- ══════════════════════════════════
+-- TAB: SINGLE SLOTS
+-- ══════════════════════════════════
+local TabSlots = Window:DrawTab({
+    Name           = "Single Slots",
+    Icon           = "box",
+    Type           = "Single",
+    EnableScrolling = true
+})
+
+-- Teks peringatan statis (pengganti logika rebuild/kunci)
+local SecSlotWarn = TabSlots:DrawSection({ Name = "Info" })
+SecSlotWarn:AddParagraph({
+    Title   = "⚠ Perhatian",
+    Content = "Matikan Auto Booth sebelum mengubah slot!"
+})
+
+-- Simulasi 3 slot (nanti jadi 8)
+local DUMMY_ITEMS = { "- Kosongkan -", "Queen Crab", "Salmon", "Ghost Shark", "Blob Shark", "Ruby", "Enchant Stone" }
+
+for i = 1, 3 do
+    local SecSlot = TabSlots:DrawSection({ Name = "Slot " .. i })
+
+    -- TEST UTAMA: Single dropdown (pilih 1 item)
+    SecSlot:AddDropdown({
+        Name     = "Item Slot " .. i,
+        Default  = "- Kosongkan -",
+        Values   = DUMMY_ITEMS,
+        Callback = function(v)
+            print("[Slot "..i.."] Item dipilih:", v)
+            Notifier.new({ Title = "Slot "..i, Content = "Item: " .. tostring(v), Duration = 2 })
         end
-    end
-end
-huntParasite(CoreGui)
-huntParasite(pg)
-table.insert(out, "✅ Tombol parasit/mobile yang dibunuh: " .. killedMobile)
+    })
 
--- =========================================
--- 3. INJEKSI DRAG KHUSUS PC (MOUSE ONLY)
--- =========================================
-if mainGui then
-    local mainFrame
-    for _, child in ipairs(mainGui:GetChildren()) do
-        if child:IsA("Frame") and child.Size.X.Scale > 0.1 then mainFrame = child; break end
-    end
-    
-    if mainFrame then
-        local dragToggle = false
-        local dragStart
-        local startPos
+    SecSlot:AddTextBox({
+        Name        = "Harga Token Slot " .. i,
+        Placeholder = "Contoh: 500",
+        Default     = "",
+        Callback    = function(v)
+            print("[Slot "..i.."] Harga:", v)
+        end
+    })
 
-        mainFrame.InputBegan:Connect(function(input)
-            -- HANYA AKTIF JIKA KLIK MOUSE (TIDAK GANGGU TOUCH HP)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragToggle = true
-                dragStart = input.Position
-                startPos = mainFrame.Position
-            end
-        end)
-
-        mainFrame.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragToggle = false
-            end
-        end)
-
-        UIS.InputChanged:Connect(function(input)
-            if dragToggle and input.UserInputType == Enum.UserInputType.MouseMovement then
-                local delta = input.Position - dragStart
-                mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            end
-        end)
-        table.insert(out, "✅ PC Mouse Drag Berhasil Disuntikkan.")
-    end
+    SecSlot:AddParagraph({
+        Title   = "Status Slot " .. i,
+        Content = "Kosong — pilih item & isi harga"
+    })
 end
 
--- =========================================
--- 4. PEMBUATAN TOMBOL ZHX FLOATING
--- =========================================
-local floatingGui = Instance.new("ScreenGui")
-floatingGui.Name = "ZHX_ToggleGui"
-floatingGui.ResetOnSpawn = false
-floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-floatingGui.Parent = pg
+-- ══════════════════════════════════
+-- TAB: MULTI SLOTS
+-- ══════════════════════════════════
+local TabMulti = Window:DrawTab({
+    Name           = "Multi Slots",
+    Icon           = "layers",
+    Type           = "Single",
+    EnableScrolling = true
+})
 
-local zhxBtn = Instance.new("ImageButton")
-zhxBtn.Name = "ZHXButton"
-zhxBtn.Size = UDim2.new(0, 46, 0, 46)
-zhxBtn.Position = UDim2.new(0, 12, 0, 100)
-zhxBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
-zhxBtn.BorderSizePixel = 0
-zhxBtn.Image = "rbxassetid://78392602281326"
-zhxBtn.ScaleType = Enum.ScaleType.Fit
-zhxBtn.ZIndex = 9999
-zhxBtn.Parent = floatingGui
+local SecMultiWarn = TabMulti:DrawSection({ Name = "Info" })
+SecMultiWarn:AddParagraph({
+    Title   = "⚠ Perhatian",
+    Content = "Matikan Auto Booth sebelum mengubah slot!"
+})
 
-Instance.new("UICorner", zhxBtn).CornerRadius = UDim.new(0, 10)
-local zs = Instance.new("UIStroke", zhxBtn)
-zs.Color = Color3.fromRGB(72, 210, 130)
-zs.Thickness = 1.5
+-- Simulasi 2 multi slot
+for m = 1, 2 do
+    local SecMulti = TabMulti:DrawSection({ Name = "Antrian Multi M" .. m })
 
--- Drag logic untuk tombol ZHX
-local dragB = false
-local dragIB, dragSB, startPB
+    -- TEST UTAMA: Multi-select dropdown bawaan CompKiller
+    SecMulti:AddDropdown({
+        Name     = "Pilih Item Antrian M" .. m,
+        Default  = {},
+        Multi    = true,
+        Values   = { "Queen Crab", "Salmon", "Ghost Shark", "Blob Shark", "Ruby", "Enchant Stone", "Lochness Monster" },
+        Callback = function(selected)
+            -- selected = table of selected values
+            local names = {}
+            for k, v in pairs(selected) do
+                if v then table.insert(names, k) end
+            end
+            print("[Multi "..m.."] Item dipilih:", table.concat(names, ", "))
+            Notifier.new({
+                Title   = "Multi M" .. m,
+                Content = #names .. " item dipilih",
+                Duration = 2
+            })
+        end
+    })
 
-zhxBtn.InputBegan:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-        dragB = true
-        dragSB = inp.Position
-        startPB = zhxBtn.Position
-        inp.Changed:Connect(function()
-            if inp.UserInputState == Enum.UserInputState.End then dragB = false end
-        end)
+    SecMulti:AddTextBox({
+        Name        = "Harga Pukul Rata M" .. m,
+        Placeholder = "Contoh: 300",
+        Default     = "",
+        Callback    = function(v)
+            print("[Multi "..m.."] Harga:", v)
+        end
+    })
+
+    SecMulti:AddParagraph({
+        Title   = "Status M" .. m,
+        Content = "Antrian kosong — tambahkan item"
+    })
+end
+
+-- ══════════════════════════════════
+-- TAB: WEBHOOK
+-- ══════════════════════════════════
+local TabWebhook = Window:DrawTab({
+    Name           = "Webhook",
+    Icon           = "bell",
+    Type           = "Single",
+    EnableScrolling = true
+})
+
+local SecWH = TabWebhook:DrawSection({ Name = "Notifikasi Discord" })
+
+SecWH:AddParagraph({
+    Title   = "Notifikasi Terjual",
+    Content = "Masukkan URL Discord Webhook untuk notifikasi saat item terjual."
+})
+
+SecWH:AddTextBox({
+    Name        = "Webhook URL",
+    Placeholder = "https://discord.com/api/webhooks/...",
+    Default     = "",
+    Callback    = function(v)
+        print("[Webhook] URL:", v)
     end
-end)
+})
 
-zhxBtn.InputChanged:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
-        dragIB = inp
+SecWH:AddToggle({
+    Name     = "Aktifkan Notifikasi Webhook",
+    Flag     = "WebhookToggle",
+    Default  = false,
+    Callback = function(state)
+        Notifier.new({
+            Title   = state and "🔔 Webhook ON" or "Webhook OFF",
+            Content = state and "Notifikasi Discord aktif." or "Notifikasi dimatikan.",
+            Duration = 2
+        })
     end
-end)
+})
 
-UIS.InputChanged:Connect(function(inp)
-    if inp == dragIB and dragB then
-        local d = inp.Position - dragSB
-        local vp = workspace.CurrentCamera.ViewportSize
-        zhxBtn.Position = UDim2.new(0, math.clamp(startPB.X.Offset + d.X, 0, vp.X - 46), 0, math.clamp(startPB.Y.Offset + d.Y, 0, vp.Y - 46))
+-- ══════════════════════════════════
+-- TAB: UTILITY
+-- ══════════════════════════════════
+local TabUtility = Window:DrawTab({
+    Name           = "Utility",
+    Icon           = "settings-3",
+    Type           = "Single",
+    EnableScrolling = true
+})
+
+local SecUtil = TabUtility:DrawSection({ Name = "Fitur Tambahan" })
+
+SecUtil:AddToggle({
+    Name     = "🛡️ Anti AFK",
+    Flag     = "AntiAFKToggle",
+    Default  = true,
+    Callback = function(state)
+        Notifier.new({ Title = "Anti AFK", Content = state and "✅ Aktif" or "⛔ Dimatikan", Duration = 2 })
     end
-end)
+})
 
-local uiVis = true
-zhxBtn.MouseButton1Click:Connect(function()
-    if dragB then return end
-    uiVis = not uiVis
-    if mainGui then mainGui.Enabled = uiVis end
-    zs.Color = uiVis and Color3.fromRGB(72, 210, 130) or Color3.fromRGB(100, 100, 100)
-    sendLog("🔘 ZHX TOGGLE", "Panel Utama diubah menjadi: " .. (uiVis and "TERLIHAT" or "DISEMBUNYIKAN"))
-end)
-table.insert(out, "✅ Tombol ZHX Berhasil Dibuat.")
+SecUtil:AddToggle({
+    Name     = "⚡ Boost FPS",
+    Flag     = "BoostFPSToggle",
+    Default  = false,
+    Callback = function(state)
+        Notifier.new({ Title = "Boost FPS", Content = state and "✅ Diaktifkan" or "⛔ Dinonaktifkan", Duration = 2 })
+    end
+})
 
-sendLog("🔬 HASIL FASE 3.5", table.concat(out, "\n\n"))
+SecUtil:AddToggle({
+    Name     = "🛡️ Auto Reject Trade",
+    Flag     = "AutoRejectTradeToggle",
+    Default  = false,
+    Callback = function(state)
+        Notifier.new({
+            Title   = "Auto Reject Trade",
+            Content = state and "✅ Aktif" or "⛔ Dimatikan",
+            Duration = 2
+        })
+        -- [NANTI: logika dummy promise hook]
+    end
+})
+
+SecUtil:AddToggle({
+    Name     = "📊 Show FPS Panel",
+    Flag     = "StatsPanelToggle",
+    Default  = false,
+    Callback = function(state)
+        Notifier.new({ Title = "Stats Panel", Content = state and "✅ Ditampilkan" or "⛔ Disembunyikan", Duration = 2 })
+    end
+})
+
+-- ══════════════════════════════════════════════════════════════════
+-- KATEGORI: MISC
+-- ══════════════════════════════════════════════════════════════════
+Window:DrawCategory({ Name = "Misc" })
+
+-- ══════════════════════════════════
+-- TAB: CONFIG
+-- ══════════════════════════════════
+local TabConfig = Window:DrawTab({
+    Name           = "Config",
+    Icon           = "folder",
+    Type           = "Single",
+    EnableScrolling = true
+})
+
+local SecCfg = TabConfig:DrawSection({ Name = "Kelola Config" })
+
+SecCfg:AddTextBox({
+    Name        = "Nama Config Baru",
+    Placeholder = "Contoh: Farming Salmon",
+    Default     = "",
+    Callback    = function(v) print("[Config] Nama:", v) end
+})
+
+SecCfg:AddDropdown({
+    Name     = "Pilih Config",
+    Default  = "- Belum Ada Config -",
+    Values   = { "- Belum Ada Config -", "Config Test 1", "Config Test 2" },
+    Callback = function(v) print("[Config] Dipilih:", v) end
+})
+
+SecCfg:AddButton({
+    Name     = "💾 SIMPAN CONFIG",
+    Callback = function()
+        Notifier.new({ Title = "💾 Tersimpan", Content = "Config berhasil disimpan.", Duration = 2 })
+    end
+})
+
+SecCfg:AddButton({
+    Name     = "📂 LOAD CONFIG",
+    Callback = function()
+        Notifier.new({ Title = "📂 Dimuat", Content = "Config berhasil dimuat.", Duration = 2 })
+    end
+})
+
+SecCfg:AddButton({
+    Name     = "🗑 HAPUS CONFIG",
+    Callback = function()
+        Notifier.new({ Title = "🗑 Dihapus", Content = "Config dihapus.", Duration = 2 })
+    end
+})
+
+-- ══════════════════════════════════
+-- TAB: SETTINGS
+-- ══════════════════════════════════
+local TabSettings = Window:DrawTab({
+    Name           = "Settings",
+    Icon           = "settings-3",
+    Type           = "Single",
+    EnableScrolling = true
+})
+
+local SecSett = TabSettings:DrawSection({ Name = "Pengaturan Umum" })
+
+SecSett:AddButton({
+    Name     = "🌐 Server Hop",
+    Callback = function()
+        Notifier.new({ Title = "Server Hop", Content = "Mencari server baru...", Duration = 3 })
+    end
+})
+
+SecSett:AddButton({
+    Name     = "🔄 Reset Semua Slot",
+    Callback = function()
+        Notifier.new({ Title = "Reset", Content = "Semua slot direset.", Duration = 2 })
+    end
+})
+
+-- Themes bawaan CompKiller
+local SecTheme = TabSettings:DrawSection({ Name = "Tema UI" })
+SecTheme:AddDropdown({
+    Name     = "Pilih Tema",
+    Default  = "Default",
+    Values   = { "Default", "Dark Green", "Dark Blue", "Purple Rose", "Skeet" },
+    Callback = function(v)
+        Compkiller:SetTheme(v)
+    end
+})
+
+-- ══════════════════════════════════════════════════════════════════
+-- LOG AKHIR
+-- ══════════════════════════════════════════════════════════════════
+print("✅ ZHX CompKiller Test Script Loaded")
+print("   Cek semua tab dan pastikan:")
+print("   1. Multi-select dropdown M1 & M2 bisa pilih banyak item")
+print("   2. Single dropdown Slot bisa pilih 1 item")
+print("   3. TextBox harga bisa diketik (mobile & PC)")
+print("   4. Toggle ON/OFF berfungsi dengan notifikasi")
+print("   5. Notifikasi muncul dan tidak mengganggu")
+print("   6. UI bisa di-drag di mobile maupun PC")
