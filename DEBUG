@@ -10,83 +10,190 @@ local function sendLog(title, desc)
     end)
 end
 
-local out = {"🔬 START TEST FASE 3 (UI CLEANUP)"}
+local out = {"🔬 START TEST FASE 3.5 (UI FINALIZATION)"}
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local lp = Players.LocalPlayer
+local pg = lp:WaitForChild("PlayerGui")
+local UIS = game:GetService("UserInputService")
+
+-- 1. TANGKAL LAYAR HITAM/LOGO LOADING KYRILIB DARI AWAL
+task.spawn(function()
+    local killConn
+    killConn = CoreGui.DescendantAdded:Connect(function(obj)
+        if obj:IsA("ScreenGui") and obj.Name == "kyrilib" then
+            -- Pantau anak-anaknya yang muncul duluan (logo/teks)
+            obj.DescendantAdded:Connect(function(child)
+                if child:IsA("TextLabel") and child.Text:lower():find("kyri") then
+                    if child.Parent:IsA("Frame") and child.Parent.Size.X.Scale > 0.5 then
+                        child.Parent:Destroy()
+                    end
+                end
+            end)
+        end
+    end)
+    task.wait(5)
+    killConn:Disconnect()
+end)
 
 -- Load UI
 local kyri = loadstring(game:HttpGet("https://kyrilib.dev/kyrilib/"))()
-local w = kyri.new("ZHX Fase 3 Test", {Theme = {}})
+local w = kyri.new("ZHX Final UI Test", {Theme = {}})
 w:tab("Test Area", "box")
 
--- Beri waktu UI untuk ter-render penuh sebelum dibedah
 task.wait(1.5)
 
-local targetGui
-for _, child in ipairs(game:GetService("CoreGui"):GetChildren()) do
-    if child:IsA("ScreenGui") and (child.Name:lower():find("kyri") or child.Name:lower():find("zhx")) then
-        targetGui = child
-        break
-    end
+-- =========================================
+-- MENCARI MAIN GUI KYRILIB
+-- =========================================
+local mainGui
+for _, child in ipairs(CoreGui:GetChildren()) do
+    if child:IsA("ScreenGui") and child.Name:lower():find("kyri") then mainGui = child; break end
 end
-if not targetGui then
-    for _, child in ipairs(game.Players.LocalPlayer.PlayerGui:GetChildren()) do
-        if child:IsA("ScreenGui") and (child.Name:lower():find("kyri") or child.Name:lower():find("zhx")) then
-            targetGui = child
-            break
-        end
+if not mainGui then
+    for _, child in ipairs(pg:GetChildren()) do
+        if child:IsA("ScreenGui") and child.Name:lower():find("kyri") then mainGui = child; break end
     end
 end
 
-if targetGui then
-    table.insert(out, "✅ GUI Utama Ditemukan: " .. targetGui.Name)
-    
-    -- 1. Bunuh Layar/Logo Loading
-    local introFound = false
-    for _, obj in ipairs(targetGui:GetDescendants()) do
-        if obj:IsA("TextLabel") and obj.Text:lower():find("kyri") then
-            -- Cari parent frame yang menutupi layar
-            if obj.Parent:IsA("Frame") and obj.Parent.Size.X.Scale > 0.5 then
-                obj.Parent:Destroy()
-                introFound = true
-                table.insert(out, "✅ Logo Loading Berhasil Dihancurkan.")
-                break
-            end
-        end
-    end
-    if not introFound then table.insert(out, "⚠️ Logo Loading tidak ditemukan (mungkin sudah hilang/transparan).") end
-
-    -- 2. Bunuh Tombol Mobile Bawaan
-    local mobileBtnFound = false
-    for _, obj in ipairs(targetGui:GetDescendants()) do
-        if (obj:IsA("ImageButton") or obj:IsA("TextButton")) then
-            -- Tombol mobile biasanya memiliki ciri khas ukuran spesifik atau nama
-            if obj.AbsoluteSize.X < 50 and obj.AbsoluteSize.Y < 50 and obj.Position.Y.Offset < 150 then
-                -- Bypass tombol minimize, cari yang stand-alone
-                if not obj.Parent:IsA("Frame") or obj.Parent.AbsoluteSize.X > 200 then
-                     obj:Destroy()
-                     mobileBtnFound = true
-                     table.insert(out, "✅ Tombol Mobile Bawaan Berhasil Dibunuh.")
+-- =========================================
+-- 2. PEMUSNAHAN TOMBOL MOBILE "KYRI" & MINIMIZE
+-- =========================================
+local killedMobile = 0
+-- Cari di SELURUH CoreGui dan PlayerGui (karena dipisah oleh KyriLib)
+local function huntParasite(parentFolder)
+    for _, gui in ipairs(parentFolder:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui.Name ~= "ZHX_ToggleGui" then
+            for _, obj in ipairs(gui:GetDescendants()) do
+                -- Eksekusi tombol minimize (logo - atau _)
+                if obj:IsA("TextButton") and (obj.Text == "-" or obj.Text == "−" or obj.Text == "_") then
+                    pcall(function() obj:Destroy() end)
+                end
+                
+                -- Eksekusi tombol bulat Kyri di HP
+                if (obj:IsA("TextButton") or obj:IsA("ImageButton")) then
+                    -- Ciri khas: teks "Kyri" atau bentuk lingkaran kecil yang letaknya melayang
+                    local hasKyriText = (obj:IsA("TextButton") and obj.Text:lower():find("kyri"))
+                    local isFloatingCircle = (obj.AbsoluteSize.X > 30 and obj.AbsoluteSize.X < 70 and obj.AbsoluteSize.Y > 30 and obj.AbsoluteSize.Y < 70)
+                    
+                    if (hasKyriText or isFloatingCircle) and not obj:FindFirstAncestorOfClass("ScrollingFrame") then
+                        -- Pastikan ini bukan bagian dari menu dalam panel
+                        if obj.AbsolutePosition.Y > 0 then
+                            pcall(function() obj.Parent.Enabled = false end) -- Matikan ScreenGui-nya
+                            pcall(function() obj:Destroy() end)
+                            killedMobile = killedMobile + 1
+                        end
+                    end
                 end
             end
         end
     end
-    if not mobileBtnFound then table.insert(out, "⚠️ Tombol Mobile spesifik tidak terdeteksi. (Mohon cek layar Anda di HP)") end
+end
+huntParasite(CoreGui)
+huntParasite(pg)
+table.insert(out, "✅ Tombol parasit/mobile yang dibunuh: " .. killedMobile)
 
-    -- 3. Override Minimize (Hide Penuh)
-    local minimizeFound = false
-    for _, obj in ipairs(targetGui:GetDescendants()) do
-        if obj:IsA("TextButton") and (obj.Text == "−" or obj.Text == "-" or obj.Text == "_") then
-            obj.MouseButton1Click:Connect(function()
-                task.wait(0.05) -- Tunggu animasi bawaan
-                targetGui.Enabled = false
-                sendLog("🔍 MINIMIZE TEST", "Tombol minimize bawaan KyriLib ditekan.")
-            end)
-            minimizeFound = true
-            table.insert(out, "✅ Tombol Minimize Di-override menjadi Hide Penuh.")
-            break
-        end
+-- =========================================
+-- 3. INJEKSI DRAG KHUSUS PC (MOUSE ONLY)
+-- =========================================
+if mainGui then
+    local mainFrame
+    for _, child in ipairs(mainGui:GetChildren()) do
+        if child:IsA("Frame") and child.Size.X.Scale > 0.1 then mainFrame = child; break end
     end
-else
-    table.insert(out, "❌ GUI KyriLib Tidak Ditemukan.")
+    
+    if mainFrame then
+        local dragToggle = false
+        local dragStart
+        local startPos
+
+        mainFrame.InputBegan:Connect(function(input)
+            -- HANYA AKTIF JIKA KLIK MOUSE (TIDAK GANGGU TOUCH HP)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragToggle = true
+                dragStart = input.Position
+                startPos = mainFrame.Position
+            end
+        end)
+
+        mainFrame.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragToggle = false
+            end
+        end)
+
+        UIS.InputChanged:Connect(function(input)
+            if dragToggle and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local delta = input.Position - dragStart
+                mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end)
+        table.insert(out, "✅ PC Mouse Drag Berhasil Disuntikkan.")
+    end
 end
 
-sendLog("🔬 HASIL FASE 3", table.concat(out, "\n\n"))
+-- =========================================
+-- 4. PEMBUATAN TOMBOL ZHX FLOATING
+-- =========================================
+local floatingGui = Instance.new("ScreenGui")
+floatingGui.Name = "ZHX_ToggleGui"
+floatingGui.ResetOnSpawn = false
+floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+floatingGui.Parent = pg
+
+local zhxBtn = Instance.new("ImageButton")
+zhxBtn.Name = "ZHXButton"
+zhxBtn.Size = UDim2.new(0, 46, 0, 46)
+zhxBtn.Position = UDim2.new(0, 12, 0, 100)
+zhxBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
+zhxBtn.BorderSizePixel = 0
+zhxBtn.Image = "rbxassetid://78392602281326"
+zhxBtn.ScaleType = Enum.ScaleType.Fit
+zhxBtn.ZIndex = 9999
+zhxBtn.Parent = floatingGui
+
+Instance.new("UICorner", zhxBtn).CornerRadius = UDim.new(0, 10)
+local zs = Instance.new("UIStroke", zhxBtn)
+zs.Color = Color3.fromRGB(72, 210, 130)
+zs.Thickness = 1.5
+
+-- Drag logic untuk tombol ZHX
+local dragB = false
+local dragIB, dragSB, startPB
+
+zhxBtn.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragB = true
+        dragSB = inp.Position
+        startPB = zhxBtn.Position
+        inp.Changed:Connect(function()
+            if inp.UserInputState == Enum.UserInputState.End then dragB = false end
+        end)
+    end
+end)
+
+zhxBtn.InputChanged:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+        dragIB = inp
+    end
+end)
+
+UIS.InputChanged:Connect(function(inp)
+    if inp == dragIB and dragB then
+        local d = inp.Position - dragSB
+        local vp = workspace.CurrentCamera.ViewportSize
+        zhxBtn.Position = UDim2.new(0, math.clamp(startPB.X.Offset + d.X, 0, vp.X - 46), 0, math.clamp(startPB.Y.Offset + d.Y, 0, vp.Y - 46))
+    end
+end)
+
+local uiVis = true
+zhxBtn.MouseButton1Click:Connect(function()
+    if dragB then return end
+    uiVis = not uiVis
+    if mainGui then mainGui.Enabled = uiVis end
+    zs.Color = uiVis and Color3.fromRGB(72, 210, 130) or Color3.fromRGB(100, 100, 100)
+    sendLog("🔘 ZHX TOGGLE", "Panel Utama diubah menjadi: " .. (uiVis and "TERLIHAT" or "DISEMBUNYIKAN"))
+end)
+table.insert(out, "✅ Tombol ZHX Berhasil Dibuat.")
+
+sendLog("🔬 HASIL FASE 3.5", table.concat(out, "\n\n"))
