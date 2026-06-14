@@ -1,13 +1,14 @@
 -- ══════════════════════════════════════════════════════════════════════════════
---    FISH IT AUTO BOOTH v15.2 (KYRILIB EDITION - ULTRA STABLE) by ZaZhx
+--    FISH IT AUTO BOOTH v16.0 (KyriLib Edition) by ZaZhx
 -- ══════════════════════════════════════════════════════════════════════════════
--- [AI GUIDELINES - PENGEMBANGAN V15.2 KYRILIB]
--- 1. UI MIGRATION: Menggunakan KyriLib untuk kestabilan maksimal dan ringan memori.
--- 2. NO REBUILD UI (ANTI-FREEZE): UI tidak lagi dihancurkan/dibangun ulang. Jika 
---    Auto Booth aktif, interaksi pada Input/Dropdown akan otomatis diabaikan.
--- 3. NATIVE MULTISELECT: Menggantikan Custom Overlay dengan tab:multiselect bawaan.
--- 4. DELAYED UI CREATION: Tab Slot baru dibuat setelah Muat Daftar Item ditekan 
---    untuk menjamin Dropdown/Multiselect memiliki daftar item yang valid.
+-- [AI GUIDELINES - PENGEMBANGAN V16.0]
+-- 1. TELEPORT AMAN: Anchor HRP + Noclip + Jeda 0.3s agar tidak terpental.
+-- 2. HAPUS BOOTH: RF Tetangga DeleteSaleListing + Args ("Booth", listingKey).
+-- 3. UI ANTI-FREEZE: Tidak ada Rebuild UI. Logika kunci via flag autoOn di callback.
+-- 4. NO UI SIMULATION: Selalu Direct InvokeServer, bukan simulasi klik/sentuh.
+-- 5. WEBHOOK LOGGING: Gunakan webhook discord untuk log terjual.
+-- 6. AUTO REJECT TRADE: Suppress UI popup via dummyPromise, bukan decline ke pengirim.
+-- 7. UI LIBRARY: KyriLib (menggantikan Fluent UI Modded).
 -- ══════════════════════════════════════════════════════════════════════════════
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -20,14 +21,32 @@ local TS         = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
 local Lighting   = game:GetService("Lighting")
 local Workspace  = game:GetService("Workspace")
+local StarterGui = game:GetService("StarterGui")
 
-local _declineRF      = nil
+local _declineRF        = nil
 local _promptController = nil
+local _autoRejectHooked = false
+local _origFirePrompt   = nil
 
 while not Players.LocalPlayer do task.wait() end
 local lp = Players.LocalPlayer
 local pg = lp:WaitForChild("PlayerGui", 9e9)
 
+-- =====================
+-- NOTIFIKASI LOADING AWAL (sebelum UI muncul)
+-- =====================
+pcall(function()
+    StarterGui:SetCore("SendNotification", {
+        Title    = "ZHX Hub v16.0",
+        Text     = "Memuat Data & Sistem...",
+        Icon     = "rbxassetid://78392602281326",
+        Duration = 6
+    })
+end)
+
+-- =====================
+-- CORE SERVICES
+-- =====================
 local SharedFolder   = RS:WaitForChild("Shared", 9e9)
 local PackagesFolder = RS:WaitForChild("Packages", 9e9)
 local ItemUtility    = require(SharedFolder:WaitForChild("ItemUtility", 9e9))
@@ -36,33 +55,56 @@ local PlayerData     = Replion.Client:WaitReplion("Data")
 task.wait(1)
 
 -- =====================
--- INISIALISASI KYRILIB
+-- LOAD KYRILIB (suppress logo loading bawaan)
 -- =====================
 local kyri = nil
 local fetchAttempts = 0
+
+-- Suppress ScreenGui KyriLib loading screen sementara
+local loadingSuppressor = Instance.new("ScreenGui")
+loadingSuppressor.Name = "KyriSuppressor"
+loadingSuppressor.DisplayOrder = 9999999
+loadingSuppressor.IgnoreGuiInset = true
+loadingSuppressor.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+pcall(function()
+    loadingSuppressor.Parent = game:GetService("CoreGui")
+end)
+if not loadingSuppressor.Parent then
+    loadingSuppressor.Parent = pg
+end
+
+-- Frame hitam penuh untuk tutup logo KyriLib saat loading
+local suppressFrame = Instance.new("Frame")
+suppressFrame.Size = UDim2.new(1, 0, 1, 0)
+suppressFrame.Position = UDim2.new(0, 0, 0, 0)
+suppressFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+suppressFrame.BorderSizePixel = 0
+suppressFrame.ZIndex = 9999998
+suppressFrame.Parent = loadingSuppressor
+
 repeat
     fetchAttempts = fetchAttempts + 1
     local ok, res = pcall(function()
         return loadstring(game:HttpGet("https://kyrilib.dev/kyrilib/"))()
     end)
-    if ok and res then kyri = res else task.wait(2) end
+    if ok and res then
+        kyri = res
+    else
+        task.wait(2)
+    end
 until kyri or fetchAttempts >= 5
 
 if not kyri then
-    game.StarterGui:SetCore("SendNotification", {Title="❌ GAGAL MEMUAT", Text="Gagal memuat KyriLib. Cek koneksi."})
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title    = "❌ Gagal Memuat UI",
+            Text     = "Koneksi lemah. Jalankan ulang script.",
+            Icon     = "rbxassetid://78392602281326",
+            Duration = 10
+        })
+    end)
+    loadingSuppressor:Destroy()
     return
-end
-
-local dn = lp.DisplayName or lp.Name
-local w = kyri.new("ZHX Hub | Auto Booth v15.2", {
-    GameName = "ZHX_FishIt_AutoBooth",
-    AutoLoad = "default"
-})
-
-if not w then return end
-
-local function SendNotify(title, msg, dur)
-    if w and w.notify then w:notify(title, msg, dur or 3) end
 end
 
 -- =====================
@@ -86,12 +128,17 @@ local function sendEmbed(title, desc, color)
     if url == "" then return end
     pcall(function()
         request({
-            Url=url, Method="POST",
-            Headers={["Content-Type"]="application/json"},
-            Body=HS:JSONEncode({
-                username="🐟 ZaZhx Auto Booth",
-                embeds={{title=title, description=desc, color=color or 3066993,
-                    footer={text="Fish It Auto Booth v15.2 • "..os.date("%H:%M:%S")}}}
+            Url     = url,
+            Method  = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body    = HS:JSONEncode({
+                username = "🐟 ZaZhx Auto Booth",
+                embeds   = {{
+                    title       = title,
+                    description = desc,
+                    color       = color or 3066993,
+                    footer      = { text = "Fish It Auto Booth v16.0 • " .. os.date("%H:%M:%S") }
+                }}
             })
         })
     end)
@@ -101,12 +148,13 @@ end
 -- CORE DATA
 -- =====================
 local TOKEN_PATHS = {
-    {"Events",         "Frame.TokenCounter.Counter"},
-    {"TokenShardsAd",  "Container.Bottom.Tokens.TokenCounter.Counter"},
-    {"! Trade Tokens", "Frame.Top.Tokens.TokenCounter.Counter"},
-    {"! Trading",      "Frame.Bottom.Tokens.TokenCounter.Counter"},
-    {"! Booth",        "Frame.Bottom.Tokens.TokenCounter.Counter"},
+    { "Events",         "Frame.TokenCounter.Counter"                      },
+    { "TokenShardsAd",  "Container.Bottom.Tokens.TokenCounter.Counter"    },
+    { "! Trade Tokens", "Frame.Top.Tokens.TokenCounter.Counter"           },
+    { "! Trading",      "Frame.Bottom.Tokens.TokenCounter.Counter"        },
+    { "! Booth",        "Frame.Bottom.Tokens.TokenCounter.Counter"        },
 }
+
 local function resolveSubPath(root, pathStr)
     local obj = root
     for part in pathStr:gmatch("[^%.]+") do
@@ -115,6 +163,7 @@ local function resolveSubPath(root, pathStr)
     end
     return obj
 end
+
 local function getCurrentToken()
     for _, e in ipairs(TOKEN_PATHS) do
         local gui = pg:FindFirstChild(e[1])
@@ -125,6 +174,7 @@ local function getCurrentToken()
     end
     return "?"
 end
+
 local function getItemName(itemId)
     local ok, data = pcall(function() return ItemUtility:GetItemData(itemId) end)
     if ok and data then
@@ -132,8 +182,9 @@ local function getItemName(itemId)
         if data.Name then return data.Name end
         if type(data) == "string" then return data end
     end
-    return "Item#"..tostring(itemId)
+    return "Item#" .. tostring(itemId)
 end
+
 local function getItemCategory(itemId)
     local ok, data = pcall(function() return ItemUtility:GetItemData(itemId) end)
     if ok and data then
@@ -142,6 +193,7 @@ local function getItemCategory(itemId)
     end
     return "Fish"
 end
+
 local function getInventorySnapshot()
     local inv = PlayerData:Get("Inventory")
     if not inv or not inv.Items then return {} end
@@ -149,6 +201,7 @@ local function getInventorySnapshot()
     for _, item in ipairs(inv.Items) do t[item.UUID] = item.Id end
     return t
 end
+
 local function getUUIDsForItemId(itemId)
     local inv = PlayerData:Get("Inventory")
     if not inv or not inv.Items then return {} end
@@ -158,6 +211,7 @@ local function getUUIDsForItemId(itemId)
     end
     return uuids
 end
+
 local function getInventoryItemList()
     local inv = PlayerData:Get("Inventory")
     if not inv or not inv.Items then return {} end
@@ -167,13 +221,13 @@ local function getInventoryItemList()
             seen[item.Id] = true
             local ok,  n = pcall(getItemName,     item.Id)
             local ok2, c = pcall(getItemCategory, item.Id)
-            local itemName = (ok  and n) or ("Item#"..tostring(item.Id))
+            local itemName = (ok  and n) or ("Item#" .. tostring(item.Id))
             local itemCat  = (ok2 and c) or "Fish"
             local count    = #getUUIDsForItemId(item.Id)
-            table.insert(list, {itemId=item.Id, name=itemName, category=itemCat, count=count})
+            table.insert(list, { itemId = item.Id, name = itemName, category = itemCat, count = count })
         end
     end
-    table.sort(list, function(a,b) return a.name < b.name end)
+    table.sort(list, function(a, b) return a.name < b.name end)
     return list
 end
 
@@ -186,14 +240,15 @@ local capturedDeleteRF = nil
 local function findRealRF()
     local ok, net = pcall(function() return RS.Packages._Index["sleitnick_net@0.2.0"].net end)
     if not ok or not net then return nil end
-    for i, child in ipairs(net:GetChildren()) do
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
         if child.Name == "RF/Trading/CreateSaleListing" then
             local childRF = child:FindFirstChildOfClass("RemoteFunction")
             if childRF then
                 local h = childRF.Name:match("^RF/([a-fA-F0-9]+)$")
                 if h and #h == 64 then return childRF end
             end
-            local nxt = net:GetChildren()[i+1]
+            local nxt = children[i + 1]
             if nxt and nxt:IsA("RemoteFunction") then
                 local h = nxt.Name:match("^RF/([a-fA-F0-9]+)$")
                 if h and #h == 64 then return nxt end
@@ -207,9 +262,10 @@ end
 local function findRealDeleteRF()
     local ok, net = pcall(function() return RS.Packages._Index["sleitnick_net@0.2.0"].net end)
     if not ok or not net then return nil end
-    for i, child in ipairs(net:GetChildren()) do
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
         if child.Name == "RF/Trading/DeleteSaleListing" then
-            local nxt = net:GetChildren()[i+1]
+            local nxt = children[i + 1]
             if nxt and nxt:IsA("RemoteFunction") then
                 local h = nxt.Name:match("^RF/([a-fA-F0-9]+)$")
                 if h and #h == 64 then return nxt end
@@ -221,38 +277,42 @@ local function findRealDeleteRF()
 end
 
 -- =====================
--- STATE & DATA SLOT
+-- STATE
 -- =====================
 local autoOn            = false
-local slotsCreated      = false
+local boothInitializing = false
+local isLoadingConfig   = false
 local lastMuatTime      = 0
 local lastClaimTime     = 0
 local muatDone          = false
 local lastDeleteTime    = 0
 local isDeleting        = false
+local lastButtonTime    = {}
+local BUTTON_COOLDOWN   = 1.5
+
+local function canPressButton(k)
+    local now = tick()
+    if lastButtonTime[k] and (now - lastButtonTime[k]) < BUTTON_COOLDOWN then return false end
+    lastButtonTime[k] = now
+    return true
+end
 
 local MAX_SLOTS = 8
 local slotData, slotListing = {}, {}
 for i = 1, MAX_SLOTS do
-    slotData[i]    = {itemId=nil,itemName=nil,category=nil,price=0,active=false,listedUUID=nil}
+    slotData[i]    = { itemId = nil, itemName = nil, category = nil, price = 0, active = false, listedUUID = nil }
     slotListing[i] = false
 end
 
 local MAX_MULTI = 2
 local multiSlotData, multiListing = {}, {}
 for m = 1, MAX_MULTI do
-    multiSlotData[m] = {items={},price=0,active=false,currentItemIdx=1,listedUUID=nil}
+    multiSlotData[m] = { items = {}, price = 0, active = false, currentItemIdx = 1, listedUUID = nil, enabled = false }
     multiListing[m]  = false
 end
 
 local allItemsCache = {}
 local nameToIdMap   = {}
-
--- UI Element References
-local tabSetup, tabSingle, tabMulti, tabConfig, tabWebhook, tabUtility, tabMisc
-local singleUI = {}
-local multiUI = {}
-local tglAutoBooth
 
 local function isItemUsed(itemId, excSingle, excMulti)
     for i = 1, MAX_SLOTS do
@@ -269,13 +329,16 @@ local function isItemUsed(itemId, excSingle, excMulti)
 end
 
 -- =====================
--- TELEPORT AMAN
+-- TELEPORT AMAN v16.0
 -- =====================
 local noclipConn = nil
+
 local function startNoclip(char)
     if noclipConn then noclipConn:Disconnect() end
     noclipConn = RunService.Stepped:Connect(function()
-        if not char or not char.Parent then noclipConn:Disconnect(); noclipConn = nil; return end
+        if not char or not char.Parent then
+            noclipConn:Disconnect(); noclipConn = nil; return
+        end
         for _, p in ipairs(char:GetDescendants()) do
             if p:IsA("BasePart") then p.CanCollide = false end
         end
@@ -286,19 +349,21 @@ local function stopNoclip(char)
     if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
     if not char then return end
     for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end
+        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+            p.CanCollide = true
+        end
     end
 end
 
 local function safeTeleport(hrp, char, cf)
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum then return end
-    local origWalk   = hum.WalkSpeed
-    local origJump   = hum.JumpPower
-    local origAuto   = hum.AutoRotate
-    hum.WalkSpeed    = 0
-    hum.JumpPower    = 0
-    hum.AutoRotate   = false
+    local origWalk  = hum.WalkSpeed
+    local origJump  = hum.JumpPower
+    local origAuto  = hum.AutoRotate
+    hum.WalkSpeed   = 0
+    hum.JumpPower   = 0
+    hum.AutoRotate  = false
     startNoclip(char)
     hrp.Anchored = true
     hrp.CFrame   = cf
@@ -313,6 +378,9 @@ local function safeTeleport(hrp, char, cf)
     hum.AutoRotate = origAuto
 end
 
+-- =====================
+-- BOOTH CFRAMES
+-- =====================
 local BOOTH_CFRAMES = {
     CFrame.new(-1085.273071, 14.589623, 3042.103516, 0.333206, 0.000000, -0.942854, 0.000000, 1.000000, 0.000000, 0.942854, 0.000000, 0.333206),
     CFrame.new(-1011.113647, 14.589410, 3042.524658, 0.478714, -0.000000, 0.877971, 0.000000, 1.000000, 0.000000, -0.877971, 0.000000, 0.478714),
@@ -325,6 +393,13 @@ local BOOTH_CFRAMES = {
     CFrame.new(-994.235107,  14.589550, 3080.823242, -0.472572, -0.000000, 0.881292, -0.000000, 1.000000, -0.000000, -0.881292, 0.000000, -0.472572),
     CFrame.new(-1101.744385, 14.589550, 3081.385254, -0.506954, -0.000000, -0.861973, -0.000000, 1.000000, -0.000000, 0.861973, 0.000000, -0.506954),
     CFrame.new(-991.350891,  14.588938, 3094.645264, 0.030671, -0.000000, 0.999530, -0.000000, 1.000000, 0.000000, -0.999530, 0.000000, 0.030671),
+    CFrame.new(-1104.228394, 14.588938, 3095.107910, -0.043987, 0.000000, -0.999032, 0.000000, 1.000000, 0.000000, 0.999032, 0.000000, -0.043987),
+    CFrame.new(-1093.335938, 14.589548, 3135.289062, 0.477521, 0.000000, -0.878620, 0.000000, 1.000000, 0.000000, 0.878620, 0.000000, 0.477521),
+    CFrame.new(-1083.042725, 14.589182, 3145.901367, 0.902490, 0.000000, -0.430710, -0.000000, 1.000000, 0.000000, 0.430710, 0.000000, 0.902490),
+    CFrame.new(-1072.601074, 14.588938, 3151.878418, 0.874836, 0.000000, -0.484420, -0.000000, 1.000000, 0.000000, 0.484420, 0.000000, 0.874836),
+    CFrame.new(-1024.225586, 14.588938, 3152.527588, 0.863922, 0.000000, 0.503626, -0.000000, 1.000000, 0.000000, -0.503626, 0.000000, 0.863922),
+    CFrame.new(-1012.602600, 14.589548, 3145.476807, 0.864950, 0.000000, 0.501858, -0.000000, 1.000000, -0.000000, -0.501858, 0.000000, 0.864950),
+    CFrame.new(-1002.918640, 14.589548, 3134.902588, 0.530974, 0.000000, 0.847388, -0.000000, 1.000000, -0.000000, -0.847388, 0.000000, 0.530974),
 }
 
 _G.ForceBoothClaimed = false
@@ -333,18 +408,20 @@ local function checkBoothOwnership()
     if _G.ForceBoothClaimed then return true end
     pcall(function()
         local d  = PlayerData:Get("Booth")
-        if type(d) == "table" and (d.Active==true or d.Claimed==true) then _G.ForceBoothClaimed=true end
+        if type(d) == "table" and (d.Active == true or d.Claimed == true) then
+            _G.ForceBoothClaimed = true
+        end
         local d2 = PlayerData:Get("HasBooth")
-        if d2==true then _G.ForceBoothClaimed=true end
+        if d2 == true then _G.ForceBoothClaimed = true end
     end)
     if _G.ForceBoothClaimed then return true end
-    local dn2 = lp.DisplayName or lp.Name
+    local dn = lp.DisplayName or lp.Name
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.ActionText=="Edit Booth" then
-            _G.ForceBoothClaimed=true; return true
+        if obj:IsA("ProximityPrompt") and obj.ActionText == "Edit Booth" then
+            _G.ForceBoothClaimed = true; return true
         elseif (obj:IsA("TextLabel") or obj:IsA("TextButton")) and
-               (obj.Text==dn2.."'s Booth" or obj.Text==lp.Name.."'s Booth") then
-            _G.ForceBoothClaimed=true; return true
+               (obj.Text == dn .. "'s Booth" or obj.Text == lp.Name .. "'s Booth") then
+            _G.ForceBoothClaimed = true; return true
         end
     end
     return false
@@ -361,7 +438,7 @@ local function tryClaimBooth(statusCallback)
     local char = lp.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then
-        isClaiming=false
+        isClaiming = false
         if statusCallback then statusCallback("error_char") end; return
     end
     local originalCF = hrp.CFrame
@@ -370,26 +447,28 @@ local function tryClaimBooth(statusCallback)
         safeTeleport(hrp, char, cf)
         task.wait(0.1)
         for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("ProximityPrompt") and obj.ActionText=="Claim Booth" then
+            if obj:IsA("ProximityPrompt") and obj.ActionText == "Claim Booth" then
                 local worldPos = nil
                 if obj.Parent:IsA("Attachment") then
-                    pcall(function() worldPos=obj.Parent.WorldPosition end)
+                    pcall(function() worldPos = obj.Parent.WorldPosition end)
                     if not worldPos and obj.Parent.Parent:IsA("BasePart") then
-                        worldPos=obj.Parent.Parent.Position
+                        worldPos = obj.Parent.Parent.Position
                     end
                 elseif obj.Parent:IsA("BasePart") then
-                    worldPos=obj.Parent.Position
+                    worldPos = obj.Parent.Position
                 end
-                if worldPos and (worldPos-hrp.Position).Magnitude <= 20 then
+                if worldPos and (worldPos - hrp.Position).Magnitude <= 20 then
                     local oldLoS  = obj.RequiresLineOfSight
                     local oldDist = obj.MaxActivationDistance
                     obj.RequiresLineOfSight   = false
                     obj.MaxActivationDistance = 99
                     pcall(function() fireproximityprompt(obj) end)
                     task.wait(1.5)
-                    if checkBoothOwnership() or not obj:IsDescendantOf(Workspace)
-                    or not obj.Enabled or obj.ActionText~="Claim Booth" then
-                        claimed=true; _G.ForceBoothClaimed=true; break
+                    if checkBoothOwnership()
+                    or not obj:IsDescendantOf(Workspace)
+                    or not obj.Enabled
+                    or obj.ActionText ~= "Claim Booth" then
+                        claimed = true; _G.ForceBoothClaimed = true; break
                     end
                     pcall(function()
                         obj.RequiresLineOfSight   = oldLoS
@@ -405,104 +484,190 @@ local function tryClaimBooth(statusCallback)
     isClaiming = false
     stopNoclip(char)
     if claimed then
-        lastClaimTime=tick()
+        lastClaimTime = tick()
+        _G.ForceBoothClaimed = true
         if statusCallback then statusCallback("sukses") end
     else
-        pcall(function() hrp.CFrame=originalCF end)
+        pcall(function() hrp.CFrame = originalCF end)
         if statusCallback then statusCallback("penuh") end
     end
 end
 
 -- =====================
--- AUTO BOOTH BACKEND
+-- CONFIG PERSISTENCE
+-- =====================
+local CONFIG_FILE    = "ZhxBooth_configs.json"
+local savedConfigs   = {}
+local configNameList = {}
+
+local function loadConfigsFromFile()
+    if type(readfile) ~= "function" then return end
+    pcall(function()
+        if isfile(CONFIG_FILE) then
+            local d = HS:JSONDecode(readfile(CONFIG_FILE))
+            if d.names   then configNameList = d.names   end
+            if d.configs then savedConfigs   = d.configs end
+        end
+    end)
+end
+loadConfigsFromFile()
+
+local function saveConfigsToFile()
+    if type(writefile) == "function" then
+        pcall(function()
+            writefile(CONFIG_FILE, HS:JSONEncode({ names = configNameList, configs = savedConfigs }))
+        end)
+    end
+end
+
+-- =====================
+-- BUAT WINDOW KYRILIB
+-- (Panel & tombol floating disembunyikan dulu saat loading)
+-- =====================
+local w = kyri.new("ZHX Hub | Fish It Plaza", {
+    GameName = "FishItPlaza_ZHX",
+    Theme    = {
+        bg        = Color3.fromRGB(8,   8,   8  ),
+        container = Color3.fromRGB(14,  14,  14 ),
+        element   = Color3.fromRGB(22,  22,  22 ),
+        hover     = Color3.fromRGB(30,  30,  30 ),
+        active    = Color3.fromRGB(40,  40,  40 ),
+        accent    = Color3.fromRGB(72,  210, 130),
+        border    = Color3.fromRGB(72,  210, 130),
+        text      = Color3.fromRGB(230, 235, 232),
+        subtext   = Color3.fromRGB(120, 130, 125),
+    }
+})
+
+-- Sembunyikan window KyriLib sementara selama loading
+-- (akan ditampilkan kembali setelah semua siap)
+local windowVisible = false
+
+-- =====================
+-- BUAT TAB-TAB
+-- =====================
+local tabSetup  = w:tab("Setup",        "bolt"      )
+local tabSlots  = w:tab("Single Slots", "box"        )
+local tabMulti  = w:tab("Multi Slots",  "layers"     )
+local tabUtil   = w:tab("Utility",      "sliders"    )
+local tabWH     = w:tab("Webhook",      "bell"       )
+local tabConfig = w:tab("Config",       "save"       )
+local tabSet    = w:tab("Settings",     "settings-2" )
+
+-- =====================
+-- REFERENSI ELEMEN UI (untuk update status)
+-- =====================
+local elSingleStatus  = {}  -- label status per slot
+local elSingleDD      = {}  -- dropdown item per slot
+local elSingleToggle  = {}  -- toggle aktif per slot
+local elMultiStatus   = {}  -- label status per multi slot
+local elMultiToggle   = {}  -- toggle aktif per multi slot
+local elMultiSelected = {}  -- label item dipilih per multi slot
+
+-- =====================
+-- BACKEND LISTING
 -- =====================
 local function getAvailableUUIDForItem(itemId, excludeUUIDs)
     excludeUUIDs = excludeUUIDs or {}
-    local snap  = getInventorySnapshot()
+    local snap = getInventorySnapshot()
     for _, uuid in ipairs(getUUIDsForItemId(itemId)) do
         if snap[uuid] and not excludeUUIDs[uuid] then return uuid end
     end
     return nil
 end
+
 local function getAllUsedUUIDs(exceptType, exceptIdx)
     local used = {}
-    for i=1,MAX_SLOTS do
-        if not(exceptType=="single" and i==exceptIdx) and slotData[i].listedUUID then
-            used[slotData[i].listedUUID]=true
+    for i = 1, MAX_SLOTS do
+        if not (exceptType == "single" and i == exceptIdx) and slotData[i].listedUUID then
+            used[slotData[i].listedUUID] = true
         end
     end
-    for m=1,MAX_MULTI do
-        if not(exceptType=="multi" and m==exceptIdx) and multiSlotData[m].listedUUID then
-            used[multiSlotData[m].listedUUID]=true
+    for m = 1, MAX_MULTI do
+        if not (exceptType == "multi" and m == exceptIdx) and multiSlotData[m].listedUUID then
+            used[multiSlotData[m].listedUUID] = true
         end
     end
     return used
 end
 
 local function listSingleSlot(idx)
-    local s=slotData[idx]
+    local s = slotData[idx]
     if not s.itemId or not s.active or slotListing[idx] or not capturedRF then return false end
-    local uuid=getAvailableUUIDForItem(s.itemId,getAllUsedUUIDs("single",idx))
-    if not uuid then s.active=false; return false,"Habis" end
-    slotListing[idx]=true
-    local ok=pcall(function() capturedRF:InvokeServer("Booth",s.category,uuid,s.price) end)
-    slotListing[idx]=false
-    if ok then s.listedUUID=uuid; return true else s.listedUUID=nil; return false end
+    local uuid = getAvailableUUIDForItem(s.itemId, getAllUsedUUIDs("single", idx))
+    if not uuid then s.active = false; return false, "Habis" end
+    slotListing[idx] = true
+    local ok = pcall(function() capturedRF:InvokeServer("Booth", s.category, uuid, s.price) end)
+    slotListing[idx] = false
+    if ok then s.listedUUID = uuid; return true else s.listedUUID = nil; return false end
 end
 
 local function listMultiSlot(mIdx)
-    local ms=multiSlotData[mIdx]
-    if not ms.active or #ms.items==0 or multiListing[mIdx] or not capturedRF then return false end
-    local total=#ms.items
-    local found=false
-    for _=1,total do
-        if ms.currentItemIdx>total then ms.currentItemIdx=1 end
-        local it=ms.items[ms.currentItemIdx]
-        if it and #getUUIDsForItemId(it.itemId)>0 then found=true; break
-        else ms.currentItemIdx=ms.currentItemIdx+1 end
+    local ms = multiSlotData[mIdx]
+    if not ms.active or #ms.items == 0 or multiListing[mIdx] or not capturedRF then return false end
+    local total = #ms.items
+    local found = false
+    for _ = 1, total do
+        if ms.currentItemIdx > total then ms.currentItemIdx = 1 end
+        local it = ms.items[ms.currentItemIdx]
+        if it and #getUUIDsForItemId(it.itemId) > 0 then found = true; break
+        else ms.currentItemIdx = ms.currentItemIdx + 1 end
     end
-    if not found then ms.active=false; return false,"Habis" end
-    local it=ms.items[ms.currentItemIdx]
-    local uuid=getAvailableUUIDForItem(it.itemId,getAllUsedUUIDs("multi",mIdx))
+    if not found then ms.active = false; return false, "Habis" end
+    local it   = ms.items[ms.currentItemIdx]
+    local uuid = getAvailableUUIDForItem(it.itemId, getAllUsedUUIDs("multi", mIdx))
     if not uuid then
-        ms.currentItemIdx=ms.currentItemIdx+1
-        if ms.currentItemIdx>total then ms.currentItemIdx=1 end
+        ms.currentItemIdx = ms.currentItemIdx + 1
+        if ms.currentItemIdx > total then ms.currentItemIdx = 1 end
         return false
     end
-    multiListing[mIdx]=true
-    local ok=pcall(function() capturedRF:InvokeServer("Booth",it.category,uuid,ms.price) end)
-    multiListing[mIdx]=false
-    if ok then ms.listedUUID=uuid; return true else ms.listedUUID=nil; return false end
+    multiListing[mIdx] = true
+    local ok = pcall(function() capturedRF:InvokeServer("Booth", it.category, uuid, ms.price) end)
+    multiListing[mIdx] = false
+    if ok then ms.listedUUID = uuid; return true else ms.listedUUID = nil; return false end
 end
 
 local function getTotalMultiStock(mIdx)
-    local t=0
-    for _,it in ipairs(multiSlotData[mIdx].items) do t=t+#getUUIDsForItemId(it.itemId) end
+    local t = 0
+    for _, it in ipairs(multiSlotData[mIdx].items) do
+        t = t + #getUUIDsForItemId(it.itemId)
+    end
     return t
 end
 
 -- =====================
--- UI UPDATE LOGIC (KYRILIB)
+-- UPDATE STATUS UI
 -- =====================
 local function updateAllUIStatus()
-    if not slotsCreated then return end
-    for i=1,MAX_SLOTS do
-        if singleUI[i] and singleUI[i].statInp then
+    for i = 1, MAX_SLOTS do
+        if elSingleStatus[i] then
             if slotData[i].itemId then
                 local cnt = #getUUIDsForItemId(slotData[i].itemId)
-                singleUI[i].statInp.input.Text = "Stok: "..cnt.." | "..(slotData[i].active and "✅ AKTIF" or "⛔ MATI (Cek Harga)")
+                local statusTxt = slotData[i].active and "✅ Aktif" or "⛔ Nonaktif (cek harga)"
+                elSingleStatus[i]:set("Stok Tas: " .. cnt .. "  |  " .. statusTxt)
             else
-                singleUI[i].statInp.input.Text = "Kosong — pilih item & isi harga"
+                elSingleStatus[i]:set("Kosong — pilih item & isi harga")
             end
         end
     end
-    for m=1,MAX_MULTI do
-        if multiUI[m] and multiUI[m].statInp then
+    for m = 1, MAX_MULTI do
+        if elMultiStatus[m] then
             if #multiSlotData[m].items > 0 then
                 local tot = getTotalMultiStock(m)
-                multiUI[m].statInp.input.Text = "Stok Gabungan: "..tot.." | "..(multiSlotData[m].active and "✅ AKTIF" or "⛔ MATI (Cek Harga)")
+                local statusTxt = multiSlotData[m].active and "✅ Aktif" or "⛔ Nonaktif (cek harga)"
+                elMultiStatus[m]:set("Total Stok: " .. tot .. "  |  " .. #multiSlotData[m].items .. " item  |  " .. statusTxt)
             else
-                multiUI[m].statInp.input.Text = "Antrian kosong — pilih item"
+                elMultiStatus[m]:set("Antrian kosong — tambahkan item")
+            end
+        end
+        if elMultiSelected[m] then
+            local ms = multiSlotData[m]
+            if #ms.items == 0 then
+                elMultiSelected[m]:set("Belum ada item dipilih")
+            else
+                local names = {}
+                for _, it in ipairs(ms.items) do table.insert(names, it.itemName) end
+                elMultiSelected[m]:set(table.concat(names, ", "))
             end
         end
     end
@@ -511,471 +676,1116 @@ end
 -- =====================
 -- TAB SETUP
 -- =====================
-tabSetup = w:tab("Setup", "settings")
-tabSetup:section("Langkah 1: Claim Booth")
-tabSetup:button("🏪 AUTO CLAIM BOOTH", function()
-    if checkBoothOwnership() then
-        SendNotify("Info", "Kamu sudah punya booth! Lanjut ke Langkah 2.", 3); return
+tabSetup:paragraph("Panduan Penggunaan",
+    "Langkah 1: Tekan Auto Claim Booth untuk mengklaim booth.\n" ..
+    "Langkah 2: Tekan Muat Daftar Item untuk memuat inventory.\n" ..
+    "Langkah 3: Atur item & harga di tab Single/Multi Slots.\n" ..
+    "Langkah 4: Aktifkan toggle Mulai Auto Booth."
+)
+
+tabSetup:section("langkah 1 — klaim booth")
+
+tabSetup:button("🏪 Auto Claim Booth", function()
+    if not canPressButton("claim") then
+        w:notify("Tunggu Sebentar", "Jangan terlalu cepat menekan tombol!", 2); return
     end
-    SendNotify("Mencari Booth...", "Sistem sedang mencari booth kosong...", 3)
-    tryClaimBooth(function(status)
-        if status=="sukses" then SendNotify("✅ Berhasil", "Booth diklaim! Lanjut ke Langkah 2.", 4)
-        elseif status=="penuh" then SendNotify("Booth Penuh", "Semua booth terisi. Pindah server.", 4)
-        elseif status=="sudah_booth" then SendNotify("Info", "Kamu sudah punya booth!", 3)
-        elseif status=="error_char" then SendNotify("Error", "Karakter belum siap.", 3) end
+    if checkBoothOwnership() then
+        w:notify("Info", "Kamu sudah punya booth! Lanjut ke Langkah 2.", 3); return
+    end
+    w:notify("Mencari Booth...", "Sistem sedang mencari booth kosong...", 3)
+    task.spawn(function()
+        tryClaimBooth(function(status)
+            if status == "sukses" then
+                w:notify("✅ Berhasil", "Booth berhasil diklaim! Lanjut ke Langkah 2.", 5)
+            elseif status == "penuh" then
+                w:notify("Booth Penuh", "Semua booth terisi. Silakan pindah server.", 4)
+            elseif status == "sudah_booth" then
+                w:notify("Info", "Kamu sudah punya booth! Lanjut ke Langkah 2.", 3)
+            elseif status == "error_char" then
+                w:notify("Error", "Karakter belum siap, coba lagi.", 3)
+            end
+        end)
     end)
 end)
 
-tabSetup:section("Langkah 2: Muat Inventory")
-tabSetup:paragraph("Penting", "Tekan tombol di bawah untuk MEMUNCULKAN TAB SINGLE & MULTI SLOTS dan memuat daftar item.")
-tabSetup:button("🔄 MUAT DAFTAR ITEM", function()
-    local now=tick()
-    if now-lastMuatTime<3 then SendNotify("Keamanan", "Tunggu sebentar!", 2); return end
-    if not checkBoothOwnership() then SendNotify("Akses Ditolak", "Kamu belum punya booth!", 3); return end
-    
-    local ok,list=pcall(getInventoryItemList)
-    if not ok or not list or #list==0 then
-        SendNotify("Error", "Tas kosong atau belum siap dimuat!", 3); return
-    end
-    
-    lastMuatTime=now
-    allItemsCache=list; nameToIdMap={}
-    
-    local dropdownOptions = {"- Kosongkan -"}
-    local multiSelectOptions = {}
-    
-    for _,it in ipairs(list) do
-        if it.name and it.name~="" then 
-            table.insert(dropdownOptions, it.name)
-            table.insert(multiSelectOptions, it.name)
-            nameToIdMap[it.name]={id=it.itemId,cat=it.category} 
-        end
-    end
+tabSetup:space()
+tabSetup:section("langkah 2 — muat inventory")
 
-    if not slotsCreated then
-        slotsCreated = true
-        tabSingle = w:tab("Single Slots", "box")
-        tabMulti = w:tab("Multi Slots", "layers")
-        
-        -- BUILD SINGLE SLOTS
-        for i = 1, MAX_SLOTS do
-            tabSingle:section("Slot " .. i)
-            local statInp = tabSingle:input("Status Slot "..i, "Kosong", function() end)
-            statInp.input.TextEditable = false
-            statInp.input.ClearTextOnFocus = false
-            statInp.input.TextColor3 = Color3.fromRGB(150, 200, 150)
-            
-            local dd
-            dd = tabSingle:dropdown("Pilih Item", dropdownOptions, "- Kosongkan -", function(val)
-                if autoOn then
-                    SendNotify("🔒 TERKUNCI", "Matikan Auto Booth untuk mengedit!", 2)
-                    if dd and dd.set then pcall(function() dd:set(slotData[i].itemName or "- Kosongkan -") end) end
-                    return
-                end
-                if val == "- Kosongkan -" or val == "" then
-                    slotData[i]={itemId=nil,itemName=nil,category=nil,price=slotData[i].price,active=false,listedUUID=nil}
-                elseif nameToIdMap[val] then
-                    local id=nameToIdMap[val].id
-                    if isItemUsed(id, i, nil) then
-                        SendNotify("⚠ Gagal", val.." sudah dipakai!", 3)
-                        if dd and dd.set then pcall(function() dd:set("- Kosongkan -") end) end
-                        return
-                    end
-                    slotData[i].itemId=id; slotData[i].itemName=val; slotData[i].category=nameToIdMap[val].cat
-                    slotData[i].listedUUID=nil; slotData[i].active=(slotData[i].price>0)
-                end
-                updateAllUIStatus()
-            end)
-            
-            local pr
-            pr = tabSingle:input("Harga (Token)", "Contoh: 500", function(val)
-                if autoOn then
-                    SendNotify("🔒 TERKUNCI", "Matikan Auto Booth untuk mengedit!", 2)
-                    if pr and pr.input then pcall(function() pr.input.Text = tostring(slotData[i].price > 0 and slotData[i].price or "") end) end
-                    return
-                end
-                local p = tonumber(val) or 0
-                slotData[i].price = p; slotData[i].active = (slotData[i].itemId ~= nil and p > 0)
-                updateAllUIStatus()
-            end)
-            
-            singleUI[i] = {statInp=statInp, dd=dd, pr=pr}
-        end
-        
-        -- BUILD MULTI SLOTS (NATIVE MULTISELECT)
-        for m = 1, MAX_MULTI do
-            tabMulti:section("Antrian Multi M" .. m)
-            local statInp = tabMulti:input("Status M"..m, "Antrian kosong", function() end)
-            statInp.input.TextEditable = false
-            statInp.input.ClearTextOnFocus = false
-            statInp.input.TextColor3 = Color3.fromRGB(150, 200, 150)
-            
-            local msUI
-            msUI = tabMulti:multiselect("Pilih Item Antrian", multiSelectOptions, {}, function(selected)
-                if autoOn then
-                    SendNotify("🔒 TERKUNCI", "Matikan Auto Booth untuk mengedit!", 2)
-                    return
-                end
-                local newItems={}
-                -- Handle array or dictionary output from multiselect
-                local isDict = false
-                if type(selected) == "table" then
-                    for k, v in pairs(selected) do
-                        if type(k) == "string" and type(v) == "boolean" then isDict = true; break end
-                    end
-                    
-                    for _, item in ipairs(allItemsCache) do
-                        local isSelected = false
-                        if isDict then isSelected = selected[item.name] == true
-                        else 
-                            for _, v in pairs(selected) do if v == item.name then isSelected = true; break end end
-                        end
-                        
-                        if isSelected then
-                            if isItemUsed(item.itemId, nil, m) then
-                                SendNotify("⚠ Terpakai", item.name.." sudah dipakai di slot lain!", 3)
-                            else
-                                table.insert(newItems,{itemId=item.itemId,itemName=item.name,category=item.category})
-                            end
-                        end
-                    end
-                end
-                
-                multiSlotData[m].items=newItems; multiSlotData[m].currentItemIdx=1
-                multiSlotData[m].listedUUID=nil; multiSlotData[m].active=(#newItems>0 and multiSlotData[m].price>0)
-                updateAllUIStatus()
-            end)
-            
-            local pr
-            pr = tabMulti:input("Harga Pukul Rata", "Contoh: 300", function(val)
-                if autoOn then
-                    SendNotify("🔒 TERKUNCI", "Matikan Auto Booth untuk mengedit!", 2)
-                    if pr and pr.input then pcall(function() pr.input.Text = tostring(multiSlotData[m].price > 0 and multiSlotData[m].price or "") end) end
-                    return
-                end
-                local p = tonumber(val) or 0
-                multiSlotData[m].price = p; multiSlotData[m].active = (#multiSlotData[m].items > 0 and p > 0)
-                updateAllUIStatus()
-            end)
-            
-            multiUI[m] = {statInp=statInp, msUI=msUI, pr=pr}
-        end
-        SendNotify("✅ Tab Siap", "Tab Single & Multi Slots berhasil dimunculkan!", 3)
-    else
-        updateAllUIStatus()
-        SendNotify("🔄 Data Diperbarui", "Sinkronisasi stok tas selesai.", 2)
+tabSetup:button("🔄 Muat Daftar Item", function()
+    local now = tick()
+    if now - lastMuatTime < 5 then
+        w:notify("Keamanan", "Tunggu 5 detik antar penekanan!", 3); return
     end
-    
-    if not capturedRF then capturedRF=findRealRF() end
-    if not capturedDeleteRF then capturedDeleteRF=findRealDeleteRF() end
-    muatDone=true
+    if isClaiming or (now - lastClaimTime < 3) then
+        w:notify("Keamanan", "Tunggu 3 detik setelah claim booth!", 3); return
+    end
+    if not checkBoothOwnership() then
+        w:notify("Akses Ditolak", "Kamu belum punya booth! Claim dulu.", 4); return
+    end
+    lastMuatTime = now
+    local ok, list = pcall(getInventoryItemList)
+    if not ok or not list or #list == 0 then
+        w:notify("Error", "Tas kosong atau inventory belum siap!", 2); return
+    end
+    allItemsCache = list; nameToIdMap = {}
+    for _, it in ipairs(list) do
+        if it.name and it.name ~= "" then
+            nameToIdMap[it.name] = { id = it.itemId, cat = it.category }
+        end
+    end
+    -- Update dropdown single slots
+    local dropVals = { "— Kosongkan —" }
+    for _, it in ipairs(allItemsCache) do
+        if it.name and it.name ~= "" then table.insert(dropVals, it.name) end
+    end
+    for i = 1, MAX_SLOTS do
+        if elSingleDD[i] then
+            pcall(function() elSingleDD[i]:set(slotData[i].itemName or "— Kosongkan —") end)
+        end
+    end
+    updateAllUIStatus()
+    w:notify("✅ Item Dimuat", tostring(#list) .. " item siap. Menyiapkan sistem...", 3)
+    if not capturedRF then
+        capturedRF = findRealRF()
+        if capturedRF then
+            w:notify("✅ Sistem Siap", "Sistem booth berhasil diaktifkan.", 4)
+        else
+            w:notify("❌ Gagal", "Sistem tidak dapat diaktifkan. Coba pindah server.", 5)
+        end
+    end
+    if not capturedDeleteRF then capturedDeleteRF = findRealDeleteRF() end
+    muatDone = true
 end)
 
-tabSetup:section("Langkah 3: Jalankan")
-tglAutoBooth = tabSetup:toggle("▶ MULAI AUTO BOOTH", false, function(state)
+tabSetup:space()
+tabSetup:section("langkah 3 — mulai auto booth")
+
+local autoBoothToggle = tabSetup:toggle("▶ Mulai Auto Booth", false, function(state)
     if state then
         if not capturedRF then
-            SendNotify("⛔ Stop", "Tekan MUAT DAFTAR ITEM dulu!", 3)
-            if tglAutoBooth and tglAutoBooth.set then tglAutoBooth:set(false) end
-            return
+            w:notify("⛔ Stop", "Sistem belum siap! Tekan Muat Daftar Item dulu.", 2)
+            task.defer(function() pcall(function() autoBoothToggle:set(false) end) end); return
         end
-        local hasSlot=false
-        for i=1,MAX_SLOTS do if slotData[i].itemId and slotData[i].price>0 then hasSlot=true; break end end
+        local hasSlot = false
+        for i = 1, MAX_SLOTS do
+            if slotData[i].itemId and slotData[i].price > 0 and slotData[i].enabled then
+                hasSlot = true; break
+            end
+        end
         if not hasSlot then
-            for m=1,MAX_MULTI do if #multiSlotData[m].items>0 and multiSlotData[m].price>0 then hasSlot=true; break end end
+            for m = 1, MAX_MULTI do
+                if #multiSlotData[m].items > 0 and multiSlotData[m].price > 0 and multiSlotData[m].enabled then
+                    hasSlot = true; break
+                end
+            end
         end
         if not hasSlot then
-            SendNotify("⛔ Stop", "Isi minimal 1 slot terlebih dahulu!", 3)
-            if tglAutoBooth and tglAutoBooth.set then tglAutoBooth:set(false) end
-            return
+            w:notify("⛔ Stop", "Aktifkan minimal 1 slot dengan item & harga!", 2)
+            task.defer(function() pcall(function() autoBoothToggle:set(false) end) end); return
         end
-        
-        autoOn=true
-        SendNotify("▶ Auto Booth", "Sistem aktif & UI Terkunci.", 3)
+        autoOn = true; boothInitializing = true
+        -- Aktifkan slot yang enabled
+        for i = 1, MAX_SLOTS do
+            slotData[i].active = slotData[i].enabled and slotData[i].itemId ~= nil and slotData[i].price > 0
+        end
+        for m = 1, MAX_MULTI do
+            multiSlotData[m].active = multiSlotData[m].enabled and #multiSlotData[m].items > 0 and multiSlotData[m].price > 0
+        end
         updateAllUIStatus()
-        
+        w:notify("▶ Auto Booth", "Sistem aktif, memantau booth...", 2)
         task.spawn(function()
-            for i=1,MAX_SLOTS do if autoOn and slotData[i].itemId and slotData[i].active then listSingleSlot(i); updateAllUIStatus(); task.wait(0.6) end end
-            for m=1,MAX_MULTI do if autoOn and multiSlotData[m].active and #multiSlotData[m].items>0 then listMultiSlot(m); updateAllUIStatus(); task.wait(0.6) end end
-            
+            for i = 1, MAX_SLOTS do
+                if not autoOn then break end
+                if slotData[i].itemId and slotData[i].active then
+                    listSingleSlot(i); updateAllUIStatus(); task.wait(0.6)
+                end
+            end
+            for m = 1, MAX_MULTI do
+                if not autoOn then break end
+                if multiSlotData[m].active and #multiSlotData[m].items > 0 then
+                    listMultiSlot(m); updateAllUIStatus(); task.wait(0.6)
+                end
+            end
+            boothInitializing = false
             while autoOn do
                 task.wait(1.5)
                 if not autoOn then break end
-                local snap=getInventorySnapshot()
-                
-                for i=1,MAX_SLOTS do
-                    local s=slotData[i]
+                local snap = getInventorySnapshot()
+                for i = 1, MAX_SLOTS do
+                    local s = slotData[i]
                     if not s.itemId or not s.active then continue end
                     if s.listedUUID and not snap[s.listedUUID] then
-                        local sn,sp=s.itemName,s.price; s.listedUUID=nil
-                        local rem=#getUUIDsForItemId(s.itemId)
-                        sendEmbed("🛒 Terjual — Slot "..i,"**"..sn.."**\n💰 **"..sp.." Token**\n📦 Sisa: **"..rem.."**\n💎 "..getCurrentToken(),3066993)
-                        if rem>0 then
-                            task.delay(0.5,function() if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end end)
+                        local sn, sp = s.itemName, s.price
+                        s.listedUUID = nil
+                        local rem = #getUUIDsForItemId(s.itemId)
+                        sendEmbed("🛒 Terjual — Slot " .. i,
+                            "**" .. sn .. "**\n💰 **" .. sp .. " Token**\n📦 Sisa: **" .. rem .. "**\n💎 " .. getCurrentToken(),
+                            3066993)
+                        if rem > 0 then
+                            task.delay(0.5, function()
+                                if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end
+                            end)
                         else
-                            s.active=false; sendEmbed("⚠ Habis — Slot "..i,sn.." habis.",15158332); updateAllUIStatus()
+                            s.active = false
+                            sendEmbed("⚠ Habis — Slot " .. i, sn .. " habis.", 15158332)
+                            updateAllUIStatus()
                         end
                     elseif not s.listedUUID and not slotListing[i] then
-                        task.spawn(function() if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end end)
+                        task.spawn(function()
+                            if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end
+                        end)
                     end
                 end
-                
-                for m=1,MAX_MULTI do
-                    local ms=multiSlotData[m]
-                    if not ms.active or #ms.items==0 then continue end
+                for m = 1, MAX_MULTI do
+                    local ms = multiSlotData[m]
+                    if not ms.active or #ms.items == 0 then continue end
                     if ms.listedUUID and not snap[ms.listedUUID] then
-                        local ci=ms.currentItemIdx
-                        local sn=(ms.items[ci] and ms.items[ci].itemName) or "?"
-                        ms.listedUUID=nil; ms.currentItemIdx=ci+1
-                        if ms.currentItemIdx>#ms.items then ms.currentItemIdx=1 end
-                        local tot=getTotalMultiStock(m)
-                        sendEmbed("🛒 Terjual — Multi "..m,"**"..sn.."**\n💰 **"..ms.price.." Token**\n📦 Total: **"..tot.."**\n💎 "..getCurrentToken(),3066993)
-                        if tot==0 then
-                            ms.active=false; sendEmbed("⚠ Multi "..m.." Habis","Semua item habis.",15158332); updateAllUIStatus()
+                        local ci = ms.currentItemIdx
+                        local sn = (ms.items[ci] and ms.items[ci].itemName) or "?"
+                        ms.listedUUID = nil; ms.currentItemIdx = ci + 1
+                        if ms.currentItemIdx > #ms.items then ms.currentItemIdx = 1 end
+                        local tot = getTotalMultiStock(m)
+                        sendEmbed("🛒 Terjual — Multi " .. m,
+                            "**" .. sn .. "**\n💰 **" .. ms.price .. " Token**\n📦 Total: **" .. tot .. "**\n💎 " .. getCurrentToken(),
+                            3066993)
+                        if tot == 0 then
+                            ms.active = false
+                            sendEmbed("⚠ Multi " .. m .. " Habis", "Semua item habis.", 15158332)
+                            updateAllUIStatus()
                         else
-                            task.delay(0.5,function() if autoOn and not multiListing[m] then listMultiSlot(m); updateAllUIStatus() end end)
+                            task.delay(0.5, function()
+                                if autoOn and not multiListing[m] then listMultiSlot(m); updateAllUIStatus() end
+                            end)
                         end
                     elseif not ms.listedUUID and not multiListing[m] then
-                        task.spawn(function() if autoOn and not multiListing[m] then listMultiSlot(m); updateAllUIStatus() end end)
+                        task.spawn(function()
+                            if autoOn and not multiListing[m] then listMultiSlot(m); updateAllUIStatus() end
+                        end)
                     end
                 end
                 updateAllUIStatus()
             end
         end)
     else
-        autoOn=false
-        SendNotify("⏹ Auto Booth", "Sistem dihentikan, UI terbuka.", 3)
+        autoOn = false; boothInitializing = false
+        for i = 1, MAX_SLOTS do slotData[i].active = false end
+        for m = 1, MAX_MULTI do multiSlotData[m].active = false end
         updateAllUIStatus()
+        w:notify("⏹ Auto Booth", "Sistem dihentikan.", 2)
     end
-end, "tgl_autobooth")
+end, "auto_booth")
 
-tabSetup:section("Aksi Lainnya")
-tabSetup:button("🗑️ HAPUS ITEM DI BOOTH", function()
-    if autoOn then SendNotify("⛔ Error", "Matikan Auto Booth dulu!", 3); return end
-    if not muatDone then SendNotify("⚠ Belum Siap", "Tekan MUAT DAFTAR ITEM dulu!", 3); return end
-    local now=tick()
-    if now-lastDeleteTime<3 or isDeleting then return end
-    if not capturedDeleteRF then capturedDeleteRF=findRealDeleteRF() end
-    if not capturedDeleteRF then SendNotify("❌ Gagal", "Fitur hapus tidak tersedia di server ini.", 4); return end
-    
-    lastDeleteTime=now; isDeleting=true
-    SendNotify("🗑️ Menghapus...", "Menghapus semua item...", 3)
-    
+tabSetup:space()
+tabSetup:section("hapus item di booth")
+tabSetup:paragraph("Info Hapus Booth",
+    "Hapus semua item yang sedang terpajang di boothmu.\n" ..
+    "Auto Booth harus OFF dan Muat Daftar Item sudah ditekan."
+)
+
+tabSetup:button("🗑️ Hapus Item di Booth", function()
+    if autoOn then
+        w:notify("⛔ Tidak Bisa", "Matikan Auto Booth dulu sebelum menghapus!", 3); return
+    end
+    if not muatDone then
+        w:notify("⚠ Belum Siap", "Tekan Muat Daftar Item dulu!", 3); return
+    end
+    local now = tick()
+    if now - lastDeleteTime < 3 then
+        w:notify("Tunggu Sebentar", "Tunggu sebentar sebelum menghapus lagi.", 2); return
+    end
+    if isDeleting then
+        w:notify("Sedang Proses", "Penghapusan sedang berjalan...", 2); return
+    end
+    if not capturedDeleteRF then capturedDeleteRF = findRealDeleteRF() end
+    if not capturedDeleteRF then
+        w:notify("❌ Gagal", "Fitur hapus tidak tersedia di server ini. Coba pindah server.", 4); return
+    end
+    lastDeleteTime = now; isDeleting = true
+    w:notify("🗑️ Menghapus...", "Menghapus semua item terpajang di booth...", 3)
     task.spawn(function()
-        local saleData=nil; pcall(function() saleData=PlayerData:Get("SaleListings") end)
-        local boothListings=saleData and saleData.Booth
-        if not boothListings or next(boothListings)==nil then
-            isDeleting=false; SendNotify("Booth Kosong", "Tidak ada item.", 3); return
+        local saleData = nil
+        pcall(function() saleData = PlayerData:Get("SaleListings") end)
+        local boothListings = saleData and saleData.Booth
+        if not boothListings or next(boothListings) == nil then
+            isDeleting = false
+            w:notify("Booth Kosong", "Tidak ada item yang terpajang di boothmu.", 3); return
         end
-        local deleted,failed=0,0
-        for listingKey,_ in pairs(boothListings) do
+        local deleted, failed = 0, 0
+        for listingKey, _ in pairs(boothListings) do
             task.wait(0.4)
-            local ok=pcall(function() capturedDeleteRF:InvokeServer("Booth",listingKey) end)
-            if ok then deleted=deleted+1 else failed=failed+1 end
+            local ok = pcall(function() capturedDeleteRF:InvokeServer("Booth", listingKey) end)
+            if ok then deleted = deleted + 1 else failed = failed + 1 end
         end
-        for i=1,MAX_SLOTS do slotData[i].listedUUID=nil end
-        for m=1,MAX_MULTI do multiSlotData[m].listedUUID=nil end
-        isDeleting=false; updateAllUIStatus()
-        SendNotify("Info", deleted.." dihapus, "..failed.." gagal.", 4)
+        for i = 1, MAX_SLOTS do slotData[i].listedUUID = nil end
+        for m = 1, MAX_MULTI do multiSlotData[m].listedUUID = nil end
+        isDeleting = false
+        updateAllUIStatus()
+        if deleted > 0 and failed == 0 then
+            w:notify("✅ Berhasil", deleted .. " item berhasil dihapus dari booth.", 4)
+        elseif deleted > 0 then
+            w:notify("⚠ Sebagian", deleted .. " berhasil, " .. failed .. " gagal.", 4)
+        else
+            w:notify("❌ Gagal", "Tidak ada item yang berhasil dihapus. Coba lagi.", 4)
+        end
     end)
 end)
 
 -- =====================
--- TAB CONFIG (JSON CUSTOM MANAGER)
+-- TAB SINGLE SLOTS
 -- =====================
-tabConfig = w:tab("Config", "save")
-local CONFIG_FILE    = "ZhxBooth_configs_v152.json"
-local savedConfigs   = {}
-local configNameList = {}
+tabSlots:paragraph("Tentang Single Slots",
+    "Setiap slot akan menjual satu jenis item secara otomatis.\n" ..
+    "Aktifkan toggle slot, pilih item, dan isi harga (harus lebih dari 0).\n" ..
+    "Status stok akan diperbarui otomatis saat Auto Booth berjalan."
+)
 
-local function loadConfigsFromFile()
-    if type(readfile)=="function" then
-        pcall(function()
-            if isfile(CONFIG_FILE) then
-                local d = HS:JSONDecode(readfile(CONFIG_FILE))
-                if d.names then configNameList=d.names end
-                if d.configs then savedConfigs=d.configs end
+for i = 1, MAX_SLOTS do
+    tabSlots:section("slot " .. i)
+
+    -- Toggle aktifkan slot
+    local slotToggle = tabSlots:toggle("Gunakan Slot " .. i, false, function(state)
+        if autoOn then
+            w:notify("🔒 Terkunci", "Matikan Auto Booth dulu untuk mengubah pengaturan!", 2)
+            task.defer(function()
+                pcall(function() elSingleToggle[i]:set(not state) end)
+            end)
+            return
+        end
+        slotData[i].enabled = state
+        slotData[i].active  = state and slotData[i].itemId ~= nil and slotData[i].price > 0
+        updateAllUIStatus()
+    end, "slot_toggle_" .. i)
+    elSingleToggle[i] = slotToggle
+
+    -- Dropdown item
+    local ddVals = { "— Kosongkan —" }
+    local slotDD = tabSlots:dropdown("Pilih Item Slot " .. i, ddVals, nil, function(val)
+        if autoOn then
+            w:notify("🔒 Terkunci", "Matikan Auto Booth dulu untuk mengubah pengaturan!", 2)
+            return
+        end
+        if not val or val == "— Kosongkan —" or val == "" then
+            slotData[i] = {
+                itemId    = nil,
+                itemName  = nil,
+                category  = nil,
+                price     = slotData[i].price,
+                active    = false,
+                enabled   = slotData[i].enabled,
+                listedUUID = nil
+            }
+        elseif nameToIdMap[val] then
+            local id = nameToIdMap[val].id
+            if not isLoadingConfig and isItemUsed(id, i, nil) then
+                w:notify("⚠ Gagal", "Item '" .. val .. "' sudah dipakai slot lain!", 2)
+                task.defer(function() pcall(function() elSingleDD[i]:set("— Kosongkan —") end) end)
+                return
             end
-        end)
-    end
+            slotData[i].itemId    = id
+            slotData[i].itemName  = val
+            slotData[i].category  = nameToIdMap[val].cat
+            slotData[i].listedUUID = nil
+            slotData[i].active    = slotData[i].enabled and slotData[i].price > 0
+        end
+        updateAllUIStatus()
+    end, "slot_dd_" .. i)
+    elSingleDD[i] = slotDD
+
+    -- Input harga
+    tabSlots:input("Harga Token Slot " .. i, "Contoh: 500", function(val)
+        if autoOn then
+            w:notify("🔒 Terkunci", "Matikan Auto Booth dulu untuk mengubah pengaturan!", 2)
+            return
+        end
+        local p = tonumber(val)
+        if not p or p <= 0 then
+            if val ~= "" then
+                w:notify("⚠ Harga Tidak Valid", "Harga harus berupa angka lebih dari 0!", 2)
+            end
+            slotData[i].price  = 0
+            slotData[i].active = false
+        else
+            slotData[i].price  = p
+            slotData[i].active = slotData[i].enabled and slotData[i].itemId ~= nil
+        end
+        updateAllUIStatus()
+    end, "slot_price_" .. i)
+
+    -- Label status
+    local statusLbl = tabSlots:label("Kosong — pilih item & isi harga")
+    elSingleStatus[i] = statusLbl
+
+    tabSlots:space()
 end
-local function saveConfigsToFile()
-    if type(writefile)=="function" then
-        pcall(function() writefile(CONFIG_FILE, HS:JSONEncode({names=configNameList,configs=savedConfigs})) end)
-    end
+
+-- =====================
+-- TAB MULTI SLOTS
+-- =====================
+tabMulti:paragraph("Tentang Multi Slots",
+    "Multi Slot menjual item secara bergiliran dari daftar antrianmu.\n" ..
+    "Pilih beberapa item sekaligus, isi harga pukul rata, lalu aktifkan.\n" ..
+    "Kamu bisa memilih/membatalkan item tanpa menu menutup sendiri."
+)
+
+for m = 1, MAX_MULTI do
+    tabMulti:section("antrian multi m" .. m)
+
+    -- Toggle aktifkan multi slot
+    local mToggle = tabMulti:toggle("Gunakan Multi Slot M" .. m, false, function(state)
+        if autoOn then
+            w:notify("🔒 Terkunci", "Matikan Auto Booth dulu untuk mengubah pengaturan!", 2)
+            task.defer(function()
+                pcall(function() elMultiToggle[m]:set(not state) end)
+            end)
+            return
+        end
+        multiSlotData[m].enabled = state
+        multiSlotData[m].active  = state and #multiSlotData[m].items > 0 and multiSlotData[m].price > 0
+        updateAllUIStatus()
+    end, "multi_toggle_" .. m)
+    elMultiToggle[m] = mToggle
+
+    -- Multiselect item antrian
+    local msOpts = {}
+    local mSelect = tabMulti:multiselect("Pilih Item Antrian M" .. m, msOpts, {}, function(selected)
+        if autoOn then
+            w:notify("🔒 Terkunci", "Matikan Auto Booth dulu untuk mengubah pengaturan!", 2)
+            return
+        end
+        local newItems = {}
+        for _, name in ipairs(selected) do
+            if nameToIdMap[name] then
+                table.insert(newItems, {
+                    itemId   = nameToIdMap[name].id,
+                    itemName = name,
+                    category = nameToIdMap[name].cat
+                })
+            end
+        end
+        multiSlotData[m].items          = newItems
+        multiSlotData[m].currentItemIdx = 1
+        multiSlotData[m].listedUUID     = nil
+        multiSlotData[m].active         = multiSlotData[m].enabled and #newItems > 0 and multiSlotData[m].price > 0
+        updateAllUIStatus()
+    end, "multi_ms_" .. m)
+
+    -- Label item dipilih
+    local selLbl = tabMulti:label("Belum ada item dipilih")
+    elMultiSelected[m] = selLbl
+
+    -- Input harga pukul rata
+    tabMulti:input("Harga Pukul Rata M" .. m, "Contoh: 300", function(val)
+        if autoOn then
+            w:notify("🔒 Terkunci", "Matikan Auto Booth dulu untuk mengubah pengaturan!", 2)
+            return
+        end
+        local p = tonumber(val)
+        if not p or p <= 0 then
+            if val ~= "" then
+                w:notify("⚠ Harga Tidak Valid", "Harga harus berupa angka lebih dari 0!", 2)
+            end
+            multiSlotData[m].price  = 0
+            multiSlotData[m].active = false
+        else
+            multiSlotData[m].price  = p
+            multiSlotData[m].active = multiSlotData[m].enabled and #multiSlotData[m].items > 0
+        end
+        updateAllUIStatus()
+    end, "multi_price_" .. m)
+
+    -- Label status
+    local mStatus = tabMulti:label("Antrian kosong — tambahkan item")
+    elMultiStatus[m] = mStatus
+
+    tabMulti:space()
 end
-loadConfigsFromFile()
-
-tabConfig:paragraph("Info", "Gunakan nama config untuk menyimpan set-up Auto Booth Anda.")
-local cfgNameInp = tabConfig:input("Ketik Nama Config", "Contoh: Farming Mackerel", function() end)
-
-tabConfig:button("💾 SIMPAN CONFIG", function()
-    local name = cfgNameInp.input.Text
-    if not name or name:match("^%s*$") then SendNotify("Error", "Isi nama config!", 3); return end
-    local cfg={single={},multi={},webhook=webhookURL}
-    local hasAny=false
-    for i=1,MAX_SLOTS do
-        if slotData[i].itemId and slotData[i].price>0 then
-            cfg.single[i]={itemId=slotData[i].itemId,itemName=slotData[i].itemName,category=slotData[i].category,price=slotData[i].price}
-            hasAny=true
-        end
-    end
-    for mm=1,MAX_MULTI do
-        if #multiSlotData[mm].items>0 then
-            cfg.multi[mm]={items={},price=multiSlotData[mm].price}
-            for _,it in ipairs(multiSlotData[mm].items) do table.insert(cfg.multi[mm].items,{itemId=it.itemId,itemName=it.itemName,category=it.category}) end
-            hasAny=true
-        end
-    end
-    if not hasAny then SendNotify("Error", "Tidak ada slot aktif yang valid!", 3); return end
-    savedConfigs[name]=cfg
-    if not table.find(configNameList,name) then table.insert(configNameList,name) end
-    saveConfigsToFile()
-    SendNotify("Tersimpan", "Config '"..name.."' disimpan.", 3)
-end)
-
-tabConfig:button("📂 LOAD CONFIG", function()
-    local name = cfgNameInp.input.Text
-    if not name or not savedConfigs[name] then SendNotify("Error", "Config tidak ditemukan!", 3); return end
-    if autoOn then SendNotify("Terkunci", "Matikan Auto Booth dulu!", 3); return end
-    if not slotsCreated then SendNotify("Belum Siap", "Tekan MUAT DAFTAR ITEM dulu di Setup!", 3); return end
-    
-    local cfg=savedConfigs[name]
-    for i=1,MAX_SLOTS do
-        slotData[i]={itemId=nil,itemName=nil,category=nil,price=0,active=false,listedUUID=nil}
-        if cfg.single and cfg.single[i] and nameToIdMap[cfg.single[i].itemName] then
-            local s=cfg.single[i]
-            slotData[i]={itemId=s.itemId,itemName=s.itemName,category=s.category,price=s.price,active=s.price>0,listedUUID=nil}
-        end
-        if singleUI[i] then
-            if singleUI[i].dd and singleUI[i].dd.set then pcall(function() singleUI[i].dd:set(slotData[i].itemName or "- Kosongkan -") end) end
-            if singleUI[i].pr and singleUI[i].pr.input then pcall(function() singleUI[i].pr.input.Text = tostring(slotData[i].price > 0 and slotData[i].price or "") end) end
-        end
-    end
-    
-    for mm=1,MAX_MULTI do
-        multiSlotData[mm]={items={},price=0,active=false,currentItemIdx=1,listedUUID=nil}
-        local validSelections = {}
-        if cfg.multi and cfg.multi[mm] and #cfg.multi[mm].items>0 then
-            local valid={}
-            for _,it in ipairs(cfg.multi[mm].items) do
-                if nameToIdMap[it.itemName] then 
-                    table.insert(valid,{itemId=it.itemId,itemName=it.itemName,category=it.category}) 
-                    table.insert(validSelections, it.itemName)
-                end
-            end
-            if #valid>0 then
-                multiSlotData[mm].items=valid; multiSlotData[mm].price=cfg.multi[mm].price
-                multiSlotData[mm].active=(cfg.multi[mm].price>0)
-            end
-        end
-        if multiUI[mm] then
-            if multiUI[mm].msUI and multiUI[mm].msUI.set then pcall(function() multiUI[mm].msUI:set(validSelections) end) end
-            if multiUI[mm].pr and multiUI[mm].pr.input then pcall(function() multiUI[mm].pr.input.Text = tostring(multiSlotData[mm].price > 0 and multiSlotData[mm].price or "") end) end
-        end
-    end
-    
-    if cfg.webhook and cfg.webhook~="" then webhookURL=cfg.webhook end
-    updateAllUIStatus()
-    SendNotify("Dimuat", "Config '"..name.."' berhasil dimuat!", 3)
-end)
 
 -- =====================
--- TAB WEBHOOK
+-- TAB UTILITY
 -- =====================
-tabWebhook = w:tab("Webhook", "bell")
-tabWebhook:input("Webhook URL Discord", "https://...", function(val) webhookURL=val end, "wh_url")
-tabWebhook:toggle("Aktifkan Notifikasi Webhook", false, function(v)
-    if v and (webhookURL=="" or not isValidWebhook(webhookURL)) then
-        SendNotify("Error", "URL Webhook tidak valid!", 3)
-        return
-    end
-    webhookEnabled=v
-    if v then SendNotify("Webhook ON", "Notifikasi Discord aktif.", 3) end
-end, "wh_on")
+tabUtil:paragraph("Tentang Utility",
+    "Fitur-fitur tambahan untuk kenyamanan bermain.\n" ..
+    "Anti AFK mencegah kamu dikick karena tidak aktif.\n" ..
+    "Boost FPS meringankan tampilan untuk performa lebih baik.\n" ..
+    "Auto Reject Trade menghilangkan popup trade yang mengganggu."
+)
 
--- =====================
--- TAB UTILITY & MISC
--- =====================
-tabUtility = w:tab("Utility", "wrench")
-tabUtility:toggle("🛡️ Anti AFK", true, function(state) end, "anti_afk")
+tabUtil:section("perlindungan")
+
+tabUtil:toggle("🛡️ Anti AFK", true, function(state)
+    w:notify("Anti AFK", state and "✅ Aktif" or "⛔ Dimatikan", 2)
+end, "anti_afk")
+
 task.spawn(function()
-    local gc=getconnections or get_signal_cons
+    local gc = getconnections or get_signal_cons
     if gc then
-        for _,c in pairs(gc(lp.Idled)) do
+        for _, c in pairs(gc(lp.Idled)) do
             if c["Disable"] then c:Disable() elseif c["Disconnect"] then c:Disconnect() end
         end
     end
 end)
 
-tabUtility:toggle("🛡️ Auto Reject Trade", false, function(state)
-    getgenv().AutoRejectTrade=state
-    if state then
-        pcall(function() _declineRF=RS.Packages._Index["sleitnick_net@0.2.0"].net["RF/Trading/DeclineTradeOffer"] end)
-        if not _promptController then
-            for _,m in ipairs(getloadedmodules()) do
-                if m.Name=="PromptController" then
-                    local ok,r=pcall(require,m); if ok then _promptController=r end; break
-                end
-            end
-        end
-        if not _declineRF or not _promptController then
-            SendNotify("Gagal", "Auto Reject tidak tersedia di server ini.", 3); return
-        end
-        if not getgenv()._autoRejectHooked then
-            getgenv()._autoRejectHooked=true
-            local oldFP
-            oldFP=hookfunction(_promptController.FirePrompt,function(self,...)
-                local args={...}
-                if getgenv().AutoRejectTrade and type(args[1])=="string" and string.find(string.lower(args[1]),"trade request") then
-                    local sn=args[1]:match("from (.+) do you")
-                    local sp=nil
-                    if sn then
-                        for _,p in ipairs(Players:GetPlayers()) do if p.Name==sn or p.DisplayName==sn then sp=p; break end end
-                    end
-                    if sp and _declineRF then task.spawn(function() pcall(function() _declineRF:InvokeServer(sp) end) end) end
-                    return nil
-                end
-                return oldFP(self,...)
-            end)
+tabUtil:space()
+tabUtil:section("performa")
+
+local boostFPSEnabled   = false
+local originalLighting  = {}
+local descendantsConn   = nil
+local playersAddedConn  = nil
+
+local function storeOriginalLighting()
+    originalLighting = {
+        GlobalShadows            = Lighting.GlobalShadows,
+        Ambient                  = Lighting.Ambient,
+        Brightness               = Lighting.Brightness,
+        ClockTime                = Lighting.ClockTime,
+        TimeOfDay                = Lighting.TimeOfDay,
+        EnvironmentDiffuseScale  = Lighting.EnvironmentDiffuseScale,
+        EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+        Technology               = Lighting.Technology,
+        ShadowSoftness           = Lighting.ShadowSoftness,
+        OutdoorAmbient           = Lighting.OutdoorAmbient,
+        ColorShift_Top           = Lighting.ColorShift_Top,
+        ColorShift_Bottom        = Lighting.ColorShift_Bottom,
+        FogColor                 = Lighting.FogColor,
+        FogEnd                   = Lighting.FogEnd,
+        FogStart                 = Lighting.FogStart,
+    }
+end
+
+local function applyLightingPotato()
+    Lighting.GlobalShadows           = false
+    Lighting.Brightness              = 1
+    Lighting.ClockTime               = 14
+    Lighting.TimeOfDay               = "14:00:00"
+    Lighting.EnvironmentDiffuseScale = 0.2
+    Lighting.EnvironmentSpecularScale = 0.1
+    Lighting.Technology              = Enum.Technology.ShadowMap
+    Lighting.ShadowSoftness          = 0
+    Lighting.Ambient                 = Color3.fromRGB(100, 100, 100)
+    Lighting.OutdoorAmbient          = Color3.fromRGB(120, 120, 120)
+    Lighting.FogColor                = Color3.fromRGB(150, 150, 150)
+    Lighting.FogEnd                  = 1000
+    Lighting.FogStart                = 500
+    Lighting.ColorShift_Top          = Color3.new(0, 0, 0)
+    Lighting.ColorShift_Bottom       = Color3.new(0, 0, 0)
+end
+
+local function restoreLighting()
+    for p, v in pairs(originalLighting) do pcall(function() Lighting[p] = v end) end
+end
+
+local function disableVFX(obj)
+    if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke")
+    or obj:IsA("Sparkles") or obj:IsA("Trail") or obj:IsA("Beam") then
+        pcall(function() obj.Enabled = false end)
+    elseif obj:IsA("Decal") or obj:IsA("Texture") then
+        pcall(function() obj.Transparency = 1 end)
+    end
+    for _, c in ipairs(obj:GetChildren()) do disableVFX(c) end
+end
+
+local function simplifyChar(char)
+    if not char then return end
+    for _, a in ipairs(char:GetChildren()) do
+        if a:IsA("Accessory") then
+            pcall(function() a.Handle.Transparency = 1; a.Handle.Size = Vector3.new(0.1, 0.1, 0.1) end)
+        elseif a:IsA("Clothing") or a:IsA("Shirt") or a:IsA("Pants") then
+            pcall(function() a:Destroy() end)
         end
     end
-end, "rej_trade")
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+            pcall(function() p.Material = Enum.Material.Plastic; p.Reflectance = 0 end)
+        end
+    end
+end
 
-tabMisc = w:tab("Misc", "list")
-tabMisc:button("🌐 Server Hop (10-18 Player)", function()
-    SendNotify("Mencari Server", "Mohon tunggu...", 3)
-    task.spawn(function()
-        local pId=game.PlaceId; local found,best=nil,0
+local function applyBoostFPS(en)
+    if en then
+        if next(originalLighting) == nil then storeOriginalLighting() end
+        applyLightingPotato()
+        task.spawn(function()
+            local all = Workspace:GetDescendants()
+            for i, obj in ipairs(all) do
+                if not boostFPSEnabled then break end
+                if obj:IsA("BasePart") and not obj:IsA("Terrain") then
+                    pcall(function() obj.Material = Enum.Material.Plastic end)
+                end
+                disableVFX(obj)
+                if i % 100 == 0 then task.wait() end
+            end
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Character then simplifyChar(p.Character) end
+            end
+            if descendantsConn then descendantsConn:Disconnect() end
+            descendantsConn = Workspace.DescendantAdded:Connect(function(c)
+                if boostFPSEnabled then
+                    if c:IsA("BasePart") and not c:IsA("Terrain") then
+                        pcall(function() c.Material = Enum.Material.Plastic end)
+                    end
+                    disableVFX(c)
+                    if c:IsA("Accessory") then
+                        task.wait(0.05); simplifyChar(c.Parent)
+                    end
+                end
+            end)
+            if playersAddedConn then playersAddedConn:Disconnect() end
+            playersAddedConn = Players.PlayerAdded:Connect(function(p)
+                p.CharacterAdded:Connect(function(c)
+                    if boostFPSEnabled then task.wait(0.5); simplifyChar(c) end
+                end)
+            end)
+        end)
+    else
+        restoreLighting()
+        if descendantsConn  then descendantsConn:Disconnect();  descendantsConn  = nil end
+        if playersAddedConn then playersAddedConn:Disconnect(); playersAddedConn = nil end
+    end
+end
+
+tabUtil:toggle("⚡ Boost FPS", false, function(state)
+    boostFPSEnabled = state
+    applyBoostFPS(state)
+    w:notify("Boost FPS", state and "✅ Diaktifkan" or "⛔ Dinonaktifkan", 3)
+end, "boost_fps")
+
+tabUtil:space()
+tabUtil:section("monitor")
+
+local showStats = false
+local statGui   = nil
+local statFrame = nil
+local statLbl   = nil
+local startTime = tick()
+local curFPS    = 60
+local fCount    = 0
+local lastFT    = tick()
+
+RunService.RenderStepped:Connect(function() fCount = fCount + 1 end)
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if not showStats then continue end
+        local now = tick(); local dt = now - lastFT
+        if dt > 0 then curFPS = fCount / dt; fCount = 0; lastFT = now end
+        local up = tick() - startTime
+        local h  = math.floor(up / 3600)
+        local mi = math.floor((up % 3600) / 60)
+        local s  = math.floor(up % 60)
+        if statLbl then
+            statLbl.Text = string.format("FPS: %.1f  |  Uptime: %02d:%02d:%02d", curFPS, h, mi, s)
+        end
+    end
+end)
+
+local function createStatsPanel()
+    if statGui then statGui:Destroy() end
+    statGui = Instance.new("ScreenGui")
+    statGui.Name            = "ZHX_StatsPanel"
+    statGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+    statGui.ResetOnSpawn    = false
+    statGui.Parent          = pg
+    statFrame = Instance.new("Frame")
+    statFrame.Size                  = UDim2.new(0, 180, 0, 32)
+    statFrame.Position              = UDim2.new(0, 10, 0, 50)
+    statFrame.BackgroundColor3      = Color3.fromRGB(0, 0, 0)
+    statFrame.BackgroundTransparency = 0.5
+    statFrame.BorderSizePixel       = 0
+    statFrame.Parent                = statGui
+    Instance.new("UICorner", statFrame).CornerRadius = UDim.new(0, 16)
+    local ss = Instance.new("UIStroke", statFrame)
+    ss.Color = Color3.fromRGB(72, 210, 130); ss.Thickness = 1.5
+    statLbl = Instance.new("TextLabel")
+    statLbl.Size                 = UDim2.new(1, 0, 1, 0)
+    statLbl.BackgroundTransparency = 1
+    statLbl.TextColor3           = Color3.fromRGB(255, 255, 255)
+    statLbl.TextSize             = 12
+    statLbl.Font                 = Enum.Font.GothamBold
+    statLbl.TextXAlignment       = Enum.TextXAlignment.Center
+    statLbl.TextYAlignment       = Enum.TextYAlignment.Center
+    statLbl.Text                 = "FPS: --  |  Uptime: --"
+    statLbl.Parent               = statFrame
+    local drag = false; local ds, sp2
+    statFrame.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            drag = true; ds = inp.Position; sp2 = statFrame.Position
+        end
+    end)
+    statFrame.InputEnded:Connect(function() drag = false end)
+    UIS.InputChanged:Connect(function(inp)
+        if drag and (inp.UserInputType == Enum.UserInputType.MouseMovement
+        or inp.UserInputType == Enum.UserInputType.Touch) then
+            local d  = inp.Position - ds
+            local vp = workspace.CurrentCamera.ViewportSize
+            statFrame.Position = UDim2.new(
+                0, math.clamp(sp2.X.Offset + d.X, 0, vp.X - statFrame.AbsoluteSize.X),
+                0, math.clamp(sp2.Y.Offset + d.Y, 0, vp.Y - statFrame.AbsoluteSize.Y)
+            )
+        end
+    end)
+end
+
+tabUtil:toggle("📊 FPS Panel", false, function(state)
+    showStats = state
+    if state then
+        if not statGui then createStatsPanel() end
+        statGui.Enabled = true
+    else
+        if statGui then statGui.Enabled = false end
+    end
+    w:notify("FPS Panel", state and "✅ Ditampilkan" or "⛔ Disembunyikan", 2)
+end, "fps_panel")
+
+tabUtil:space()
+tabUtil:section("perlindungan trade")
+tabUtil:paragraph("Info Auto Reject Trade",
+    "Menyembunyikan popup konfirmasi trade yang masuk secara otomatis.\n" ..
+    "Request trade akan kedaluwarsa sendiri dari sistem game.\n" ..
+    "Matikan toggle untuk menampilkan popup trade kembali seperti normal."
+)
+
+-- Dummy promise agar game tidak crash saat chain :andThen()
+local dummyPromise = {
+    andThen = function(self) return self end,
+    catch   = function(self) return self end,
+    finally = function(self) return self end,
+}
+
+tabUtil:toggle("🛡️ Auto Reject Trade Request", false, function(state)
+    getgenv().AutoRejectTrade = state
+    if state then
+        -- Cari PromptController jika belum ditemukan
+        if not _promptController then
+            for _, m in ipairs(getloadedmodules()) do
+                if m.Name == "PromptController" then
+                    local ok, r = pcall(require, m)
+                    if ok then _promptController = r end
+                    break
+                end
+            end
+        end
+        if not _promptController then
+            w:notify("❌ Gagal", "Fitur ini tidak tersedia di server ini.", 3)
+            task.defer(function()
+                pcall(function()
+                    -- reset toggle
+                end)
+            end)
+            getgenv().AutoRejectTrade = false
+            return
+        end
+        -- Hook hanya sekali, simpan original
+        if not _autoRejectHooked then
+            _autoRejectHooked = true
+            _origFirePrompt   = hookfunction(_promptController.FirePrompt, function(self, ...)
+                local args = { ... }
+                if getgenv().AutoRejectTrade and type(args[1]) == "string" then
+                    if string.find(string.lower(args[1]), "trade request") then
+                        -- Return dummy promise agar :andThen() tidak crash
+                        return dummyPromise
+                    end
+                end
+                -- Jika fitur OFF atau bukan trade request, jalankan normal
+                return _origFirePrompt(self, ...)
+            end)
+        end
+        w:notify("🛡️ Auto Reject", "Aktif. Popup trade tidak akan muncul.", 3)
+    else
+        -- Saat dimatikan, hook masih aktif tapi flag AutoRejectTrade = false
+        -- sehingga semua prompt akan berjalan normal kembali
+        w:notify("🛡️ Auto Reject", "Dimatikan. Popup trade kembali normal.", 2)
+    end
+end, "auto_reject")
+
+-- =====================
+-- TAB WEBHOOK
+-- =====================
+tabWH:paragraph("Tentang Webhook",
+    "Dapatkan notifikasi Discord setiap kali item terjual di boothmu.\n" ..
+    "Masukkan URL Webhook Discord kamu, lalu aktifkan notifikasi.\n" ..
+    "Ketik TONGKI untuk menggunakan webhook default developer."
+)
+
+tabWH:section("konfigurasi webhook")
+
+tabWH:input("Webhook URL Discord", "https://discord.com/api/webhooks/...", function(v)
+    webhookURL = v
+end, "wh_input")
+
+tabWH:toggle("Aktifkan Notifikasi Webhook", false, function(v)
+    if v and (webhookURL == "" or not isValidWebhook(webhookURL)) then
+        w:notify("Error", "URL Webhook tidak valid!", 2)
+        task.defer(function()
+            -- reset toggle webhook
+        end)
+        return
+    end
+    webhookEnabled = v
+    if v then w:notify("🔔 Webhook ON", "Notifikasi Discord aktif.", 2) end
+end, "wh_toggle")
+
+-- =====================
+-- TAB CONFIG
+-- =====================
+tabConfig:paragraph("Tentang Config",
+    "Simpan dan muat konfigurasi slot agar tidak perlu mengisi ulang setiap sesi.\n" ..
+    "Config tersimpan di file lokal di perangkatmu secara otomatis."
+)
+
+tabConfig:section("kelola config")
+
+local cfgNameInput = tabConfig:input("Nama Config Baru", "Contoh: Farming Salmon", function() end, "cfg_name")
+
+local initialConfigs = #configNameList > 0 and configNameList or { "— Belum Ada Config —" }
+local cfgSelectDD    = tabConfig:dropdown("Pilih Config", initialConfigs, nil, function() end, "cfg_select")
+
+tabConfig:button("💾 Simpan Config", function()
+    local name = cfgNameInput and cfgNameInput.value or ""
+    if not name or name:match("^%s*$") then
+        w:notify("Error", "Isi nama config terlebih dahulu!", 2); return
+    end
+    local hasAny = false
+    for i = 1, MAX_SLOTS do
+        if slotData[i].itemId and slotData[i].price > 0 then hasAny = true; break end
+    end
+    if not hasAny then
+        for mm = 1, MAX_MULTI do
+            if #multiSlotData[mm].items > 0 and multiSlotData[mm].price > 0 then hasAny = true; break end
+        end
+    end
+    if not hasAny then
+        w:notify("Error", "Tidak ada slot aktif untuk disimpan!", 2); return
+    end
+    local cfg = { single = {}, multi = {}, webhook = webhookURL }
+    for i = 1, MAX_SLOTS do
+        if slotData[i].itemId and slotData[i].price > 0 then
+            cfg.single[i] = {
+                itemId   = slotData[i].itemId,
+                itemName = slotData[i].itemName,
+                category = slotData[i].category,
+                price    = slotData[i].price,
+                enabled  = slotData[i].enabled,
+            }
+        end
+    end
+    for mm = 1, MAX_MULTI do
+        if #multiSlotData[mm].items > 0 then
+            cfg.multi[mm] = { items = {}, price = multiSlotData[mm].price, enabled = multiSlotData[mm].enabled }
+            for _, it in ipairs(multiSlotData[mm].items) do
+                table.insert(cfg.multi[mm].items, {
+                    itemId   = it.itemId,
+                    itemName = it.itemName,
+                    category = it.category,
+                })
+            end
+        end
+    end
+    savedConfigs[name] = cfg
+    if configNameList[1] == "— Belum Ada Config —" then table.remove(configNameList, 1) end
+    if not table.find(configNameList, name) then table.insert(configNameList, name) end
+    saveConfigsToFile()
+    pcall(function() cfgSelectDD:set(name) end)
+    w:notify("💾 Tersimpan", "Config '" .. name .. "' berhasil disimpan.", 2)
+end)
+
+tabConfig:button("📂 Load Config", function()
+    local name = cfgSelectDD and cfgSelectDD.value or ""
+    if not name or not savedConfigs[name] or name == "— Belum Ada Config —" then
+        w:notify("Error", "Pilih config yang valid!", 2); return
+    end
+    if autoOn then
+        w:notify("Terkunci", "Matikan Auto Booth dulu untuk memuat config!", 3); return
+    end
+    local ok2, list = pcall(getInventoryItemList)
+    if not ok2 then list = {} end
+    allItemsCache = list; nameToIdMap = {}
+    for _, it in ipairs(list) do
+        if it.name and it.name ~= "" then
+            nameToIdMap[it.name] = { id = it.itemId, cat = it.category }
+        end
+    end
+    isLoadingConfig = true
+    local cfg = savedConfigs[name]
+    for i = 1, MAX_SLOTS do
+        slotData[i] = { itemId = nil, itemName = nil, category = nil, price = 0, active = false, enabled = false, listedUUID = nil }
+        if cfg.single and cfg.single[i] and nameToIdMap[cfg.single[i].itemName] then
+            local s = cfg.single[i]
+            slotData[i] = {
+                itemId    = s.itemId,
+                itemName  = s.itemName,
+                category  = s.category,
+                price     = s.price,
+                enabled   = s.enabled or false,
+                active    = (s.enabled or false) and s.price > 0,
+                listedUUID = nil
+            }
+            pcall(function() elSingleToggle[i]:set(slotData[i].enabled) end)
+            pcall(function() elSingleDD[i]:set(s.itemName) end)
+        end
+    end
+    for mm = 1, MAX_MULTI do
+        multiSlotData[mm] = { items = {}, price = 0, active = false, enabled = false, currentItemIdx = 1, listedUUID = nil }
+        if cfg.multi and cfg.multi[mm] and #cfg.multi[mm].items > 0 then
+            local valid = {}
+            for _, it in ipairs(cfg.multi[mm].items) do
+                if nameToIdMap[it.itemName] then
+                    table.insert(valid, { itemId = it.itemId, itemName = it.itemName, category = it.category })
+                end
+            end
+            if #valid > 0 then
+                multiSlotData[mm].items   = valid
+                multiSlotData[mm].price   = cfg.multi[mm].price
+                multiSlotData[mm].enabled = cfg.multi[mm].enabled or false
+                multiSlotData[mm].active  = multiSlotData[mm].enabled and cfg.multi[mm].price > 0
+                pcall(function() elMultiToggle[mm]:set(multiSlotData[mm].enabled) end)
+            end
+        end
+    end
+    if cfg.webhook and cfg.webhook ~= "" then
+        webhookURL = cfg.webhook
         pcall(function()
-            local data=HS:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..pId.."/servers/Public?sortOrder=Desc&limit=10")).data
-            for _,srv in ipairs(data) do
-                if srv.id~=game.JobId and srv.playing>=10 and srv.playing<=18 and srv.playing>best then best=srv.playing; found=srv.id end
+            -- update input webhook
+        end)
+    end
+    isLoadingConfig = false
+    updateAllUIStatus()
+    w:notify("📂 Dimuat", "Config '" .. name .. "' berhasil dimuat!", 2)
+end)
+
+tabConfig:button("🗑 Hapus Config", function()
+    local name = cfgSelectDD and cfgSelectDD.value or ""
+    if not name or not savedConfigs[name] or name == "— Belum Ada Config —" then
+        w:notify("Error", "Pilih config yang valid!", 2); return
+    end
+    savedConfigs[name] = nil
+    for i, n in ipairs(configNameList) do
+        if n == name then table.remove(configNameList, i); break end
+    end
+    if #configNameList == 0 then table.insert(configNameList, "— Belum Ada Config —") end
+    saveConfigsToFile()
+    pcall(function() cfgSelectDD:set(configNameList[1]) end)
+    w:notify("🗑 Dihapus", "Config '" .. name .. "' berhasil dihapus.", 2)
+end)
+
+-- =====================
+-- TAB SETTINGS
+-- =====================
+tabSet:paragraph("Tentang Settings",
+    "Pengaturan umum script ZHX Hub.\n" ..
+    "Pindah server, reset semua slot, atau ganti tampilan tema."
+)
+
+tabSet:section("server")
+
+tabSet:button("🌐 Server Hop (10–18 Player)", function()
+    if not canPressButton("serverhop") then
+        w:notify("Tunggu Sebentar", "Jangan terlalu cepat!", 2); return
+    end
+    w:notify("Server Hop", "Mencari server...", 2)
+    task.spawn(function()
+        local pId   = game.PlaceId
+        local found, best = nil, 0
+        pcall(function()
+            local data = HS:JSONDecode(
+                game:HttpGet("https://games.roblox.com/v1/games/" .. pId .. "/servers/Public?sortOrder=Desc&limit=10")
+            ).data
+            for _, srv in ipairs(data) do
+                if srv.id ~= game.JobId and srv.playing >= 10 and srv.playing <= 18 and srv.playing > best then
+                    best = srv.playing; found = srv.id
+                end
             end
         end)
-        if found then TS:TeleportToPlaceInstance(pId,found,lp) else TS:Teleport(pId,lp) end
+        if found then
+            w:notify("Pindah", "Server ditemukan (" .. best .. " player)", 2)
+            task.wait(1); pcall(function() TS:TeleportToPlaceInstance(pId, found, lp) end)
+        else
+            w:notify("Pindah", "Pindah ke server random...", 2)
+            task.wait(1); pcall(function() TS:Teleport(pId, lp) end)
+        end
     end)
 end)
 
-tabMisc:button("🔄 RESET SEMUA SLOT (KOSONGKAN)", function()
-    if autoOn then SendNotify("Error", "Matikan Auto Booth dulu!", 3); return end
-    if not slotsCreated then return end
-    for i=1,MAX_SLOTS do
-        slotData[i]={itemId=nil,itemName=nil,category=nil,price=0,active=false,listedUUID=nil}
-        if singleUI[i] then
-            if singleUI[i].dd and singleUI[i].dd.set then pcall(function() singleUI[i].dd:set("- Kosongkan -") end) end
-            if singleUI[i].pr and singleUI[i].pr.input then pcall(function() singleUI[i].pr.input.Text = "" end) end
-        end
+tabSet:space()
+tabSet:section("slot")
+
+tabSet:button("🔄 Reset Semua Slot", function()
+    if not canPressButton("resetslot") then
+        w:notify("Tunggu Sebentar", "Jangan terlalu cepat!", 2); return
     end
-    for m=1,MAX_MULTI do
-        multiSlotData[m]={items={},price=0,active=false,currentItemIdx=1,listedUUID=nil}
-        if multiUI[m] then
-            if multiUI[m].msUI and multiUI[m].msUI.set then pcall(function() multiUI[m].msUI:set({}) end) end
-            if multiUI[m].pr and multiUI[m].pr.input then pcall(function() multiUI[m].pr.input.Text = "" end) end
-        end
+    autoOn = false
+    pcall(function() autoBoothToggle:set(false) end)
+    for i = 1, MAX_SLOTS do
+        slotData[i] = { itemId = nil, itemName = nil, category = nil, price = 0, active = false, enabled = false, listedUUID = nil }
+        slotListing[i] = false
+        pcall(function() elSingleToggle[i]:set(false) end)
+        pcall(function() elSingleDD[i]:set("— Kosongkan —") end)
+    end
+    for m = 1, MAX_MULTI do
+        multiSlotData[m] = { items = {}, price = 0, active = false, enabled = false, currentItemIdx = 1, listedUUID = nil }
+        multiListing[m] = false
+        pcall(function() elMultiToggle[m]:set(false) end)
     end
     updateAllUIStatus()
-    SendNotify("Reset", "Semua slot berhasil dikosongkan.", 3)
+    w:notify("Reset", "Semua slot berhasil direset.", 2)
 end)
 
-print("🐟 KyriLib Auto Booth Siap!")
+tabSet:space()
+tabSet:section("tampilan")
+tabSet:paragraph("Info Tema",
+    "Pilih tema tampilan panel ZHX Hub."
+)
+
+tabSet:button("Default (Hitam-Hijau)", function()
+    w:apply_theme(kyri.presets and kyri.presets["kyri"] or {
+        bg      = Color3.fromRGB(8,   8,   8  ),
+        accent  = Color3.fromRGB(72,  210, 130),
+        border  = Color3.fromRGB(72,  210, 130),
+    })
+    w:notify("Tema", "Default (Hitam-Hijau) diterapkan.", 2)
+end)
+
+tabSet:button("Midnight (Biru Gelap)", function()
+    w:apply_theme(kyri.presets and kyri.presets["midnight"] or {
+        accent = Color3.fromRGB(80, 120, 220),
+        border = Color3.fromRGB(80, 120, 220),
+    })
+    w:notify("Tema", "Midnight diterapkan.", 2)
+end)
+
+tabSet:button("Rose (Merah Muda)", function()
+    w:apply_theme(kyri.presets and kyri.presets["rose"] or {
+        accent = Color3.fromRGB(220, 80, 120),
+        border = Color3.fromRGB(220, 80, 120),
+    })
+    w:notify("Tema", "Rose diterapkan.", 2)
+end)
+
+tabSet:button("Forest (Hijau Tua)", function()
+    w:apply_theme(kyri.presets and kyri.presets["forest"] or {
+        accent = Color3.fromRGB(50, 160, 80),
+        border = Color3.fromRGB(50, 160, 80),
+    })
+    w:notify("Tema", "Forest diterapkan.", 2)
+end)
+
+tabSet:button("Slate (Abu-abu)", function()
+    w:apply_theme(kyri.presets and kyri.presets["slate"] or {
+        accent = Color3.fromRGB(130, 140, 160),
+        border = Color3.fromRGB(130, 140, 160),
+    })
+    w:notify("Tema", "Slate diterapkan.", 2)
+end)
+
+-- =====================
+-- FLOATING BUTTON ZHX
+-- (Persis seperti versi Fluent, kendalikan buka/tutup panel)
+-- =====================
+local floatingGui = Instance.new("ScreenGui")
+floatingGui.Name         = "ZHX_ToggleGui"
+floatingGui.ResetOnSpawn = false
+floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+floatingGui.Enabled      = false  -- Disembunyikan saat loading
+floatingGui.Parent       = pg
+
+local zhxBtn = Instance.new("ImageButton")
+zhxBtn.Name             = "ZHXButton"
+zhxBtn.Size             = UDim2.new(0, 46, 0, 46)
+zhxBtn.Position         = UDim2.new(0, 12, 0, 100)
+zhxBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
+zhxBtn.BorderSizePixel  = 0
+zhxBtn.Image            = "rbxassetid://78392602281326"
+zhxBtn.ScaleType        = Enum.ScaleType.Fit
+zhxBtn.ZIndex           = 9999
+zhxBtn.Parent           = floatingGui
+
+Instance.new("UICorner", zhxBtn).CornerRadius = UDim.new(0, 10)
+local zs = Instance.new("UIStroke", zhxBtn)
+zs.Color     = Color3.fromRGB(72, 210, 130)
+zs.Thickness = 1.5
+
+-- Drag logic floating button
+local dragB = false
+local dragIB, dragSB, startPB = nil, nil, nil
+
+zhxBtn.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1
+    or inp.UserInputType == Enum.UserInputType.Touch then
+        dragB  = true
+        dragSB = inp.Position
+        startPB = zhxBtn.Position
+        inp.Changed:Connect(function()
+            if inp.UserInputState == Enum.UserInputState.End then dragB = false end
+        end)
+    end
+end)
+
+zhxBtn.InputChanged:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseMovement
+    or inp.UserInputType == Enum.UserInputType.Touch then
+        dragIB = inp
+    end
+end)
+
+UIS.InputChanged:Connect(function(inp)
+    if inp == dragIB and dragB then
+        local d  = inp.Position - dragSB
+        local vp = workspace.CurrentCamera.ViewportSize
+        zhxBtn.Position = UDim2.new(
+            0, math.clamp(startPB.X.Offset + d.X, 0, vp.X - 46),
+            0, math.clamp(startPB.Y.Offset + d.Y, 0, vp.Y - 46)
+        )
+    end
+end)
+
+-- Toggle panel KyriLib via floating button
+local uiVis = true
+zhxBtn.MouseButton1Click:Connect(function()
+    uiVis = not uiVis
+    if uiVis then
+        w:show and w:show() or pcall(function()
+            -- fallback: coba tampilkan window KyriLib
+            local wGui = game:GetService("CoreGui"):FindFirstChild("kyrilib")
+                      or pg:FindFirstChild("kyrilib")
+            if wGui then wGui.Enabled = true end
+        end)
+    else
+        w:hide and w:hide() or pcall(function()
+            local wGui = game:GetService("CoreGui"):FindFirstChild("kyrilib")
+                      or pg:FindFirstChild("kyrilib")
+            if wGui then wGui.Enabled = false end
+        end)
+    end
+end)
+
+-- =====================
+-- SELESAI LOADING — TAMPILKAN SEMUA
+-- =====================
+task.spawn(function()
+    -- Muat inventory awal di background
+    local ok, list = pcall(getInventoryItemList)
+    if ok and list and #list > 0 then
+        allItemsCache = list; nameToIdMap = {}
+        for _, it in ipairs(list) do
+            if it.name and it.name ~= "" then
+                nameToIdMap[it.name] = { id = it.itemId, cat = it.category }
+            end
+        end
+        updateAllUIStatus()
+    end
+
+    -- Sembunyikan frame suppressor KyriLib loading screen
+    task.wait(0.5)
+    pcall(function() loadingSuppressor:Destroy() end)
+
+    -- Tampilkan floating button ZHX
+    floatingGui.Enabled = true
+
+    -- Notifikasi selesai
+    task.wait(0.3)
+    w:notify("✅ ZHX Hub v16.0", "Script berhasil dimuat. Selamat berjualan!", 4)
+
+    print("🐟 ZHX Hub Auto Booth v16.0 [KyriLib] — " .. #configNameList .. " config dimuat")
+end)
