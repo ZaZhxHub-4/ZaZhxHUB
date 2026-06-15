@@ -6425,7 +6425,7 @@ function Compkiller.new(Config : Window)
 	TabFrame.BorderColor3 = Color3.fromRGB(0, 0, 0)
 	TabFrame.BorderSizePixel = 0
 	TabFrame.ClipsDescendants = true
-	TabFrame.Position = UDim2.new(0, 0, 0, 0)
+	TabFrame.Position = UDim2.new(0, 30, 0, 0)
 	TabFrame.Size = UDim2.new(0, 85, 1, 0)
 
 	UICorner_2.Parent = TabFrame
@@ -6487,7 +6487,7 @@ function Compkiller.new(Config : Window)
 	TabButtons.BorderColor3 = Color3.fromRGB(0, 0, 0)
 	TabButtons.BorderSizePixel = 0
 	TabButtons.Position = UDim2.new(0, 0, 0, 60)
-	TabButtons.Size = UDim2.new(1, -10, 1, -60)
+	TabButtons.Size = UDim2.new(1, -10, 1, -55)
 
 	SelectionFrame.Name = Compkiller:_RandomString()
 	SelectionFrame.Parent = TabButtons
