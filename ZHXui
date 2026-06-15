@@ -6486,8 +6486,8 @@ function Compkiller.new(Config : Window)
 	TabButtons.BackgroundTransparency = 1.000
 	TabButtons.BorderColor3 = Color3.fromRGB(0, 0, 0)
 	TabButtons.BorderSizePixel = 0
-	TabButtons.Position = UDim2.new(0, 0, 0, 20)
-	TabButtons.Size = UDim2.new(1, -10, 1, -50)
+	TabButtons.Position = UDim2.new(0, 0, 0, 10)
+	TabButtons.Size = UDim2.new(1, -10, 1, -60)
 
 	SelectionFrame.Name = Compkiller:_RandomString()
 	SelectionFrame.Parent = TabButtons
