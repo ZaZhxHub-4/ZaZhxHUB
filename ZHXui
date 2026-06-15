@@ -6532,7 +6532,7 @@ function Compkiller.new(Config : Window)
 	Userinfo.BorderSizePixel = 0
 	Userinfo.Position = UDim2.new(0, 0, 1, 0)
 	Userinfo.Size = UDim2.new(1, -25, 0, 60)
-	Userinfo.Visible = false
+	Userinfo.Visible = true
 
 	do
 		local Highlight = Instance.new("Frame")
@@ -6592,7 +6592,7 @@ function Compkiller.new(Config : Window)
 	UserText.Size = UDim2.new(0, 200, 0, 20)
 	UserText.ZIndex = 2
 	UserText.Font = Enum.Font.GothamMedium
-	UserText.Text = "Username"
+	UserText.Text = "Fish It Plaza"
 	UserText.TextColor3 = Compkiller.Colors.SwitchColor
 	UserText.TextSize = 13.000
 	UserText.TextXAlignment = Enum.TextXAlignment.Left
@@ -6611,7 +6611,7 @@ function Compkiller.new(Config : Window)
 	ExpireText.Size = UDim2.new(0, 200, 0, 20)
 	ExpireText.ZIndex = 2
 	ExpireText.Font = Enum.Font.GothamMedium
-	ExpireText.Text = "0/0/0"
+	ExpireText.Text = "Auto Booth"
 	ExpireText.TextColor3 = Compkiller.Colors.SwitchColor
 	ExpireText.TextSize = 13.000
 	ExpireText.TextTransparency = 0.500
