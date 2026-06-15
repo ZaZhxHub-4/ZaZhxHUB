@@ -6408,7 +6408,7 @@ function Compkiller.new(Config : Window)
 
 	UICorner.Parent = MainFrame
 
-	local TabFrameBaseTrans = 0.25;
+	local TabFrameBaseTrans = 0.15;
 
 	TabFrame.Active = true
 	TabFrame.Name = Compkiller:_RandomString()
