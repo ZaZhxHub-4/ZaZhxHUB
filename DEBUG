@@ -1,26 +1,23 @@
--- ========== KONFIGURASI ==========
-local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-local TARGET_URL = "https://raw.githubusercontent.com/4LynxX/all_Game/refs/heads/main/Fish_It.lua"
--- ==================================
+-- Script ekstraksi LYNX Fish It (Luraph v14.7)
+-- Hasil akan disimpan ke file "extract_lynx.txt" di folder executor
 
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local target_url = "https://raw.githubusercontent.com/4LynxX/all_Game/refs/heads/main/Fish_It.lua"
+local output_file = "extract_lynx.txt"
 
--- ========== DATA COLLECTION TABLES ==========
-local captured_loadstrings = {}
-local captured_prints = {}
-local ui_calls = {}
-local global_vars = {}
-local gc_funcs = {}
-local remote_calls = {}
-local gui_objects = {}
+-- Data collection
+local captured = {
+    loadstrings = {},
+    prints = {},
+    ui_calls = {},
+    globals = {},
+    remotes = {},
+    gui = {}
+}
 
--- ========== HOOKS (harus sebelum target script di-load) ==========
 -- Hook loadstring
 local old_loadstring = loadstring
 loadstring = function(code, chunkname)
-    table.insert(captured_loadstrings, {chunk = chunkname or "?", code = code})
+    table.insert(captured.loadstrings, {chunk = chunkname or "?", code = code})
     return old_loadstring(code, chunkname)
 end
 
@@ -28,60 +25,60 @@ end
 local old_print = print
 print = function(...)
     local args = {...}
-    table.insert(captured_prints, table.concat(args, " "))
+    table.insert(captured.prints, table.concat(args, " "))
     old_print(...)
 end
 
--- Hook UI library (generic)
-local ui_patterns = {"MakeWindow", "CreateWindow", "AddButton", "AddToggle", "AddSlider", "AddLabel", "AddTab", "NewWindow"}
-for _, name in ipairs(ui_patterns) do
+-- Hook UI libraries (generic)
+local ui_funcs = {"MakeWindow", "CreateWindow", "AddButton", "AddToggle", "AddSlider", "AddLabel", "AddTab", "NewWindow"}
+for _, name in ipairs(ui_funcs) do
     if _G[name] and type(_G[name]) == "function" then
         local old = _G[name]
         _G[name] = function(...)
-            table.insert(ui_calls, {func = name, args = {...}})
+            table.insert(captured.ui_calls, {func = name, args = {...}})
             return old(...)
         end
     end
 end
 
--- Hook RemoteEvent/Function
+-- Hook remote events
 local mt = getrawmetatable(game)
 if mt and mt.__namecall then
-    local old_namecall = mt.__namecall
+    local old_nc = mt.__namecall
     mt.__namecall = function(self, ...)
         local method = getnamecallmethod()
         if (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) and (method == "FireServer" or method == "InvokeServer") then
-            table.insert(remote_calls, {remote = self.Name, method = method, args = {...}})
+            table.insert(captured.remotes, {remote = self.Name, method = method, args = {...}})
         end
-        return old_namecall(self, ...)
+        return old_nc(self, ...)
     end
 end
 
--- ========== LOAD TARGET SCRIPT ==========
+-- Load target script
 local function load_target()
-    local raw = game:HttpGet(TARGET_URL)
+    local raw = game:HttpGet(target_url)
     local fn, err = loadstring(raw)
     if fn then
         pcall(fn)
         return true
     else
-        table.insert(captured_prints, "LOAD ERROR: " .. tostring(err))
+        table.insert(captured.prints, "ERROR loading target: " .. tostring(err))
         return false
     end
 end
 
+print("Memuat script target...")
 load_target()
-task.wait(4)  -- beri waktu inisialisasi
+task.wait(5)  -- beri waktu inisialisasi
 
--- ========== POST-EXTRACTION DATA DUMP ==========
 -- Dump _G
 for k, v in pairs(_G) do
     if type(v) == "function" then
-        global_vars[tostring(k)] = "<function>"
+        captured.globals[tostring(k)] = "<function>"
     elseif type(v) == "table" then
-        global_vars[tostring(k)] = "<table>"
+        captured.globals[tostring(k)] = "表"
     else
-        global_vars[tostring(k)] = tostring(v)
+        captured.globals[tostring(k)] = tostring(v)
     end
 end
 
@@ -89,135 +86,94 @@ end
 for _, func in ipairs(getgc(true)) do
     if type(func) == "function" then
         local info = debug.getinfo(func, "S")
-        if info and info.source and (string.find(info.source, "Fish") or string.find(info.source, "Lynx") or string.find(info.source, "@")) then
+        if info and info.source and (string.find(info.source, "Fish") or string.find(info.source, "Lynx")) then
             local constants = debug.getconstants and debug.getconstants(func) or {}
-            local const_strings = {}
             for _, c in ipairs(constants) do
-                if type(c) == "string" and #c > 3 then
-                    table.insert(const_strings, c)
+                if type(c) == "string" and #c > 10 then
+                    table.insert(captured.prints, "[GC CONST] " .. c)
                 end
-            end
-            if #const_strings > 0 then
-                table.insert(gc_funcs, {src = info.source, consts = const_strings})
             end
         end
     end
 end
 
 -- Dump PlayerGui
-local function scan_gui(parent, path)
-    path = path or parent.Name
-    for _, child in ipairs(parent:GetChildren()) do
+local function scan_gui(inst, path)
+    path = path or inst.Name
+    for _, child in ipairs(inst:GetChildren()) do
         if child:IsA("ScreenGui") or child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
             local props = {}
             for _, prop in ipairs(child:GetProperties()) do
-                if prop:match("Text") or prop:match("Visible") or prop:match("Position") or prop:match("Size") then
+                if prop:match("Text") or prop:match("Visible") or prop:match("Position") then
                     props[prop] = tostring(child[prop])
                 end
             end
-            table.insert(gui_objects, {name = child.Name, class = child.ClassName, path = path.."."..child.Name, props = props})
-            scan_gui(child, path.."."..child.Name)
+            table.insert(captured.gui, {name = child.Name, class = child.ClassName, path = path .. "." .. child.Name, props = props})
+            scan_gui(child, path .. "." .. child.Name)
         end
     end
 end
-pcall(scan_gui, Players.LocalPlayer.PlayerGui)
+pcall(scan_gui, game.Players.LocalPlayer.PlayerGui)
 
--- ========== FORMAT OUTPUT ==========
-local function build_full_report()
-    local parts = {}
+-- Build report
+local function build_report()
+    local lines = {}
+    lines[#lines+1] = "=== LYNX FISH IT EXTRACTION ==="
+    lines[#lines+1] = "Time: " .. os.date()
+    lines[#lines+1] = ""
     
-    parts[#parts+1] = "=== LOADSTRINGS ==="
-    for i, ls in ipairs(captured_loadstrings) do
-        parts[#parts+1] = string.format("-- [%d] %s\n%s\n", i, ls.chunk, ls.code)
+    lines[#lines+1] = "=== LOADSTRINGS (" .. #captured.loadstrings .. ") ==="
+    for i, ls in ipairs(captured.loadstrings) do
+        lines[#lines+1] = string.format("-- [%d] %s\n%s\n", i, ls.chunk, ls.code)
     end
     
-    parts[#parts+1] = "\n=== UI CALLS ==="
-    for _, ui in ipairs(ui_calls) do
-        parts[#parts+1] = string.format("%s(%s)", ui.func, HttpService:JSONEncode(ui.args))
+    lines[#lines+1] = "\n=== UI CALLS (" .. #captured.ui_calls .. ") ==="
+    for _, ui in ipairs(captured.ui_calls) do
+        lines[#lines+1] = string.format("%s(%s)", ui.func, game:GetService("HttpService"):JSONEncode(ui.args))
     end
     
-    parts[#parts+1] = "\n=== GLOBAL VARIABLES ==="
-    for k, v in pairs(global_vars) do
-        parts[#parts+1] = k .. " = " .. v
+    lines[#lines+1] = "\n=== GLOBAL VARIABLES ==="
+    for k, v in pairs(captured.globals) do
+        lines[#lines+1] = k .. " = " .. v
     end
     
-    parts[#parts+1] = "\n=== GC FUNCTIONS (strings) ==="
-    for _, f in ipairs(gc_funcs) do
-        parts[#parts+1] = "-- " .. f.src
-        for _, s in ipairs(f.consts) do
-            parts[#parts+1] = "const: " .. s
-        end
+    lines[#lines+1] = "\n=== REMOTE CALLS (" .. #captured.remotes .. ") ==="
+    for _, rc in ipairs(captured.remotes) do
+        lines[#lines+1] = string.format("%s:%s(%s)", rc.remote, rc.method, game:GetService("HttpService"):JSONEncode(rc.args))
     end
     
-    parts[#parts+1] = "\n=== REMOTE CALLS ==="
-    for _, rc in ipairs(remote_calls) do
-        parts[#parts+1] = string.format("%s:%s(%s)", rc.remote, rc.method, HttpService:JSONEncode(rc.args))
-    end
-    
-    parts[#parts+1] = "\n=== GUI STRUCTURE ==="
-    for _, g in ipairs(gui_objects) do
-        parts[#parts+1] = g.path .. " (" .. g.class .. ")"
+    lines[#lines+1] = "\n=== GUI STRUCTURE ==="
+    for _, g in ipairs(captured.gui) do
+        lines[#lines+1] = g.path .. " (" .. g.class .. ")"
         for k, v in pairs(g.props) do
-            parts[#parts+1] = "  " .. k .. " = " .. v
+            lines[#lines+1] = "  " .. k .. " = " .. v
         end
     end
     
-    parts[#parts+1] = "\n=== PRINT OUTPUTS ==="
-    parts[#parts+1] = table.concat(captured_prints, "\n")
+    lines[#lines+1] = "\n=== PRINT OUTPUTS ==="
+    lines[#lines+1] = table.concat(captured.prints, "\n")
     
-    return table.concat(parts, "\n")
+    return table.concat(lines, "\n")
 end
 
-local report = build_full_report()
-local timestamp = os.time()
+local report = build_report()
 
--- ========== SEND TO DISCORD (dengan fallback) ==========
-local function send_to_discord(content)
-    local json_body = HttpService:JSONEncode({content = content:sub(1, 1990)})
-    local success = false
-    
-    if syn and syn.request then
-        success = pcall(function()
-            syn.request({Url = WEBHOOK, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = json_body})
-        end)
-    elseif http_request then
-        success = pcall(function()
-            http_request({Url = WEBHOOK, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = json_body})
-        end)
-    elseif HttpService.PostAsync then
-        success = pcall(function()
-            HttpService:PostAsync(WEBHOOK, json_body, Enum.HttpContentType.ApplicationJson)
-        end)
-    end
-    
-    return success
-end
-
-local function split_and_send()
-    local max_len = 1900
-    if #report <= max_len then
-        send_to_discord(report)
-    else
-        for i = 1, #report, max_len do
-            local part = report:sub(i, i+max_len-1)
-            send_to_discord(part)
-            task.wait(1)
-        end
-    end
-end
-
-local sent = split_and_send()
-
--- ========== FALLBACK: SAVE TO FILE ==========
-if not sent then
+-- Save to file
+local success, err = pcall(function()
     if writefile then
-        local filename = "extraction_" .. timestamp .. ".txt"
-        writefile(filename, report)
-        print("Gagal kirim ke Discord. Data disimpan ke file: " .. filename)
+        writefile(output_file, report)
+        print("SUKSES! Data tersimpan di file: " .. output_file)
     else
-        print("GAGAL: Tidak bisa kirim ke Discord dan tidak ada writefile. Data berikut:")
-        print(report:sub(1, 500))
+        -- Fallback: print to console (bisa dilihat di output executor)
+        print("===== EKSTRAKSI LYNX =====")
+        print(report)
+        print("===== SELESAI =====")
     end
-else
-    print("Berhasil mengirim data ke Discord!")
+end)
+
+if not success then
+    print("Gagal menyimpan file. Error: " .. tostring(err))
+    print("Data:\n" .. report:sub(1, 1000))
 end
+
+print("Script ekstraksi selesai.")
