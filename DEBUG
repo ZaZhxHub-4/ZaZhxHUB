@@ -4,11 +4,12 @@
 -- ══════════════════════════════════════════════════════════════════════════════
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-local Players = game:GetService("Players")
-local StarterGui = game:GetService("StarterGui")
-local UserInputService = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
+local Players            = game:GetService("Players")
+local StarterGui         = game:GetService("StarterGui")
+local UserInputService   = game:GetService("UserInputService")
+local Workspace          = game:GetService("Workspace")
+local TweenService       = game:GetService("TweenService")
+local RunService         = game:GetService("RunService")
 
 local ZHX_FLOAT = "rbxassetid://78392602281326"
 local ZHX_PNG   = "rbxassetid://99100720984583"
@@ -36,15 +37,15 @@ local pg = lp:WaitForChild("PlayerGui", 9e9)
 -- ══════════════════════════════════════════════════════════════════
 pcall(function()
     StarterGui:SetCore("SendNotification", {
-        Title = "ZHX Hub v17 Test",
-        Text = "Menyiapkan Data & Sistem",
-        Icon = ZHX_PNG,
+        Title    = "ZHX Hub v17 Test",
+        Text     = "Menyiapkan Data & Sistem",
+        Icon     = ZHX_PNG,
         Duration = 3
     })
 end)
 
 -- ══════════════════════════════════════════════════════════════════
--- NOTIFIER KUSTOM (pojok kanan bawah, bertumpuk ke atas)
+-- NOTIFIER KUSTOM (pojok kanan bawah, bertumpuk ke atas, ringan)
 -- ══════════════════════════════════════════════════════════════════
 local Notifier = {}
 Notifier.ActiveNotifications = {}
@@ -61,9 +62,9 @@ local notifScale = Instance.new("UIScale", notifGui)
 notifScale.Scale = NOTIF_SCALE
 
 function Notifier.new(config)
-    local title   = config.Title or ""
-    local content = config.Content or ""
-    local icon    = config.Icon or ZHX_PNG
+    local title    = config.Title or ""
+    local content  = config.Content or ""
+    local icon     = config.Icon or ZHX_PNG
     local duration = config.Duration or 3
 
     local notifFrame = Instance.new("Frame")
@@ -118,10 +119,10 @@ function Notifier.new(config)
     contentLabel.Parent = notifFrame
 
     local notifData = {
-        Frame = notifFrame,
-        Duration = duration,
+        Frame     = notifFrame,
+        Duration  = duration,
         StartTime = tick(),
-        Removed = false
+        Removed   = false
     }
     table.insert(Notifier.ActiveNotifications, notifData)
 
@@ -187,7 +188,7 @@ local floatingGui = Instance.new("ScreenGui")
 floatingGui.Name = "ZHX_FloatingGui"
 floatingGui.ResetOnSpawn = false
 floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-floatingGui.Enabled = false  -- akan muncul nanti
+floatingGui.Enabled = false   -- muncul nanti di detik 4
 floatingGui.Parent = pg
 
 local floatScale = Instance.new("UIScale", floatingGui)
@@ -204,16 +205,16 @@ zhxBtn.ZIndex = 200
 zhxBtn.Parent = floatingGui
 
 Instance.new("UICorner", zhxBtn).CornerRadius = UDim.new(0, 8)
+
 local btnStroke = Instance.new("UIStroke", zhxBtn)
 btnStroke.Color = ZHX_GREEN
 btnStroke.Thickness = 1.8
 
 -- Tidak ada bayangan aneh
-local btnShadow = Instance.new("ImageLabel", zhxBtn)
-btnShadow.Size = UDim2.new(1, 0, 1, 0)
-btnShadow.BackgroundTransparency = 1
-btnShadow.Image = ""
-btnShadow.Parent = zhxBtn
+local dummyShadow = Instance.new("ImageLabel", zhxBtn)
+dummyShadow.Size = UDim2.new(1, 0, 1, 0)
+dummyShadow.BackgroundTransparency = 1
+dummyShadow.Image = ""
 
 local dragStart, startPos, isDragging
 local clickStartPos = Vector2.new()
@@ -232,7 +233,9 @@ zhxBtn.InputChanged:Connect(function(input)
     if dragStart and (input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
-        if delta.Magnitude > 3 then isDragging = true end
+        if delta.Magnitude > 3 then
+            isDragging = true
+        end
         if isDragging then
             local vp = Workspace.CurrentCamera.ViewportSize
             local newX = math.clamp(startPos.X.Offset + delta.X, 0, vp.X - 48)
@@ -247,7 +250,9 @@ zhxBtn.InputEnded:Connect(function(input)
         or input.UserInputType == Enum.UserInputType.Touch then
         local dist = (Vector2.new(input.Position.X, input.Position.Y) - clickStartPos).Magnitude
         if not isDragging and dist < 6 then
-            if _G.ZHX_TogglePanel then _G.ZHX_TogglePanel() end
+            if _G.ZHX_TogglePanel then
+                _G.ZHX_TogglePanel()
+            end
         end
         dragStart, startPos, isDragging = nil, nil, false
     end
@@ -256,46 +261,49 @@ end)
 -- ══════════════════════════════════════════════════════════════════
 -- LOAD KAVO UI
 -- ══════════════════════════════════════════════════════════════════
-local KavoLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/Kavo.lua"))()
+local KavoLib = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/refs/heads/main/source.lua"
+))()
 
 -- Tema kustom hitam pekat + hijau
 local CustomTheme = KavoLib:CreateTheme("ZHX", {
-    Background = BLACK_PEKAT,
-    Tab = BLACK_PEKAT,
-    Section = BLACK_SECTION,
-    Text = TEXT_WHITE,
-    Accent = ZHX_GREEN,
-    Button = ZHX_GREEN,
-    ButtonText = BLACK_PEKAT,
-    ToggleOn = ZHX_GREEN,
-    ToggleOff = Color3.fromRGB(60,60,65),
-    Dropdown = Color3.fromRGB(20,20,22),
+    Background   = BLACK_PEKAT,
+    Tab          = BLACK_PEKAT,
+    Section      = BLACK_SECTION,
+    Text         = TEXT_WHITE,
+    Accent       = ZHX_GREEN,
+    Button       = ZHX_GREEN,
+    ButtonText   = BLACK_PEKAT,
+    ToggleOn     = ZHX_GREEN,
+    ToggleOff    = Color3.fromRGB(60, 60, 65),
+    Dropdown     = Color3.fromRGB(20, 20, 22),
     DropdownText = TEXT_WHITE,
-    Input = Color3.fromRGB(20,20,22),
-    Placeholder = Color3.fromRGB(120,120,130)
+    Input        = Color3.fromRGB(20, 20, 22),
+    Placeholder  = Color3.fromRGB(120, 120, 130)
 })
 
 -- Buat window Kavo
 local Window = KavoLib:CreateWindow({
-    Name = "ZHX Hub v17",
-    Theme = CustomTheme,
-    Size = UDim2.new(0, 550, 0, 350),   -- lebar horizontal, cukup untuk sidebar ramping + konten
+    Name     = "ZHX Hub v17",
+    Theme    = CustomTheme,
+    Size     = UDim2.new(0, 550, 0, 350),   -- lebar horizontal, cukup untuk sidebar ramping + konten
     Position = UDim2.new(0.5, -275, 0.5, -175)
 })
 
--- ZIndex kanan (biar paling depan)
+-- Ambil ScreenGui Kavo dan set ZIndex agar paling depan
 local kavoGui = Window.Gui   -- ScreenGui yang dibuat Kavo
 kavoGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 kavoGui.DisplayOrder = 100
+kavoGui.ResetOnSpawn = false
 
 -- ══════════════════════════════════════════════════════════════════
--- BUAT TAB & ISI (SIMULASI v16)
+-- BUAT TAB & ISI (SIMULASI LENGKAP v16)
 -- ══════════════════════════════════════════════════════════════════
 local function addSimulation()
     -- Tab Home
     local homeTab = Window:AddTab("Home")
     local secHome = homeTab:AddSection("Informasi")
-    secHome:AddParagraph("Selamat Datang di ZHX Hub", "UI test Kavo dengan semua fitur.\nGunakan tombol ZHX untuk toggle panel.")
+    secHome:AddParagraph("Selamat Datang di ZHX Hub", "Ini adalah UI test Kavo dengan semua fitur v16.\nGunakan tombol ZHX untuk toggle panel.")
 
     -- Tab Setup
     local setupTab = Window:AddTab("Setup")
@@ -343,8 +351,10 @@ local function addSimulation()
             {},
             function(val)
                 local c = 0
-                for k,v in pairs(val) do if v then c = c + 1 end end
-                Notifier.new({ Title = "Multi M"..m, Content = c .. " item", Duration = 2 })
+                for k, v in pairs(val) do
+                    if v then c = c + 1 end
+                end
+                Notifier.new({ Title = "Multi M"..m, Content = c .. " item dipilih", Duration = 2 })
             end,
             true   -- Multi = true
         )
