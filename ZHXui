@@ -6425,7 +6425,7 @@ function Compkiller.new(Config : Window)
 	TabFrame.BorderColor3 = Color3.fromRGB(0, 0, 0)
 	TabFrame.BorderSizePixel = 0
 	TabFrame.ClipsDescendants = true
-	TabFrame.Position = UDim2.new(0, 25, 0, 0)
+	TabFrame.Position = UDim2.new(0, 0, 0, 0)
 	TabFrame.Size = UDim2.new(0, 80, 1, 0)
 
 	UICorner_2.Parent = TabFrame
