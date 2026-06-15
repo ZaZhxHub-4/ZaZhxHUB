@@ -1,135 +1,514 @@
--- Script ini akan mengeksekusi Lynx Fish It, lalu secara otomatis mengganti:
--- - Semua teks "Lynx" menjadi "ZHX Hub"
--- - Warna oranye menjadi hijau
--- - Asset ID logo/gambar menjadi rbxassetid://78392602281326
+-- ══════════════════════════════════════════════════════════════════════════════
+--    TEST ORION UI DENGAN FLOATING BUTTON ZHX
+--    Dibuat untuk melihat tampilan Orion Library sebelum migrasi penuh
+-- ══════════════════════════════════════════════════════════════════════════════
+-- ASSET ID ZHX:
+--   ZHX_FLOAT  → rbxassetid://78392602281326  (non‑PNG, untuk tombol floating)
+--   ZHX_PNG    → rbxassetid://99100720984583  (transparan/PNG, untuk header, notif)
+-- ══════════════════════════════════════════════════════════════════════════════
 
-local target_url = "https://raw.githubusercontent.com/4LynxX/all_Game/refs/heads/main/Fish_It.lua"
-local MY_ASSET_ID = "rbxassetid://78392602281326"
-local MY_NAME = "ZHX Hub"
-local GREEN = Color3.fromRGB(0, 255, 85)   -- hijau terang
-local ORANGE = Color3.fromRGB(255, 165, 0) -- warna oranye asli Lynx (perkiraan)
-
--- Fungsi untuk mengganti warna (bisa diperluas)
-local function replaceColor(c)
-    if c and typeof(c) == "Color3" then
-        -- Jika warna mendekati oranye, ganti ke hijau
-        if c.r > 0.5 and c.g < 0.5 and c.b < 0.2 then
-            return GREEN
-        end
-    end
-    return c
+-- Tunggu game siap sepenuhnya
+if not game:IsLoaded() then
+    game.Loaded:Wait()
 end
 
--- Hook UI library (contoh untuk Kavo, Aero, dll)
-local ui_funcs = {"MakeWindow", "CreateWindow", "AddButton", "AddToggle", "AddSlider", "AddLabel", "AddTab", "NewWindow"}
-for _, func_name in ipairs(ui_funcs) do
-    if _G[func_name] and type(_G[func_name]) == "function" then
-        local old_func = _G[func_name]
-        _G[func_name] = function(...)
-            local args = {...}
-            -- Ubah argumen string
-            for i, arg in ipairs(args) do
-                if type(arg) == "string" then
-                    -- Ganti teks "Lynx" (case-insensitive)
-                    arg = arg:gsub("[Ll][Yy][Nn][Xx]", MY_NAME)
-                    arg = arg:gsub("lynx", MY_NAME)
-                    arg = arg:gsub("LYNX", MY_NAME)
-                    args[i] = arg
-                elseif type(arg) == "table" then
-                    -- Jika ada tabel properti, cari field Text, Color, dll
-                    if arg.Text and type(arg.Text) == "string" then
-                        arg.Text = arg.Text:gsub("[Ll][Yy][Nn][Xx]", MY_NAME)
-                    end
-                    if arg.Color and replaceColor(arg.Color) ~= arg.Color then
-                        arg.Color = GREEN
-                    end
-                    if arg.Image and type(arg.Image) == "string" and arg.Image:match("rbxassetid://") then
-                        arg.Image = MY_ASSET_ID
-                    end
+-- Services
+local Players            = game:GetService("Players")
+local StarterGui         = game:GetService("StarterGui")
+local UserInputService   = game:GetService("UserInputService")
+local RunService         = game:GetService("RunService")
+local Workspace          = game:GetService("Workspace")
+
+-- Asset ID
+local ZHX_FLOAT = "rbxassetid://78392602281326"
+local ZHX_PNG   = "rbxassetid://99100720984583"
+
+-- Tunggu LocalPlayer
+while not Players.LocalPlayer do
+    task.wait()
+end
+local lp = Players.LocalPlayer
+
+-- Tunggu PlayerGui dengan timeout besar (biar aman di mobile)
+local pg = lp:WaitForChild("PlayerGui", 9e9)
+
+-- ══════════════════════════════════════════════════════════════════
+-- NOTIFIKASI STARTUP (sama persis seperti script v16 Anda)
+-- ══════════════════════════════════════════════════════════════════
+pcall(function()
+    StarterGui:SetCore("SendNotification", {
+        Title    = "ZHX Hub v17 Test",
+        Text     = "Menyiapkan Data & Sistem",
+        Icon     = ZHX_PNG,
+        Duration = 3   -- 3 detik
+    })
+end)
+
+-- ══════════════════════════════════════════════════════════════════
+-- LOAD ORION LIBRARY
+-- ══════════════════════════════════════════════════════════════════
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/ionlyuseme/orionlib/main/source.lua"))()
+
+-- ══════════════════════════════════════════════════════════════════
+-- SETUP VARIABEL UNTUK FLOATING BUTTON & WINDOW
+-- ══════════════════════════════════════════════════════════════════
+local OrionWindow = nil   -- akan diisi setelah window dibuat
+local floatingGui = nil   -- akan diisi setelah floating button dibuat
+local zhxBtn      = nil
+local windowReady = false
+
+-- ══════════════════════════════════════════════════════════════════
+-- FUNGSI MEMBUAT FLOATING BUTTON ZHX (seperti di v16 Anda)
+-- ══════════════════════════════════════════════════════════════════
+local function createFloatingButton()
+    floatingGui = Instance.new("ScreenGui")
+    floatingGui.Name           = "ZHX_ToggleGui"
+    floatingGui.ResetOnSpawn   = false
+    floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    floatingGui.Enabled        = true
+    floatingGui.Parent         = pg
+
+    zhxBtn = Instance.new("ImageButton")
+    zhxBtn.Size             = UDim2.new(0, 46, 0, 46)
+    zhxBtn.Position         = UDim2.new(0, 12, 0, 100)
+    zhxBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
+    zhxBtn.BorderSizePixel  = 0
+    zhxBtn.Image            = ZHX_FLOAT
+    zhxBtn.ScaleType        = Enum.ScaleType.Fit
+    zhxBtn.ZIndex           = 9999
+    zhxBtn.Parent           = floatingGui
+
+    Instance.new("UICorner", zhxBtn).CornerRadius = UDim.new(0, 10)
+
+    local stroke = Instance.new("UIStroke", zhxBtn)
+    stroke.Color     = Color3.fromRGB(72, 210, 130)
+    stroke.Thickness = 1.5
+
+    -- Drag support
+    local dragStart, startPos
+    local clickStartPos = Vector2.new()
+
+    zhxBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragStart     = input.Position
+            startPos      = zhxBtn.Position
+            clickStartPos = Vector2.new(input.Position.X, input.Position.Y)
+        end
+    end)
+
+    zhxBtn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            local currentPos = Vector2.new(input.Position.X, input.Position.Y)
+            local distance   = (currentPos - clickStartPos).Magnitude
+            -- Jika hampir tidak ada gerakan, anggap sebagai klik
+            if distance < 6 then
+                -- Toggle panel Orion
+                if OrionWindow then
+                    -- Orion Window punya flag Visible, kita bisa set langsung
+                    OrionWindow.Visible = not OrionWindow.Visible
                 end
             end
-            return old_func(unpack(args))
+            dragStart = nil
+            startPos  = nil
         end
-    end
-end
+    end)
 
--- Hook Instance.new untuk menangkap ImageLabel, Decal, dll.
-local old_new = Instance.new
-Instance.new = function(className, parent)
-    local inst = old_new(className, parent)
-    if className == "ImageLabel" or className == "Decal" or className == "ImageButton" then
-        local old_prop = inst.Image
-        inst.Image = MY_ASSET_ID
-        -- Optional: catat perubahan
-        -- print("[ZHX] Replaced image:", old_prop, "->", MY_ASSET_ID)
-    elseif className == "TextLabel" or className == "TextButton" or className == "TextBox" then
-        -- Hook perubahan teks (tidak langsung, tapi bisa pakai getset)
-        local old_text = inst.Text
-        if old_text and type(old_text) == "string" then
-            inst.Text = old_text:gsub("[Ll][Yy][Nn][Xx]", MY_NAME)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragStart and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta      = input.Position - dragStart
+            local viewport   = Workspace.CurrentCamera.ViewportSize
+            local newX       = math.clamp(startPos.X.Offset + delta.X, 0, viewport.X - 46)
+            local newY       = math.clamp(startPos.Y.Offset + delta.Y, 0, viewport.Y - 46)
+            zhxBtn.Position  = UDim2.new(0, newX, 0, newY)
         end
-        -- Hook warna
-        local old_color = inst.TextColor3
-        if old_color and replaceColor(old_color) ~= old_color then
-            inst.TextColor3 = GREEN
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════════════
+-- FUNGSI MEMBUAT ORION WINDOW BESERTA SEMUA ELEMEN TEST
+-- ══════════════════════════════════════════════════════════════════
+local function createOrionWindow()
+    -- Warna hijau neon khas ZHX
+    local ZHX_GREEN = Color3.fromRGB(72, 210, 130)
+
+    OrionWindow = OrionLib:MakeWindow({
+        Name          = "ZHX Hub v17 Test",
+        Icon          = ZHX_PNG,                -- Logo transparan di header
+        ConfigFolder  = "ZHX_OrionTest",
+        SaveConfig    = false,                  -- Test saja, tidak perlu simpan config
+        IntroEnabled  = false,                  -- Matikan animasi intro biar ringan
+        IntroText     = "",
+        CloseCallback = function()
+            -- Tidak perlu aksi khusus saat window ditutup
+        end,
+        Color         = ZHX_GREEN
+    })
+
+    -- ── Tab: Home ───────────────────────────────────────────────
+    local TabHome = OrionWindow:MakeTab({
+        Name     = "Home",
+        Icon     = "rbxassetid://7734053495",  -- icon rumah (bisa diganti)
+        PremiumOnly = false
+    })
+
+    local SecHome = TabHome:AddSection({
+        Name = "Informasi"
+    })
+
+    SecHome:AddParagraph(
+        "Ini adalah test Orion UI Library.",
+        "Floating button ZHX di layar berfungsi sebagai toggle buka/tutup panel ini.\nSemua elemen UI Orion tersedia dan mobile-friendly.",
+        ""
+    )
+
+    -- ── Tab: Setup (contoh Toggle, Button, TextBox) ─────────────
+    local TabSetup = OrionWindow:MakeTab({
+        Name     = "Setup",
+        Icon     = "rbxassetid://7734053495",
+        PremiumOnly = false
+    })
+
+    local SecSetup1 = TabSetup:AddSection({
+        Name = "Persiapan (Contoh)"
+    })
+
+    SecSetup1:AddToggle({
+        Name        = "Auto Booth",
+        Default     = false,
+        Color       = ZHX_GREEN,
+        Flag        = "Test_AutoBooth",
+        Save        = false,
+        Callback    = function(Value)
+            print("Toggle Auto Booth:", Value)
+            OrionLib:MakeNotification({
+                Name       = "Toggle Test",
+                Content    = "Auto Booth " .. (Value and "AKTIF" or "MATI"),
+                Image      = ZHX_PNG,
+                Time       = 2
+            })
         end
-    end
-    return inst
-end
+    })
 
--- Hook Color3 baru (untuk color picker)
-local old_Color3 = Color3.new
-Color3.new = function(r, g, b)
-    local c = old_Color3(r, g, b)
-    -- Jika warna mendekati oranye (255,165,0) dengan toleransi
-    if math.abs(r - 1) < 0.1 and math.abs(g - 0.65) < 0.1 and math.abs(b - 0) < 0.1 then
-        return GREEN
-    end
-    return c
-end
-
--- Load dan jalankan script Lynx
-local raw = game:HttpGet(target_url)
-local fn, err = loadstring(raw)
-if fn then
-    print("[ZHX] Memuat script Lynx yang sudah di-rebrand...")
-    pcall(fn)
-else
-    warn("Gagal load script: " .. tostring(err))
-end
-
--- Opsional: setelah script berjalan, cari GUI yang sudah ada dan ganti langsung
-task.wait(5)
-local function scan_and_replace(gui)
-    for _, obj in ipairs(gui:GetDescendants()) do
-        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-            local txt = obj.Text
-            if txt and txt:find("[Ll][Yy][Nn][Xx]") then
-                obj.Text = txt:gsub("[Ll][Yy][Nn][Xx]", MY_NAME)
-            end
-            if obj.TextColor3 and replaceColor(obj.TextColor3) ~= obj.TextColor3 then
-                obj.TextColor3 = GREEN
-            end
-        elseif obj:IsA("ImageLabel") or obj:IsA("Decal") then
-            if obj.Image and obj.Image:match("rbxassetid://") then
-                obj.Image = MY_ASSET_ID
-            end
-        elseif obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
-            if obj.BackgroundColor3 and replaceColor(obj.BackgroundColor3) ~= obj.BackgroundColor3 then
-                obj.BackgroundColor3 = GREEN
-            end
-            if obj.BorderColor3 and replaceColor(obj.BorderColor3) ~= obj.BorderColor3 then
-                obj.BorderColor3 = GREEN
-            end
+    SecSetup1:AddButton({
+        Name       = "Muat Daftar Item",
+        Color      = ZHX_GREEN,
+        Callback   = function()
+            OrionLib:MakeNotification({
+                Name       = "Button Test",
+                Content    = "Tombol 'Muat Daftar Item' ditekan!",
+                Image      = ZHX_PNG,
+                Time       = 3
+            })
         end
-    end
+    })
+
+    SecSetup1:AddTextbox({
+        Name        = "Harga Slot 1",
+        Default     = "",
+        Color       = ZHX_GREEN,
+        TextDisappear = false,
+        Callback    = function(Value)
+            print("Harga diinput:", Value)
+        end
+    })
+
+    -- ── Tab: Single Slots (Dropdown Single) ─────────────────────
+    local TabSlots = OrionWindow:MakeTab({
+        Name     = "Single Slots",
+        Icon     = "rbxassetid://7734053495",
+        PremiumOnly = false
+    })
+
+    local SecSlot1 = TabSlots:AddSection({
+        Name = "Slot 1 (Contoh Dropdown Single)"
+    })
+
+    SecSlot1:AddDropdown({
+        Name       = "Pilih Item",
+        Default    = "- Kosongkan -",
+        Options    = { "- Kosongkan -", "Ikan Emas", "Ikan Hiu", "Pancing Legendaris", "Umpan Premium" },
+        Color      = ZHX_GREEN,
+        Flag       = "Test_DropdownSingle",
+        Save       = false,
+        Callback   = function(Value)
+            print("Dropdown single pilih:", Value)
+        end
+    })
+
+    local SecSlot1Status = TabSlots:AddSection({
+        Name = "Status Slot 1"
+    })
+
+    SecSlot1Status:AddParagraph(
+        "Status",
+        "Stok: 12 | ✅ Aktif",
+        ""
+    )
+
+    -- ── Tab: Multi Slots (Dropdown Multi-Select) ─────────────────
+    local TabMulti = OrionWindow:MakeTab({
+        Name     = "Multi Slots",
+        Icon     = "rbxassetid://7734053495",
+        PremiumOnly = false
+    })
+
+    local SecMulti1 = TabMulti:AddSection({
+        Name = "Multi M1 (Contoh Multi-Select Dropdown)"
+    })
+
+    -- INI ADALAH FITUR MULTI-SELECT DROPDOWN ORION
+    SecMulti1:AddDropdown({
+        Name       = "Item M1",
+        Default    = {},
+        Options    = {
+            "Ikan Emas",
+            "Ikan Hiu",
+            "Pancing Legendaris",
+            "Umpan Premium",
+            "Ikan Paus",
+            "Ikan Badut",
+            "Kepiting",
+            "Kerang Mutiara"
+        },
+        Multi      = true,          -- <-- MULTI-SELECT AKTIF
+        Color      = ZHX_GREEN,
+        Flag       = "Test_MultiDropdown",
+        Save       = false,
+        Callback   = function(SelectedTable)
+            -- SelectedTable adalah table: { "Ikan Emas" = true, "Ikan Hiu" = false, ... }
+            local chosen = {}
+            for name, isSelected in pairs(SelectedTable) do
+                if isSelected then
+                    table.insert(chosen, name)
+                end
+            end
+            print("Multi-select memilih:", table.concat(chosen, ", "))
+        end
+    })
+
+    local SecMulti1Status = TabMulti:AddSection({
+        Name = "Status Multi M1"
+    })
+
+    SecMulti1Status:AddParagraph(
+        "Status",
+        "Stok: 24 | 2 item | ⛔ Cek harga",
+        ""
+    )
+
+    -- ── Tab: Webhook ────────────────────────────────────────────
+    local TabWebhook = OrionWindow:MakeTab({
+        Name     = "Webhook",
+        Icon     = "rbxassetid://7734053495",
+        PremiumOnly = false
+    })
+
+    local SecWH = TabWebhook:AddSection({
+        Name = "Notifikasi Discord"
+    })
+
+    SecWH:AddTextbox({
+        Name        = "URL Webhook",
+        Default     = "",
+        Color       = ZHX_GREEN,
+        TextDisappear = false,
+        Callback    = function(Value)
+            print("Webhook URL:", Value)
+        end
+    })
+
+    SecWH:AddToggle({
+        Name        = "Aktifkan Webhook",
+        Default     = false,
+        Color       = ZHX_GREEN,
+        Flag        = "Test_WebhookToggle",
+        Save        = false,
+        Callback    = function(Value)
+            OrionLib:MakeNotification({
+                Name       = "Webhook",
+                Content    = Value and "AKTIF" or "MATI",
+                Image      = ZHX_PNG,
+                Time       = 2
+            })
+        end
+    })
+
+    -- ── Tab: Config ─────────────────────────────────────────────
+    local TabConfig = OrionWindow:MakeTab({
+        Name     = "Config",
+        Icon     = "rbxassetid://7734053495",
+        PremiumOnly = false
+    })
+
+    local SecCfg = TabConfig:AddSection({
+        Name = "Kelola Config"
+    })
+
+    SecCfg:AddTextbox({
+        Name        = "Nama Config",
+        Default     = "",
+        Color       = ZHX_GREEN,
+        TextDisappear = false,
+        Callback    = function(Value)
+            print("Nama Config:", Value)
+        end
+    })
+
+    SecCfg:AddDropdown({
+        Name       = "Pilih Config",
+        Default    = "- Belum Ada Config -",
+        Options    = { "- Belum Ada Config -", "Config Farming", "Config Boss", "Config Event" },
+        Color      = ZHX_GREEN,
+        Flag       = "Test_ConfigList",
+        Save       = false,
+        Callback   = function(Value)
+            print("Config dipilih:", Value)
+        end
+    })
+
+    SecCfg:AddButton({
+        Name       = "Simpan Config",
+        Color      = ZHX_GREEN,
+        Callback   = function()
+            OrionLib:MakeNotification({
+                Name       = "Config",
+                Content    = "Config disimpan (test)",
+                Image      = ZHX_PNG,
+                Time       = 2
+            })
+        end
+    })
+
+    SecCfg:AddButton({
+        Name       = "Load Config",
+        Color      = ZHX_GREEN,
+        Callback   = function()
+            OrionLib:MakeNotification({
+                Name       = "Config",
+                Content    = "Config dimuat (test)",
+                Image      = ZHX_PNG,
+                Time       = 2
+            })
+        end
+    })
+
+    -- ── Tab: Misc ───────────────────────────────────────────────
+    local TabMisc = OrionWindow:MakeTab({
+        Name     = "Misc",
+        Icon     = "rbxassetid://7734053495",
+        PremiumOnly = false
+    })
+
+    local SecFitur = TabMisc:AddSection({
+        Name = "Fitur Tambahan"
+    })
+
+    SecFitur:AddToggle({
+        Name        = "Anti AFK",
+        Default     = true,
+        Color       = ZHX_GREEN,
+        Flag        = "Test_AntiAFK",
+        Save        = false,
+        Callback    = function(Value)
+            print("Anti AFK:", Value)
+        end
+    })
+
+    SecFitur:AddToggle({
+        Name        = "Boost FPS",
+        Default     = false,
+        Color       = ZHX_GREEN,
+        Flag        = "Test_BoostFPS",
+        Save        = false,
+        Callback    = function(Value)
+            print("Boost FPS:", Value)
+        end
+    })
+
+    SecFitur:AddToggle({
+        Name        = "Show FPS Panel",
+        Default     = false,
+        Color       = ZHX_GREEN,
+        Flag        = "Test_StatsPanel",
+        Save        = false,
+        Callback    = function(Value)
+            print("Stats Panel:", Value)
+        end
+    })
+
+    local SecTema = TabMisc:AddSection({
+        Name = "Tema"
+    })
+
+    SecTema:AddDropdown({
+        Name       = "Pilih Tema",
+        Default    = "Default",
+        Options    = { "Default", "Dark", "Light" },
+        Color      = ZHX_GREEN,
+        Flag       = "Test_Tema",
+        Save       = false,
+        Callback   = function(Value)
+            print("Tema:", Value)
+        end
+    })
+
+    local SecPengaturan = TabMisc:AddSection({
+        Name = "Pengaturan"
+    })
+
+    SecPengaturan:AddButton({
+        Name       = "Reset Semua",
+        Color      = ZHX_GREEN,
+        Callback   = function()
+            OrionLib:MakeNotification({
+                Name       = "Reset",
+                Content    = "Semua direset (test)",
+                Image      = ZHX_PNG,
+                Time       = 2
+            })
+        end
+    })
+
+    SecPengaturan:AddButton({
+        Name       = "Server Hop",
+        Color      = ZHX_GREEN,
+        Callback   = function()
+            OrionLib:MakeNotification({
+                Name       = "Server Hop",
+                Content    = "Mencari server... (test)",
+                Image      = ZHX_PNG,
+                Time       = 2
+            })
+        end
+    })
+
+    -- Set window siap
+    windowReady = true
+    print("Orion Window siap.")
 end
 
--- Cari ScreenGui utama
-for _, gui in ipairs(game.Players.LocalPlayer.PlayerGui:GetChildren()) do
-    if gui:IsA("ScreenGui") then
-        scan_and_replace(gui)
-    end
-end
+-- ══════════════════════════════════════════════════════════════════
+-- JALANKAN SEMUA DENGAN URUTAN WAKTU YANG ANDA TENTUKAN
+-- ══════════════════════════════════════════════════════════════════
+-- Notif muncul selama 3 detik. Semua elemen lain (floating button + panel)
+-- baru muncul di detik ke-4 (setelah notif hilang).
+task.delay(4, function()
+    -- Buat floating button ZHX terlebih dahulu
+    createFloatingButton()
 
-print("[ZHX] Rebranding selesai. UI sekarang mengatasnamakan ZHX Hub.")
+    -- Buat Orion Window (awalnya Visible = true, langsung tampil)
+    createOrionWindow()
+
+    -- Tampilkan notifikasi bahwa sistem siap
+    OrionLib:MakeNotification({
+        Name       = "ZHX Hub v17 Test",
+        Content    = "Sistem siap! Gunakan tombol ZHX untuk buka/tutup panel.",
+        Image      = ZHX_PNG,
+        Time       = 5
+    })
+
+    print("ZHX Hub v17 Test — Semua sistem dan UI siap.")
+end)
