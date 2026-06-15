@@ -1,269 +1,716 @@
 -- ══════════════════════════════════════════════════════════════════════════════
---    TEST ORION UI DENGAN FLOATING BUTTON ZHX
---    Dibuat untuk melihat tampilan Orion Library sebelum migrasi penuh
+--    TEST UI KUSTOM ZHX (tidak pakai library eksternal)
+--    Cocok untuk Mobile & PC, ringan, mudah dimodifikasi
 -- ══════════════════════════════════════════════════════════════════════════════
--- ASSET ID ZHX:
---   ZHX_FLOAT  → rbxassetid://78392602281326  (non‑PNG, untuk tombol floating)
---   ZHX_PNG    → rbxassetid://99100720984583  (transparan/PNG, untuk header, notif)
+-- Asset ID ZHX:
+--   ZHX_FLOAT  → rbxassetid://78392602281326  (non‑PNG, tombol floating)
+--   ZHX_PNG    → rbxassetid://99100720984583  (transparan/PNG, header, notif)
 -- ══════════════════════════════════════════════════════════════════════════════
 
--- Tunggu game siap sepenuhnya
-if not game:IsLoaded() then
-    game.Loaded:Wait()
-end
+if not game:IsLoaded() then game.Loaded:Wait() end
 
--- Services
-local Players            = game:GetService("Players")
-local StarterGui         = game:GetService("StarterGui")
-local UserInputService   = game:GetService("UserInputService")
-local RunService         = game:GetService("RunService")
-local Workspace          = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
--- Asset ID
 local ZHX_FLOAT = "rbxassetid://78392602281326"
 local ZHX_PNG   = "rbxassetid://99100720984583"
 
--- Tunggu LocalPlayer
-while not Players.LocalPlayer do
-    task.wait()
-end
+-- Tunggu LocalPlayer & PlayerGui
+while not Players.LocalPlayer do task.wait() end
 local lp = Players.LocalPlayer
-
--- Tunggu PlayerGui dengan timeout besar (biar aman di mobile)
 local pg = lp:WaitForChild("PlayerGui", 9e9)
 
 -- ══════════════════════════════════════════════════════════════════
--- NOTIFIKASI STARTUP (sama persis seperti script v16 Anda)
+-- NOTIFIKASI STARTUP (sama persis seperti script v16)
 -- ══════════════════════════════════════════════════════════════════
 pcall(function()
     StarterGui:SetCore("SendNotification", {
-        Title    = "ZHX Hub v17 Test",
-        Text     = "Menyiapkan Data & Sistem",
-        Icon     = ZHX_PNG,
-        Duration = 3   -- 3 detik
+        Title = "ZHX Hub v17 Test",
+        Text = "Menyiapkan Data & Sistem",
+        Icon = ZHX_PNG,
+        Duration = 3
     })
 end)
 
 -- ══════════════════════════════════════════════════════════════════
--- LOAD ORION LIBRARY
+-- KONFIGURASI WARNA & UKURAN
 -- ══════════════════════════════════════════════════════════════════
-local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/ionlyuseme/orionlib/main/source.lua"))()
-
--- ══════════════════════════════════════════════════════════════════
--- SETUP VARIABEL UNTUK FLOATING BUTTON & WINDOW
--- ══════════════════════════════════════════════════════════════════
-local OrionWindow = nil   -- akan diisi setelah window dibuat
-local floatingGui = nil   -- akan diisi setelah floating button dibuat
-local zhxBtn      = nil
-local windowReady = false
+local ZHX_GREEN = Color3.fromRGB(72, 210, 130)
+local DARK_BG   = Color3.fromRGB(25, 28, 35)
+local DARKER_BG = Color3.fromRGB(18, 20, 26)
+local TEXT_WHITE = Color3.fromRGB(255, 255, 255)
+local TEXT_GRAY  = Color3.fromRGB(180, 180, 180)
 
 -- ══════════════════════════════════════════════════════════════════
--- FUNGSI MEMBUAT FLOATING BUTTON ZHX (seperti di v16 Anda)
+-- FUNGSI PEMBANTU
 -- ══════════════════════════════════════════════════════════════════
-local function createFloatingButton()
-    floatingGui = Instance.new("ScreenGui")
-    floatingGui.Name           = "ZHX_ToggleGui"
-    floatingGui.ResetOnSpawn   = false
-    floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    floatingGui.Enabled        = true
-    floatingGui.Parent         = pg
+local function createInstance(className, properties)
+    local obj = Instance.new(className)
+    for prop, val in pairs(properties) do
+        obj[prop] = val
+    end
+    return obj
+end
 
-    zhxBtn = Instance.new("ImageButton")
-    zhxBtn.Size             = UDim2.new(0, 46, 0, 46)
-    zhxBtn.Position         = UDim2.new(0, 12, 0, 100)
-    zhxBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
-    zhxBtn.BorderSizePixel  = 0
-    zhxBtn.Image            = ZHX_FLOAT
-    zhxBtn.ScaleType        = Enum.ScaleType.Fit
-    zhxBtn.ZIndex           = 9999
-    zhxBtn.Parent           = floatingGui
+-- ══════════════════════════════════════════════════════════════════
+-- MEMBUAT FLOATING BUTTON ZHX (drag & toggle)
+-- ══════════════════════════════════════════════════════════════════
+local floatingGui, zhxBtn
+local function createFloatingButton(toggleCallback)
+    floatingGui = createInstance("ScreenGui", {
+        Name = "ZHX_FloatingGui",
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        Parent = pg
+    })
 
-    Instance.new("UICorner", zhxBtn).CornerRadius = UDim.new(0, 10)
+    zhxBtn = createInstance("ImageButton", {
+        Size = UDim2.new(0, 46, 0, 46),
+        Position = UDim2.new(0, 12, 0, 100),
+        BackgroundColor3 = DARK_BG,
+        BorderSizePixel = 0,
+        Image = ZHX_FLOAT,
+        ScaleType = Enum.ScaleType.Fit,
+        ZIndex = 100,
+        Parent = floatingGui
+    })
+    createInstance("UICorner", { CornerRadius = UDim.new(0, 10), Parent = zhxBtn })
+    createInstance("UIStroke", { Color = ZHX_GREEN, Thickness = 1.5, Parent = zhxBtn })
 
-    local stroke = Instance.new("UIStroke", zhxBtn)
-    stroke.Color     = Color3.fromRGB(72, 210, 130)
-    stroke.Thickness = 1.5
-
-    -- Drag support
-    local dragStart, startPos
+    local dragStart, startPos, isDragging
     local clickStartPos = Vector2.new()
 
     zhxBtn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragStart     = input.Position
-            startPos      = zhxBtn.Position
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragStart = input.Position
+            startPos = zhxBtn.Position
             clickStartPos = Vector2.new(input.Position.X, input.Position.Y)
+            isDragging = false
         end
     end)
 
     zhxBtn.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local currentPos = Vector2.new(input.Position.X, input.Position.Y)
-            local distance   = (currentPos - clickStartPos).Magnitude
-            -- Jika hampir tidak ada gerakan, anggap sebagai klik
-            if distance < 6 then
-                -- Toggle panel Orion
-                if OrionWindow then
-                    -- Orion Window punya flag Visible, kita bisa set langsung
-                    OrionWindow.Visible = not OrionWindow.Visible
-                end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            local dist = (Vector2.new(input.Position.X, input.Position.Y) - clickStartPos).Magnitude
+            if dist < 6 then
+                if toggleCallback then toggleCallback() end
             end
             dragStart = nil
-            startPos  = nil
         end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
-        if dragStart and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta      = input.Position - dragStart
-            local viewport   = Workspace.CurrentCamera.ViewportSize
-            local newX       = math.clamp(startPos.X.Offset + delta.X, 0, viewport.X - 46)
-            local newY       = math.clamp(startPos.Y.Offset + delta.Y, 0, viewport.Y - 46)
-            zhxBtn.Position  = UDim2.new(0, newX, 0, newY)
+        if dragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            local vp = Workspace.CurrentCamera.ViewportSize
+            local newX = math.clamp(startPos.X.Offset + delta.X, 0, vp.X - 46)
+            local newY = math.clamp(startPos.Y.Offset + delta.Y, 0, vp.Y - 46)
+            zhxBtn.Position = UDim2.new(0, newX, 0, newY)
         end
     end)
 end
 
 -- ══════════════════════════════════════════════════════════════════
--- FUNGSI MEMBUAT ORION WINDOW BESERTA SEMUA ELEMEN TEST
+-- UI KUSTOM: WINDOW, TAB, SECTION, ELEMENT
 -- ══════════════════════════════════════════════════════════════════
-local function createOrionWindow()
-    -- Warna hijau neon khas ZHX
-    local ZHX_GREEN = Color3.fromRGB(72, 210, 130)
+local CustomUI = {}
+CustomUI.Window = {}
+CustomUI.CurrentTab = nil
+CustomUI.Tabs = {}
+CustomUI.ActiveSections = {}  -- per tab
 
-    OrionWindow = OrionLib:MakeWindow({
-        Name          = "ZHX Hub v17 Test",
-        Icon          = ZHX_PNG,                -- Logo transparan di header
-        ConfigFolder  = "ZHX_OrionTest",
-        SaveConfig    = false,                  -- Test saja, tidak perlu simpan config
-        IntroEnabled  = false,                  -- Matikan animasi intro biar ringan
-        IntroText     = "",
-        CloseCallback = function()
-            -- Tidak perlu aksi khusus saat window ditutup
-        end,
-        Color         = ZHX_GREEN
+function CustomUI:CreateWindow(config)
+    local window = {}
+    local gui = createInstance("ScreenGui", {
+        Name = config.Name or "ZHX_Window",
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        Parent = pg
+    })
+    window.Gui = gui
+
+    -- Main Frame
+    local mainFrame = createInstance("Frame", {
+        Size = UDim2.new(0, 300, 0, 380),
+        Position = UDim2.new(0.5, -150, 0.5, -190),
+        BackgroundColor3 = DARK_BG,
+        BorderSizePixel = 0,
+        Active = true,
+        Draggable = true,
+        Parent = gui
+    })
+    createInstance("UICorner", { CornerRadius = UDim.new(0, 8), Parent = mainFrame })
+    createInstance("UIStroke", { Color = ZHX_GREEN, Thickness = 1.5, Parent = mainFrame })
+    window.MainFrame = mainFrame
+
+    -- Header
+    local header = createInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 50),
+        BackgroundColor3 = DARKER_BG,
+        BorderSizePixel = 0,
+        Parent = mainFrame
+    })
+    createInstance("UICorner", { CornerRadius = UDim.new(0, 8), Parent = header })
+    local headerLogo = createInstance("ImageLabel", {
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(0, 10, 0.5, -15),
+        BackgroundTransparency = 1,
+        Image = ZHX_PNG,
+        ScaleType = Enum.ScaleType.Fit,
+        Parent = header
+    })
+    local headerTitle = createInstance("TextLabel", {
+        Size = UDim2.new(1, -50, 1, 0),
+        Position = UDim2.new(0, 45, 0, 0),
+        BackgroundTransparency = 1,
+        Text = config.Name or "ZHX Hub",
+        TextColor3 = TEXT_WHITE,
+        TextSize = 18,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = header
+    })
+    -- Close button
+    local closeBtn = createInstance("TextButton", {
+        Size = UDim2.new(0, 24, 0, 24),
+        Position = UDim2.new(1, -28, 0.5, -12),
+        BackgroundColor3 = Color3.fromRGB(255, 80, 80),
+        BorderSizePixel = 0,
+        Text = "X",
+        TextColor3 = TEXT_WHITE,
+        TextSize = 14,
+        Font = Enum.Font.GothamBold,
+        Parent = header
+    })
+    createInstance("UICorner", { CornerRadius = UDim.new(0, 4), Parent = closeBtn })
+    closeBtn.MouseButton1Click:Connect(function()
+        gui.Enabled = false
+    end)
+    window.CloseButton = closeBtn
+
+    -- Tab bar
+    local tabBar = createInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 36),
+        Position = UDim2.new(0, 0, 0, 50),
+        BackgroundColor3 = DARKER_BG,
+        BorderSizePixel = 0,
+        Parent = mainFrame
+    })
+    local tabListLayout = createInstance("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = tabBar
+    })
+    local tabScroller = createInstance("ScrollingFrame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 2,
+        CanvasSize = UDim2.new(0, 0, 0, 36),
+        VerticalScrollBarInset = Enum.ScrollBarInset.Always,
+        HorizontalScrollBarInset = Enum.ScrollBarInset.Never,
+        Parent = tabBar
+    })
+    tabScroller.AutomaticCanvasSize = Enum.AutomaticSize.X
+    tabListLayout.Parent = tabScroller
+
+    -- Section container (per tab, akan ditampilkan sesuai tab aktif)
+    local sectionContainer = createInstance("Frame", {
+        Size = UDim2.new(1, 0, 1, -86),
+        Position = UDim2.new(0, 0, 0, 86),
+        BackgroundTransparency = 1,
+        Parent = mainFrame
     })
 
-    -- ── Tab: Home ───────────────────────────────────────────────
-    local TabHome = OrionWindow:MakeTab({
-        Name     = "Home",
-        Icon     = "rbxassetid://7734053495",  -- icon rumah (bisa diganti)
-        PremiumOnly = false
+    local tabs = {}
+    local activeTabName = nil
+
+    function window:AddTab(tabConfig)
+        local tab = {
+            Name = tabConfig.Name,
+            Sections = {}
+        }
+        tab.Frame = createInstance("Frame", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Visible = false,
+            Parent = sectionContainer
+        })
+        local sectionListLayout = createInstance("UIListLayout", {
+            FillDirection = Enum.FillDirection.Vertical,
+            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+            VerticalAlignment = Enum.VerticalAlignment.Top,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 4),
+            Parent = tab.Frame
+        })
+        -- Scroll canvas
+        tab.ScrollFrame = createInstance("ScrollingFrame", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            ScrollBarThickness = 4,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            VerticalScrollBarInset = Enum.ScrollBarInset.Always,
+            HorizontalScrollBarInset = Enum.ScrollBarInset.Never,
+            Parent = tab.Frame
+        })
+        createInstance("UIListLayout", {
+            FillDirection = Enum.FillDirection.Vertical,
+            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+            VerticalAlignment = Enum.VerticalAlignment.Top,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 4),
+            Parent = tab.ScrollFrame
+        })
+
+        -- Tab button
+        local tabBtn = createInstance("TextButton", {
+            Size = UDim2.new(0, 70, 0, 28),
+            BackgroundColor3 = DARK_BG,
+            BorderSizePixel = 0,
+            Text = tab.Name,
+            TextColor3 = TEXT_WHITE,
+            TextSize = 14,
+            Font = Enum.Font.Gotham,
+            Parent = tabScroller
+        })
+        createInstance("UICorner", { CornerRadius = UDim.new(0, 4), Parent = tabBtn })
+        tabBtn.MouseButton1Click:Connect(function()
+            window:SwitchTab(tab.Name)
+        end)
+        tab.Button = tabBtn
+        tabs[tab.Name] = tab
+
+        function tab:AddSection(sectionConfig)
+            local section = {}
+            local sectionFrame = createInstance("Frame", {
+                Size = UDim2.new(1, -20, 0, 40),
+                BackgroundColor3 = DARKER_BG,
+                BorderSizePixel = 0,
+                Parent = tab.ScrollFrame
+            })
+            createInstance("UICorner", { CornerRadius = UDim.new(0, 6), Parent = sectionFrame })
+            createInstance("UIStroke", { Color = ZHX_GREEN, Thickness = 1, Parent = sectionFrame })
+
+            local sectionTitle = createInstance("TextLabel", {
+                Size = UDim2.new(1, 0, 0, 20),
+                Position = UDim2.new(0, 8, 0, 2),
+                BackgroundTransparency = 1,
+                Text = sectionConfig.Name or "",
+                TextColor3 = ZHX_GREEN,
+                TextSize = 13,
+                Font = Enum.Font.GothamBold,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = sectionFrame
+            })
+
+            local contentLayout = createInstance("UIListLayout", {
+                FillDirection = Enum.FillDirection.Vertical,
+                HorizontalAlignment = Enum.HorizontalAlignment.Center,
+                VerticalAlignment = Enum.VerticalAlignment.Top,
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Padding = UDim.new(0, 4),
+                Parent = sectionFrame
+            })
+            -- We'll dynamically adjust sectionFrame.Size based on children
+            -- Simple: set AutomaticSize on Y
+            sectionFrame.AutomaticSize = Enum.AutomaticSize.Y
+
+            section.Frame = sectionFrame
+            section.ContentHolder = sectionFrame
+
+            function section:AddToggle(toggleConfig)
+                local toggleFrame = createInstance("Frame", {
+                    Size = UDim2.new(1, -16, 0, 28),
+                    BackgroundTransparency = 1,
+                    Parent = sectionFrame
+                })
+                local toggleLabel = createInstance("TextLabel", {
+                    Size = UDim2.new(0.7, 0, 1, 0),
+                    Position = UDim2.new(0, 4, 0, 0),
+                    BackgroundTransparency = 1,
+                    Text = toggleConfig.Name or "",
+                    TextColor3 = TEXT_WHITE,
+                    TextSize = 12,
+                    Font = Enum.Font.Gotham,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent = toggleFrame
+                })
+                local toggleBtn = createInstance("TextButton", {
+                    Size = UDim2.new(0, 40, 0, 20),
+                    Position = UDim2.new(1, -44, 0.5, -10),
+                    BackgroundColor3 = Color3.fromRGB(80, 80, 80),
+                    BorderSizePixel = 0,
+                    Text = "OFF",
+                    TextColor3 = TEXT_WHITE,
+                    TextSize = 10,
+                    Font = Enum.Font.GothamBold,
+                    Parent = toggleFrame
+                })
+                createInstance("UICorner", { CornerRadius = UDim.new(0, 4), Parent = toggleBtn })
+                local state = toggleConfig.Default or false
+                local function updateVisual()
+                    if state then
+                        toggleBtn.BackgroundColor3 = ZHX_GREEN
+                        toggleBtn.Text = "ON"
+                    else
+                        toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+                        toggleBtn.Text = "OFF"
+                    end
+                end
+                updateVisual()
+                toggleBtn.MouseButton1Click:Connect(function()
+                    state = not state
+                    updateVisual()
+                    if toggleConfig.Callback then
+                        toggleConfig.Callback(state)
+                    end
+                end)
+            end
+
+            function section:AddButton(buttonConfig)
+                local btn = createInstance("TextButton", {
+                    Size = UDim2.new(1, -16, 0, 30),
+                    BackgroundColor3 = ZHX_GREEN,
+                    BorderSizePixel = 0,
+                    Text = buttonConfig.Name or "",
+                    TextColor3 = TEXT_WHITE,
+                    TextSize = 12,
+                    Font = Enum.Font.GothamBold,
+                    Parent = sectionFrame
+                })
+                createInstance("UICorner", { CornerRadius = UDim.new(0, 4), Parent = btn })
+                btn.MouseButton1Click:Connect(function()
+                    if buttonConfig.Callback then buttonConfig.Callback() end
+                end)
+            end
+
+            function section:AddTextbox(textboxConfig)
+                local boxFrame = createInstance("Frame", {
+                    Size = UDim2.new(1, -16, 0, 44),
+                    BackgroundTransparency = 1,
+                    Parent = sectionFrame
+                })
+                local boxLabel = createInstance("TextLabel", {
+                    Size = UDim2.new(1, 0, 0, 16),
+                    Position = UDim2.new(0, 4, 0, 0),
+                    BackgroundTransparency = 1,
+                    Text = textboxConfig.Name or "",
+                    TextColor3 = TEXT_WHITE,
+                    TextSize = 11,
+                    Font = Enum.Font.Gotham,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent = boxFrame
+                })
+                local inputFrame = createInstance("Frame", {
+                    Size = UDim2.new(1, 0, 0, 24),
+                    Position = UDim2.new(0, 4, 0, 18),
+                    BackgroundColor3 = DARK_BG,
+                    BorderSizePixel = 0,
+                    Parent = boxFrame
+                })
+                createInstance("UICorner", { CornerRadius = UDim.new(0, 4), Parent = inputFrame })
+                local input = createInstance("TextBox", {
+                    Size = UDim2.new(1, -12, 1, 0),
+                    Position = UDim2.new(0, 6, 0, 0),
+                    BackgroundTransparency = 1,
+                    Text = textboxConfig.Default or "",
+                    PlaceholderText = textboxConfig.Placeholder or "",
+                    TextColor3 = TEXT_WHITE,
+                    TextSize = 12,
+                    Font = Enum.Font.Gotham,
+                    ClearTextOnFocus = false,
+                    Parent = inputFrame
+                })
+                input.FocusLost:Connect(function(enterPressed)
+                    if textboxConfig.Callback then
+                        textboxConfig.Callback(input.Text)
+                    end
+                end)
+            end
+
+            function section:AddDropdown(dropdownConfig)
+                local single = not dropdownConfig.Multi
+                local selectedOptions = {}
+                local dropdownFrame = createInstance("Frame", {
+                    Size = UDim2.new(1, -16, 0, 42),
+                    BackgroundTransparency = 1,
+                    Parent = sectionFrame
+                })
+                local dropLabel = createInstance("TextLabel", {
+                    Size = UDim2.new(1, 0, 0, 16),
+                    Position = UDim2.new(0, 4, 0, 0),
+                    BackgroundTransparency = 1,
+                    Text = dropdownConfig.Name or "",
+                    TextColor3 = TEXT_WHITE,
+                    TextSize = 11,
+                    Font = Enum.Font.Gotham,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent = dropdownFrame
+                })
+                local mainBtn = createInstance("TextButton", {
+                    Size = UDim2.new(1, 0, 0, 24),
+                    Position = UDim2.new(0, 4, 0, 18),
+                    BackgroundColor3 = DARK_BG,
+                    BorderSizePixel = 0,
+                    Text = dropdownConfig.Default or (single and "- Pilih -" or "Tidak ada yang dipilih"),
+                    TextColor3 = TEXT_WHITE,
+                    TextSize = 12,
+                    Font = Enum.Font.Gotham,
+                    Parent = dropdownFrame
+                })
+                createInstance("UICorner", { CornerRadius = UDim.new(0, 4), Parent = mainBtn })
+                local arrow = createInstance("ImageLabel", {
+                    Size = UDim2.new(0, 14, 0, 14),
+                    Position = UDim2.new(1, -16, 0.5, -7),
+                    BackgroundTransparency = 1,
+                    Image = "rbxassetid://7072708083", -- icon panah bawah
+                    ScaleType = Enum.ScaleType.Fit,
+                    Parent = mainBtn
+                })
+
+                local listFrame = createInstance("Frame", {
+                    Size = UDim2.new(1, -8, 0, 0),
+                    Position = UDim2.new(0, 4, 0, 42),
+                    BackgroundColor3 = DARKER_BG,
+                    BorderSizePixel = 0,
+                    Visible = false,
+                    ZIndex = 5,
+                    Parent = dropdownFrame
+                })
+                createInstance("UICorner", { CornerRadius = UDim.new(0, 4), Parent = listFrame })
+                local listLayout = createInstance("UIListLayout", {
+                    FillDirection = Enum.FillDirection.Vertical,
+                    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+                    VerticalAlignment = Enum.VerticalAlignment.Top,
+                    SortOrder = Enum.SortOrder.LayoutOrder,
+                    Parent = listFrame
+                })
+                listFrame.AutomaticSize = Enum.AutomaticSize.Y
+
+                local function updateMultiText()
+                    local chosen = {}
+                    for k, v in pairs(selectedOptions) do
+                        if v then table.insert(chosen, k) end
+                    end
+                    if #chosen == 0 then
+                        mainBtn.Text = "Tidak ada yang dipilih"
+                    else
+                        mainBtn.Text = table.concat(chosen, ", ")
+                    end
+                end
+
+                local function fireCallback()
+                    if single then
+                        if dropdownConfig.Callback then dropdownConfig.Callback(mainBtn.Text) end
+                    else
+                        if dropdownConfig.Callback then dropdownConfig.Callback(selectedOptions) end
+                    end
+                end
+
+                -- Populate options
+                for _, opt in ipairs(dropdownConfig.Options) do
+                    if single then
+                        local optBtn = createInstance("TextButton", {
+                            Size = UDim2.new(1, 0, 0, 22),
+                            BackgroundColor3 = DARKER_BG,
+                            BorderSizePixel = 0,
+                            Text = opt,
+                            TextColor3 = TEXT_WHITE,
+                            TextSize = 11,
+                            Font = Enum.Font.Gotham,
+                            Parent = listFrame
+                        })
+                        optBtn.MouseButton1Click:Connect(function()
+                            mainBtn.Text = opt
+                            listFrame.Visible = false
+                            fireCallback()
+                        end)
+                        optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = ZHX_GREEN end)
+                        optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = DARKER_BG end)
+                    else
+                        local checkFrame = createInstance("Frame", {
+                            Size = UDim2.new(1, 0, 0, 22),
+                            BackgroundTransparency = 1,
+                            Parent = listFrame
+                        })
+                        local check = createInstance("ImageLabel", {
+                            Size = UDim2.new(0, 16, 0, 16),
+                            Position = UDim2.new(0, 4, 0.5, -8),
+                            BackgroundTransparency = 1,
+                            Image = "rbxassetid://7072720870", -- unchecked
+                            Parent = checkFrame
+                        })
+                        local label = createInstance("TextLabel", {
+                            Size = UDim2.new(1, -24, 1, 0),
+                            Position = UDim2.new(0, 22, 0, 0),
+                            BackgroundTransparency = 1,
+                            Text = opt,
+                            TextColor3 = TEXT_WHITE,
+                            TextSize = 11,
+                            Font = Enum.Font.Gotham,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Parent = checkFrame
+                        })
+                        selectedOptions[opt] = false
+                        checkFrame.InputBegan:Connect(function(input)
+                            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                                selectedOptions[opt] = not selectedOptions[opt]
+                                check.Image = selectedOptions[opt] and "rbxassetid://7072720342" or "rbxassetid://7072720870"
+                                updateMultiText()
+                                fireCallback()
+                            end
+                        end)
+                    end
+                end
+
+                mainBtn.MouseButton1Click:Connect(function()
+                    listFrame.Visible = not listFrame.Visible
+                end)
+                -- Auto-close when clicking outside
+                local gui = mainBtn
+                while gui and not gui:IsA("ScreenGui") do gui = gui.Parent end
+                if gui then
+                    gui.InputBegan:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                            if not listFrame:IsDescendantOf(input.UserInputService:GetFocusedTextBox()) then
+                                listFrame.Visible = false
+                            end
+                        end
+                    end)
+                end
+            end
+
+            function section:AddParagraph(title, content)
+                local paraFrame = createInstance("Frame", {
+                    Size = UDim2.new(1, -16, 0, 36),
+                    BackgroundTransparency = 1,
+                    Parent = sectionFrame
+                })
+                local titleLabel = createInstance("TextLabel", {
+                    Size = UDim2.new(1, 0, 0, 14),
+                    Position = UDim2.new(0, 4, 0, 0),
+                    BackgroundTransparency = 1,
+                    Text = title or "",
+                    TextColor3 = ZHX_GREEN,
+                    TextSize = 12,
+                    Font = Enum.Font.GothamBold,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent = paraFrame
+                })
+                local contentLabel = createInstance("TextLabel", {
+                    Size = UDim2.new(1, 0, 1, -16),
+                    Position = UDim2.new(0, 4, 0, 16),
+                    BackgroundTransparency = 1,
+                    Text = content or "",
+                    TextColor3 = TEXT_GRAY,
+                    TextSize = 10,
+                    Font = Enum.Font.Gotham,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextWrapped = true,
+                    Parent = paraFrame
+                })
+            end
+
+            tab.Sections[#tab.Sections + 1] = section
+            return section
+        end
+
+        return tab
+    end
+
+    function window:SwitchTab(tabName)
+        if activeTabName then
+            tabs[activeTabName].Frame.Visible = false
+        end
+        if tabs[tabName] then
+            tabs[tabName].Frame.Visible = true
+            activeTabName = tabName
+        end
+    end
+
+    -- Default tab
+    window:SwitchTab(config.DefaultTab or "Home")
+
+    return window
+end
+
+-- ══════════════════════════════════════════════════════════════════
+-- MEMBUAT JENDELA DAN ISI
+-- ══════════════════════════════════════════════════════════════════
+local mainWindow
+
+local function createWindowAndTabs()
+    mainWindow = CustomUI:CreateWindow({
+        Name = "ZHX Hub v17 Test",
+        DefaultTab = "Home"
     })
 
-    local SecHome = TabHome:AddSection({
-        Name = "Informasi"
-    })
-
-    SecHome:AddParagraph(
-        "Ini adalah test Orion UI Library.",
-        "Floating button ZHX di layar berfungsi sebagai toggle buka/tutup panel ini.\nSemua elemen UI Orion tersedia dan mobile-friendly.",
+    -- Tab: Home
+    local tabHome = mainWindow:AddTab({ Name = "Home" })
+    local secHome = tabHome:AddSection({ Name = "Informasi" })
+    secHome:AddParagraph(
+        "Selamat datang",
+        "Ini adalah UI kustom tanpa library eksternal.\nFloating button ZHX di layar berfungsi sebagai toggle buka/tutup panel.\nSemua elemen siap dan mobile-friendly.",
         ""
     )
 
-    -- ── Tab: Setup (contoh Toggle, Button, TextBox) ─────────────
-    local TabSetup = OrionWindow:MakeTab({
-        Name     = "Setup",
-        Icon     = "rbxassetid://7734053495",
-        PremiumOnly = false
+    -- Tab: Setup
+    local tabSetup = mainWindow:AddTab({ Name = "Setup" })
+    local secSetup1 = tabSetup:AddSection({ Name = "Persiapan (Contoh)" })
+    secSetup1:AddToggle({
+        Name = "Auto Booth",
+        Default = false,
+        Callback = function(val)
+            print("Auto Booth:", val)
+        end
     })
-
-    local SecSetup1 = TabSetup:AddSection({
-        Name = "Persiapan (Contoh)"
+    secSetup1:AddButton({
+        Name = "Muat Daftar Item",
+        Callback = function()
+            print("Tombol Muat Daftar Item ditekan")
+        end
     })
-
-    SecSetup1:AddToggle({
-        Name        = "Auto Booth",
-        Default     = false,
-        Color       = ZHX_GREEN,
-        Flag        = "Test_AutoBooth",
-        Save        = false,
-        Callback    = function(Value)
-            print("Toggle Auto Booth:", Value)
-            OrionLib:MakeNotification({
-                Name       = "Toggle Test",
-                Content    = "Auto Booth " .. (Value and "AKTIF" or "MATI"),
-                Image      = ZHX_PNG,
-                Time       = 2
-            })
+    secSetup1:AddTextbox({
+        Name = "Harga Slot 1",
+        Placeholder = "Isi harga",
+        Default = "",
+        Callback = function(val)
+            print("Harga diinput:", val)
         end
     })
 
-    SecSetup1:AddButton({
-        Name       = "Muat Daftar Item",
-        Color      = ZHX_GREEN,
-        Callback   = function()
-            OrionLib:MakeNotification({
-                Name       = "Button Test",
-                Content    = "Tombol 'Muat Daftar Item' ditekan!",
-                Image      = ZHX_PNG,
-                Time       = 3
-            })
+    -- Tab: Single Slots
+    local tabSlots = mainWindow:AddTab({ Name = "Single Slots" })
+    local secSlot1 = tabSlots:AddSection({ Name = "Slot 1 (Dropdown Single)" })
+    secSlot1:AddDropdown({
+        Name = "Pilih Item",
+        Default = "- Kosongkan -",
+        Options = { "- Kosongkan -", "Ikan Emas", "Ikan Hiu", "Pancing Legendaris", "Umpan Premium" },
+        Callback = function(val)
+            print("Dropdown single:", val)
         end
     })
-
-    SecSetup1:AddTextbox({
-        Name        = "Harga Slot 1",
-        Default     = "",
-        Color       = ZHX_GREEN,
-        TextDisappear = false,
-        Callback    = function(Value)
-            print("Harga diinput:", Value)
-        end
-    })
-
-    -- ── Tab: Single Slots (Dropdown Single) ─────────────────────
-    local TabSlots = OrionWindow:MakeTab({
-        Name     = "Single Slots",
-        Icon     = "rbxassetid://7734053495",
-        PremiumOnly = false
-    })
-
-    local SecSlot1 = TabSlots:AddSection({
-        Name = "Slot 1 (Contoh Dropdown Single)"
-    })
-
-    SecSlot1:AddDropdown({
-        Name       = "Pilih Item",
-        Default    = "- Kosongkan -",
-        Options    = { "- Kosongkan -", "Ikan Emas", "Ikan Hiu", "Pancing Legendaris", "Umpan Premium" },
-        Color      = ZHX_GREEN,
-        Flag       = "Test_DropdownSingle",
-        Save       = false,
-        Callback   = function(Value)
-            print("Dropdown single pilih:", Value)
-        end
-    })
-
-    local SecSlot1Status = TabSlots:AddSection({
-        Name = "Status Slot 1"
-    })
-
-    SecSlot1Status:AddParagraph(
+    local secSlotStatus = tabSlots:AddSection({ Name = "Status Slot 1" })
+    secSlotStatus:AddParagraph(
         "Status",
         "Stok: 12 | ✅ Aktif",
         ""
     )
 
-    -- ── Tab: Multi Slots (Dropdown Multi-Select) ─────────────────
-    local TabMulti = OrionWindow:MakeTab({
-        Name     = "Multi Slots",
-        Icon     = "rbxassetid://7734053495",
-        PremiumOnly = false
-    })
-
-    local SecMulti1 = TabMulti:AddSection({
-        Name = "Multi M1 (Contoh Multi-Select Dropdown)"
-    })
-
-    -- INI ADALAH FITUR MULTI-SELECT DROPDOWN ORION
-    SecMulti1:AddDropdown({
-        Name       = "Item M1",
-        Default    = {},
-        Options    = {
+    -- Tab: Multi Slots (Multi-Select Dropdown)
+    local tabMulti = mainWindow:AddTab({ Name = "Multi Slots" })
+    local secMulti1 = tabMulti:AddSection({ Name = "Multi M1 (Multi-Select)" })
+    secMulti1:AddDropdown({
+        Name = "Item M1",
+        Multi = true,
+        Options = {
             "Ikan Emas",
             "Ikan Hiu",
             "Pancing Legendaris",
@@ -273,242 +720,130 @@ local function createOrionWindow()
             "Kepiting",
             "Kerang Mutiara"
         },
-        Multi      = true,          -- <-- MULTI-SELECT AKTIF
-        Color      = ZHX_GREEN,
-        Flag       = "Test_MultiDropdown",
-        Save       = false,
-        Callback   = function(SelectedTable)
-            -- SelectedTable adalah table: { "Ikan Emas" = true, "Ikan Hiu" = false, ... }
+        Callback = function(selectedTable)
             local chosen = {}
-            for name, isSelected in pairs(SelectedTable) do
-                if isSelected then
-                    table.insert(chosen, name)
-                end
+            for k, v in pairs(selectedTable) do
+                if v then table.insert(chosen, k) end
             end
-            print("Multi-select memilih:", table.concat(chosen, ", "))
+            print("Multi-select:", table.concat(chosen, ", "))
         end
     })
-
-    local SecMulti1Status = TabMulti:AddSection({
-        Name = "Status Multi M1"
-    })
-
-    SecMulti1Status:AddParagraph(
+    local secMultiStatus = tabMulti:AddSection({ Name = "Status M1" })
+    secMultiStatus:AddParagraph(
         "Status",
         "Stok: 24 | 2 item | ⛔ Cek harga",
         ""
     )
 
-    -- ── Tab: Webhook ────────────────────────────────────────────
-    local TabWebhook = OrionWindow:MakeTab({
-        Name     = "Webhook",
-        Icon     = "rbxassetid://7734053495",
-        PremiumOnly = false
+    -- Tab: Webhook
+    local tabWebhook = mainWindow:AddTab({ Name = "Webhook" })
+    local secWH = tabWebhook:AddSection({ Name = "Notifikasi Discord" })
+    secWH:AddTextbox({
+        Name = "URL Webhook",
+        Placeholder = "https://...",
+        Default = "",
+        Callback = function(val)
+            print("Webhook:", val)
+        end
     })
-
-    local SecWH = TabWebhook:AddSection({
-        Name = "Notifikasi Discord"
-    })
-
-    SecWH:AddTextbox({
-        Name        = "URL Webhook",
-        Default     = "",
-        Color       = ZHX_GREEN,
-        TextDisappear = false,
-        Callback    = function(Value)
-            print("Webhook URL:", Value)
+    secWH:AddToggle({
+        Name = "Aktifkan Webhook",
+        Default = false,
+        Callback = function(val)
+            print("Webhook toggle:", val)
         end
     })
 
-    SecWH:AddToggle({
-        Name        = "Aktifkan Webhook",
-        Default     = false,
-        Color       = ZHX_GREEN,
-        Flag        = "Test_WebhookToggle",
-        Save        = false,
-        Callback    = function(Value)
-            OrionLib:MakeNotification({
-                Name       = "Webhook",
-                Content    = Value and "AKTIF" or "MATI",
-                Image      = ZHX_PNG,
-                Time       = 2
-            })
+    -- Tab: Config
+    local tabConfig = mainWindow:AddTab({ Name = "Config" })
+    local secCfg = tabConfig:AddSection({ Name = "Kelola Config" })
+    secCfg:AddTextbox({
+        Name = "Nama Config",
+        Placeholder = "Masukkan nama",
+        Default = "",
+        Callback = function(val)
+            print("Nama Config:", val)
+        end
+    })
+    secCfg:AddDropdown({
+        Name = "Pilih Config",
+        Default = "- Belum Ada Config -",
+        Options = { "- Belum Ada Config -", "Config Farming", "Config Boss", "Config Event" },
+        Callback = function(val)
+            print("Config dipilih:", val)
+        end
+    })
+    secCfg:AddButton({
+        Name = "Simpan Config",
+        Callback = function()
+            print("Config disimpan")
+        end
+    })
+    secCfg:AddButton({
+        Name = "Load Config",
+        Callback = function()
+            print("Config dimuat")
         end
     })
 
-    -- ── Tab: Config ─────────────────────────────────────────────
-    local TabConfig = OrionWindow:MakeTab({
-        Name     = "Config",
-        Icon     = "rbxassetid://7734053495",
-        PremiumOnly = false
+    -- Tab: Misc
+    local tabMisc = mainWindow:AddTab({ Name = "Misc" })
+    local secFitur = tabMisc:AddSection({ Name = "Fitur Tambahan" })
+    secFitur:AddToggle({
+        Name = "Anti AFK",
+        Default = true,
+        Callback = function(val)
+            print("Anti AFK:", val)
+        end
     })
-
-    local SecCfg = TabConfig:AddSection({
-        Name = "Kelola Config"
+    secFitur:AddToggle({
+        Name = "Boost FPS",
+        Default = false,
+        Callback = function(val)
+            print("Boost FPS:", val)
+        end
     })
-
-    SecCfg:AddTextbox({
-        Name        = "Nama Config",
-        Default     = "",
-        Color       = ZHX_GREEN,
-        TextDisappear = false,
-        Callback    = function(Value)
-            print("Nama Config:", Value)
+    secFitur:AddToggle({
+        Name = "Show FPS Panel",
+        Default = false,
+        Callback = function(val)
+            print("Stats Panel:", val)
+        end
+    })
+    local secPengaturan = tabMisc:AddSection({ Name = "Pengaturan" })
+    secPengaturan:AddButton({
+        Name = "Reset Semua",
+        Callback = function()
+            print("Reset")
+        end
+    })
+    secPengaturan:AddButton({
+        Name = "Server Hop",
+        Callback = function()
+            print("Server Hop")
         end
     })
 
-    SecCfg:AddDropdown({
-        Name       = "Pilih Config",
-        Default    = "- Belum Ada Config -",
-        Options    = { "- Belum Ada Config -", "Config Farming", "Config Boss", "Config Event" },
-        Color      = ZHX_GREEN,
-        Flag       = "Test_ConfigList",
-        Save       = false,
-        Callback   = function(Value)
-            print("Config dipilih:", Value)
-        end
-    })
-
-    SecCfg:AddButton({
-        Name       = "Simpan Config",
-        Color      = ZHX_GREEN,
-        Callback   = function()
-            OrionLib:MakeNotification({
-                Name       = "Config",
-                Content    = "Config disimpan (test)",
-                Image      = ZHX_PNG,
-                Time       = 2
-            })
-        end
-    })
-
-    SecCfg:AddButton({
-        Name       = "Load Config",
-        Color      = ZHX_GREEN,
-        Callback   = function()
-            OrionLib:MakeNotification({
-                Name       = "Config",
-                Content    = "Config dimuat (test)",
-                Image      = ZHX_PNG,
-                Time       = 2
-            })
-        end
-    })
-
-    -- ── Tab: Misc ───────────────────────────────────────────────
-    local TabMisc = OrionWindow:MakeTab({
-        Name     = "Misc",
-        Icon     = "rbxassetid://7734053495",
-        PremiumOnly = false
-    })
-
-    local SecFitur = TabMisc:AddSection({
-        Name = "Fitur Tambahan"
-    })
-
-    SecFitur:AddToggle({
-        Name        = "Anti AFK",
-        Default     = true,
-        Color       = ZHX_GREEN,
-        Flag        = "Test_AntiAFK",
-        Save        = false,
-        Callback    = function(Value)
-            print("Anti AFK:", Value)
-        end
-    })
-
-    SecFitur:AddToggle({
-        Name        = "Boost FPS",
-        Default     = false,
-        Color       = ZHX_GREEN,
-        Flag        = "Test_BoostFPS",
-        Save        = false,
-        Callback    = function(Value)
-            print("Boost FPS:", Value)
-        end
-    })
-
-    SecFitur:AddToggle({
-        Name        = "Show FPS Panel",
-        Default     = false,
-        Color       = ZHX_GREEN,
-        Flag        = "Test_StatsPanel",
-        Save        = false,
-        Callback    = function(Value)
-            print("Stats Panel:", Value)
-        end
-    })
-
-    local SecTema = TabMisc:AddSection({
-        Name = "Tema"
-    })
-
-    SecTema:AddDropdown({
-        Name       = "Pilih Tema",
-        Default    = "Default",
-        Options    = { "Default", "Dark", "Light" },
-        Color      = ZHX_GREEN,
-        Flag       = "Test_Tema",
-        Save       = false,
-        Callback   = function(Value)
-            print("Tema:", Value)
-        end
-    })
-
-    local SecPengaturan = TabMisc:AddSection({
-        Name = "Pengaturan"
-    })
-
-    SecPengaturan:AddButton({
-        Name       = "Reset Semua",
-        Color      = ZHX_GREEN,
-        Callback   = function()
-            OrionLib:MakeNotification({
-                Name       = "Reset",
-                Content    = "Semua direset (test)",
-                Image      = ZHX_PNG,
-                Time       = 2
-            })
-        end
-    })
-
-    SecPengaturan:AddButton({
-        Name       = "Server Hop",
-        Color      = ZHX_GREEN,
-        Callback   = function()
-            OrionLib:MakeNotification({
-                Name       = "Server Hop",
-                Content    = "Mencari server... (test)",
-                Image      = ZHX_PNG,
-                Time       = 2
-            })
-        end
-    })
-
-    -- Set window siap
-    windowReady = true
-    print("Orion Window siap.")
+    -- Aktifkan tab pertama
+    mainWindow:SwitchTab("Home")
 end
 
 -- ══════════════════════════════════════════════════════════════════
--- JALANKAN SEMUA DENGAN URUTAN WAKTU YANG ANDA TENTUKAN
+-- EKSEKUSI BERDASARKAN WAKTU
 -- ══════════════════════════════════════════════════════════════════
--- Notif muncul selama 3 detik. Semua elemen lain (floating button + panel)
--- baru muncul di detik ke-4 (setelah notif hilang).
+-- Setelah 4 detik (notif hilang), buat floating button dan window
 task.delay(4, function()
-    -- Buat floating button ZHX terlebih dahulu
-    createFloatingButton()
+    -- Buat floating button dulu
+    local panelVisible = true
+    createFloatingButton(function()
+        if mainWindow and mainWindow.MainFrame then
+            panelVisible = not panelVisible
+            mainWindow.Gui.Enabled = panelVisible
+        end
+    end)
 
-    -- Buat Orion Window (awalnya Visible = true, langsung tampil)
-    createOrionWindow()
+    -- Buat window UI kustom
+    createWindowAndTabs()
 
-    -- Tampilkan notifikasi bahwa sistem siap
-    OrionLib:MakeNotification({
-        Name       = "ZHX Hub v17 Test",
-        Content    = "Sistem siap! Gunakan tombol ZHX untuk buka/tutup panel.",
-        Image      = ZHX_PNG,
-        Time       = 5
-    })
-
-    print("ZHX Hub v17 Test — Semua sistem dan UI siap.")
+    print("ZHX Hub v17 Test — UI kustom siap. Gunakan tombol ZHX untuk toggle panel.")
 end)
