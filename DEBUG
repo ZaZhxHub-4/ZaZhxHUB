@@ -1,10 +1,10 @@
 -- ══════════════════════════════════════════════════════════════════════════════
---    TEST UI KUSTOM ZHX v2 - Layout Tab Kiri, Persegi Panjang Horizontal
---    Notifier Kustom di Pojok Kanan Bawah, Floating Button ZHX Toggle
---    Warna Aksen Hijau Neon, Desain Rapi & Bersih
+--    TEST UI KUSTOM ZHX v3 - Simulasi Penuh Fitur v16
+--    Layout tab kiri, panel hitam pekat, skala terpisah, tanpa stroke berlebihan
+--    Notifier kustom kanan bawah, floating button ZHX muncul setelah notif hilang
 -- ══════════════════════════════════════════════════════════════════════════════
 -- ASSET ID ZHX:
---   ZHX_FLOAT  → rbxassetid://78392602281326  (non-PNG, tombol floating)
+--   ZHX_FLOAT  → rbxassetid://78392602281326  (non‑PNG, tombol floating)
 --   ZHX_PNG    → rbxassetid://99100720984583  (transparan/PNG, header, notif)
 -- ══════════════════════════════════════════════════════════════════════════════
 
@@ -20,27 +20,32 @@ local TweenService       = game:GetService("TweenService")
 local ZHX_FLOAT = "rbxassetid://78392602281326"
 local ZHX_PNG   = "rbxassetid://99100720984583"
 
--- Warna aksen hijau neon, sama persis dengan stroke tombol floating ZHX
+-- ═══════════════════════ KONFIGURASI SKALA ═══════════════════════
+-- Ubah nilai ini untuk memperbesar/memperkecil elemen terkait
+local UI_SCALE      = 1.0   -- skala panel utama + seluruh isinya
+local NOTIF_SCALE   = 1.0   -- skala notifier kustom
+local FLOATING_SCALE = 1.0  -- skala tombol floating ZHX
+
+-- ═══════════════════════ WARNA ═══════════════════════════════════
 local ZHX_GREEN     = Color3.fromRGB(72, 210, 130)
 local ZHX_GREEN_DARK = Color3.fromRGB(50, 160, 95)
-local DARK_BG        = Color3.fromRGB(20, 22, 28)
-local DARKER_BG      = Color3.fromRGB(15, 17, 22)
-local SIDEBAR_BG     = Color3.fromRGB(17, 19, 25)
-local TAB_ACTIVE_BG  = Color3.fromRGB(28, 32, 40)
-local TAB_HOVER_BG   = Color3.fromRGB(35, 40, 50)
-local TEXT_WHITE     = Color3.fromRGB(240, 240, 240)
-local TEXT_GRAY      = Color3.fromRGB(170, 170, 180)
-local TEXT_DIM       = Color3.fromRGB(130, 130, 140)
-local NOTIF_BG       = Color3.fromRGB(18, 20, 26)
+local BLACK_PEKAT   = Color3.new(0, 0, 0)            -- mutlak hitam
+local BLACK_SIDEBAR = Color3.new(0, 0, 0)
+local BLACK_HEADER  = Color3.new(0, 0, 0)
+local BLACK_SECTION = Color3.fromRGB(10, 10, 12)    -- sedikit lebih terang agar section terlihat
+local TEXT_WHITE    = Color3.fromRGB(240, 240, 240)
+local TEXT_GRAY     = Color3.fromRGB(170, 170, 180)
+local TEXT_DIM      = Color3.fromRGB(120, 120, 130)
+local NOTIF_BG      = Color3.fromRGB(15, 15, 18)
 
 -- Tunggu LocalPlayer & PlayerGui
 while not Players.LocalPlayer do task.wait() end
 local lp = Players.LocalPlayer
 local pg = lp:WaitForChild("PlayerGui", 9e9)
 
--- ══════════════════════════════════════════════════════════════════════════════
--- NOTIFIKASI STARTUP ROBOX BAWAAN (sama persis seperti script v16)
--- ══════════════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════
+-- NOTIFIKASI STARTUP ROBOX BAWAAN (3 detik)
+-- ══════════════════════════════════════════════════════════════════
 pcall(function()
     StarterGui:SetCore("SendNotification", {
         Title    = "ZHX Hub v17 Test",
@@ -50,16 +55,15 @@ pcall(function()
     })
 end)
 
--- ══════════════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════
 -- NOTIFIER KUSTOM (pojok kanan bawah, bertumpuk ke atas, ringan)
--- ══════════════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════
 local Notifier = {}
 Notifier.ActiveNotifications = {}
 Notifier.MaxVisible = 5
-Notifier.BasePosition = UDim2.new(1, -20, 1, -20)  -- anchor pojok kanan bawah
-Notifier.Spacing = 52  -- jarak antar notif (termasuk tinggi notif)
+Notifier.BasePosition = UDim2.new(1, -20, 1, -20)
+Notifier.Spacing = 52
 
--- Buat ScreenGui untuk notifier
 local notifGui = Instance.new("ScreenGui")
 notifGui.Name = "ZHX_NotifierGui"
 notifGui.ResetOnSpawn = false
@@ -67,28 +71,28 @@ notifGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 notifGui.DisplayOrder = 999
 notifGui.Parent = pg
 
--- Fungsi untuk membuat satu notif baru
+-- UIScale untuk notif
+local notifScale = Instance.new("UIScale", notifGui)
+notifScale.Scale = NOTIF_SCALE
+
 function Notifier.new(config)
     local title   = config.Title or ""
     local content = config.Content or ""
     local icon    = config.Icon or ZHX_PNG
     local duration = config.Duration or 3
 
-    -- Buat frame utama notif
     local notifFrame = Instance.new("Frame")
     notifFrame.Size = UDim2.new(0, 280, 0, 46)
-    notifFrame.Position = UDim2.new(1, -300, 1, -20)  -- mulai dari luar layar kanan (animasi slide in)
+    notifFrame.Position = UDim2.new(1, -300, 1, -20)
     notifFrame.BackgroundColor3 = NOTIF_BG
     notifFrame.BorderSizePixel = 0
-    notifFrame.BackgroundTransparency = 0.15
+    notifFrame.BackgroundTransparency = 0.1
     notifFrame.ZIndex = 10
     notifFrame.Parent = notifGui
 
-    -- Corner radius
     local corner = Instance.new("UICorner", notifFrame)
-    corner.CornerRadius = UDim.new(0, 8)
+    corner.CornerRadius = UDim.new(0, 6)
 
-    -- Stroke hijau neon di sisi kiri sebagai aksen
     local accentBar = Instance.new("Frame")
     accentBar.Size = UDim2.new(0, 3, 1, -6)
     accentBar.Position = UDim2.new(0, 4, 0, 3)
@@ -97,7 +101,6 @@ function Notifier.new(config)
     accentBar.Parent = notifFrame
     Instance.new("UICorner", accentBar).CornerRadius = UDim.new(0, 2)
 
-    -- Icon
     local iconLabel = Instance.new("ImageLabel")
     iconLabel.Size = UDim2.new(0, 28, 0, 28)
     iconLabel.Position = UDim2.new(0, 14, 0.5, -14)
@@ -106,7 +109,6 @@ function Notifier.new(config)
     iconLabel.ScaleType = Enum.ScaleType.Fit
     iconLabel.Parent = notifFrame
 
-    -- Title
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Size = UDim2.new(1, -54, 0, 18)
     titleLabel.Position = UDim2.new(0, 50, 0, 5)
@@ -119,7 +121,6 @@ function Notifier.new(config)
     titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
     titleLabel.Parent = notifFrame
 
-    -- Content
     local contentLabel = Instance.new("TextLabel")
     contentLabel.Size = UDim2.new(1, -54, 0, 16)
     contentLabel.Position = UDim2.new(0, 50, 0, 24)
@@ -132,7 +133,6 @@ function Notifier.new(config)
     contentLabel.TextTruncate = Enum.TextTruncate.AtEnd
     contentLabel.Parent = notifFrame
 
-    -- Simpan data notif
     local notifData = {
         Frame = notifFrame,
         Duration = duration,
@@ -141,7 +141,6 @@ function Notifier.new(config)
     }
     table.insert(Notifier.ActiveNotifications, notifData)
 
-    -- Animasi slide in dari kanan
     notifFrame:TweenPosition(
         UDim2.new(1, -300, 1, -20),
         Enum.EasingDirection.InOut,
@@ -150,14 +149,11 @@ function Notifier.new(config)
         true
     )
 
-    -- Update posisi semua notif (bertumpuk ke atas)
     Notifier.UpdatePositions()
 
-    -- Auto remove setelah durasi
     task.delay(duration, function()
         if notifData.Removed then return end
         notifData.Removed = true
-        -- Fade out + slide out
         notifFrame:TweenPosition(
             UDim2.new(1, -300, 1, 20),
             Enum.EasingDirection.In,
@@ -169,7 +165,6 @@ function Notifier.new(config)
             if notifFrame and notifFrame.Parent then
                 notifFrame:Destroy()
             end
-            -- Hapus dari daftar
             for i, n in ipairs(Notifier.ActiveNotifications) do
                 if n == notifData then
                     table.remove(Notifier.ActiveNotifications, i)
@@ -183,11 +178,10 @@ function Notifier.new(config)
     return notifData
 end
 
--- Fungsi untuk mengupdate posisi semua notif agar bertumpuk ke atas
 function Notifier.UpdatePositions()
     local count = #Notifier.ActiveNotifications
     for i, notifData in ipairs(Notifier.ActiveNotifications) do
-        local indexFromBottom = count - i  -- 0 untuk yang paling bawah
+        local indexFromBottom = count - i
         local yOffset = 20 + (indexFromBottom * Notifier.Spacing)
         local frame = notifData.Frame
         if frame and frame.Parent then
@@ -202,51 +196,48 @@ function Notifier.UpdatePositions()
     end
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
--- FLOATING BUTTON ZHX (bisa di-drag, klik untuk toggle buka/tutup panel)
--- ══════════════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════
+-- FLOATING BUTTON ZHX (drag & toggle panel)
+-- ══════════════════════════════════════════════════════════════════
 local floatingGui = Instance.new("ScreenGui")
 floatingGui.Name = "ZHX_FloatingGui"
 floatingGui.ResetOnSpawn = false
 floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+floatingGui.Enabled = false   -- muncul nanti
 floatingGui.Parent = pg
+
+local floatScale = Instance.new("UIScale", floatingGui)
+floatScale.Scale = FLOATING_SCALE
 
 local zhxBtn = Instance.new("ImageButton")
 zhxBtn.Size = UDim2.new(0, 48, 0, 48)
 zhxBtn.Position = UDim2.new(0, 14, 0, 120)
-zhxBtn.BackgroundColor3 = Color3.fromRGB(12, 14, 20)
+zhxBtn.BackgroundColor3 = BLACK_PEKAT
 zhxBtn.BorderSizePixel = 0
 zhxBtn.Image = ZHX_FLOAT
 zhxBtn.ScaleType = Enum.ScaleType.Fit
 zhxBtn.ZIndex = 200
 zhxBtn.Parent = floatingGui
 
--- Corner radius
-local btnCorner = Instance.new("UICorner", zhxBtn)
-btnCorner.CornerRadius = UDim.new(0, 12)
-
--- Stroke hijau neon
+Instance.new("UICorner", zhxBtn).CornerRadius = UDim.new(0, 8)
 local btnStroke = Instance.new("UIStroke", zhxBtn)
 btnStroke.Color = ZHX_GREEN
 btnStroke.Thickness = 1.8
 
--- Shadow tipis
+-- Shadow (bukan stroke panel)
 local btnShadow = Instance.new("ImageLabel", zhxBtn)
 btnShadow.Size = UDim2.new(1, 6, 1, 6)
 btnShadow.Position = UDim2.new(0, -3, 0, 3)
 btnShadow.BackgroundTransparency = 1
 btnShadow.Image = "rbxassetid://1316045217"
-btnShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+btnShadow.ImageColor3 = Color3.new(0,0,0)
 btnShadow.ImageTransparency = 0.6
 btnShadow.ScaleType = Enum.ScaleType.Slice
 btnShadow.SliceCenter = Rect.new(8, 8, 248, 248)
 btnShadow.ZIndex = 0
 
--- Drag logic
-local dragStart = nil
-local startPos  = nil
+local dragStart, startPos, isDragging
 local clickStartPos = Vector2.new()
-local isDragging = false
 
 zhxBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -262,9 +253,7 @@ zhxBtn.InputChanged:Connect(function(input)
     if dragStart and (input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
-        if delta.Magnitude > 3 then
-            isDragging = true
-        end
+        if delta.Magnitude > 3 then isDragging = true end
         if isDragging then
             local vp = Workspace.CurrentCamera.ViewportSize
             local newX = math.clamp(startPos.X.Offset + delta.X, 0, vp.X - 48)
@@ -277,35 +266,32 @@ end)
 zhxBtn.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-        local endPos = Vector2.new(input.Position.X, input.Position.Y)
-        local dist = (endPos - clickStartPos).Magnitude
+        local dist = (Vector2.new(input.Position.X, input.Position.Y) - clickStartPos).Magnitude
         if not isDragging and dist < 6 then
-            -- Ini adalah klik, bukan drag
-            if _G.ZHX_TogglePanel then
-                _G.ZHX_TogglePanel()
-            end
+            if _G.ZHX_TogglePanel then _G.ZHX_TogglePanel() end
         end
-        dragStart = nil
-        startPos = nil
-        isDragging = false
+        dragStart, startPos, isDragging = nil, nil, false
     end
 end)
 
--- ══════════════════════════════════════════════════════════════════════════════
--- UI KUSTOM: WINDOW DENGAN TAB DI KIRI, KONTEN DI KANAN
--- ══════════════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════
+-- PANEL UTAMA (TAB KIRI + KONTEN KANAN)
+-- ══════════════════════════════════════════════════════════════════
 local mainGui = Instance.new("ScreenGui")
 mainGui.Name = "ZHX_MainGui"
 mainGui.ResetOnSpawn = false
 mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-mainGui.Enabled = true  -- default terbuka
+mainGui.Enabled = false   -- muncul nanti
 mainGui.Parent = pg
 
--- Root Frame — persegi panjang horizontal
+local uiScale = Instance.new("UIScale", mainGui)
+uiScale.Scale = UI_SCALE
+
+-- Root frame — persegi panjang horizontal, hitam pekat
 local rootFrame = Instance.new("Frame")
-rootFrame.Size = UDim2.new(0, 500, 0, 330)
-rootFrame.Position = UDim2.new(0.5, -250, 0.5, -165)
-rootFrame.BackgroundColor3 = DARK_BG
+rootFrame.Size = UDim2.new(0, 520, 0, 340)
+rootFrame.Position = UDim2.new(0.5, -260, 0.5, -170)
+rootFrame.BackgroundColor3 = BLACK_PEKAT
 rootFrame.BorderSizePixel = 0
 rootFrame.Active = true
 rootFrame.Draggable = true
@@ -313,225 +299,179 @@ rootFrame.ZIndex = 100
 rootFrame.Parent = mainGui
 
 local rootCorner = Instance.new("UICorner", rootFrame)
-rootCorner.CornerRadius = UDim.new(0, 10)
+rootCorner.CornerRadius = UDim.new(0, 6)   -- radius kecil
 
-local rootStroke = Instance.new("UIStroke", rootFrame)
-rootStroke.Color = ZHX_GREEN
-rootStroke.Thickness = 1.5
-rootStroke.Transparency = 0.2
+-- TIDAK PAKAI STROKE di rootFrame
 
--- Drop shadow root
-local rootShadow = Instance.new("ImageLabel", rootFrame)
-rootShadow.Size = UDim2.new(1, 12, 1, 12)
-rootShadow.Position = UDim2.new(0, -6, 0, -6)
-rootShadow.BackgroundTransparency = 1
-rootShadow.Image = "rbxassetid://1316045217"
-rootShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-rootShadow.ImageTransparency = 0.7
-rootShadow.ScaleType = Enum.ScaleType.Slice
-rootShadow.SliceCenter = Rect.new(8, 8, 248, 248)
-rootShadow.ZIndex = 0
-
--- Header atas (tipis, hanya logo + judul + close)
+-- Header
 local headerFrame = Instance.new("Frame")
-headerFrame.Size = UDim2.new(1, 0, 0, 40)
+headerFrame.Size = UDim2.new(1, 0, 0, 36)
 headerFrame.Position = UDim2.new(0, 0, 0, 0)
-headerFrame.BackgroundColor3 = DARKER_BG
+headerFrame.BackgroundColor3 = BLACK_HEADER
 headerFrame.BorderSizePixel = 0
 headerFrame.ZIndex = 101
 headerFrame.Parent = rootFrame
 
-local headerCorner = Instance.new("UICorner", headerFrame)
-headerCorner.CornerRadius = UDim.new(0, 10)
+-- Garis pemisah bawah header (divider hijau tipis)
+local headerDivider = Instance.new("Frame")
+headerDivider.Size = UDim2.new(1, -0, 0, 1)
+headerDivider.Position = UDim2.new(0, 0, 1, 0)
+headerDivider.BackgroundColor3 = ZHX_GREEN
+headerDivider.BorderSizePixel = 0
+headerDivider.BackgroundTransparency = 0.6
+headerDivider.Parent = headerFrame
 
--- Tutupi corner bawah header
-local headerBottomCover = Instance.new("Frame")
-headerBottomCover.Size = UDim2.new(1, 0, 0, 10)
-headerBottomCover.Position = UDim2.new(0, 0, 1, -10)
-headerBottomCover.BackgroundColor3 = DARKER_BG
-headerBottomCover.BorderSizePixel = 0
-headerBottomCover.ZIndex = 102
-headerBottomCover.Parent = headerFrame
-
--- Logo di header
+-- Logo
 local headerLogo = Instance.new("ImageLabel")
-headerLogo.Size = UDim2.new(0, 26, 0, 26)
-headerLogo.Position = UDim2.new(0, 10, 0.5, -13)
+headerLogo.Size = UDim2.new(0, 22, 0, 22)
+headerLogo.Position = UDim2.new(0, 10, 0.5, -11)
 headerLogo.BackgroundTransparency = 1
 headerLogo.Image = ZHX_PNG
 headerLogo.ScaleType = Enum.ScaleType.Fit
-headerLogo.ZIndex = 103
+headerLogo.ZIndex = 102
 headerLogo.Parent = headerFrame
 
--- Judul di header
+-- Judul
 local headerTitle = Instance.new("TextLabel")
-headerTitle.Size = UDim2.new(1, -80, 1, 0)
-headerTitle.Position = UDim2.new(0, 42, 0, 0)
+headerTitle.Size = UDim2.new(1, -60, 1, 0)
+headerTitle.Position = UDim2.new(0, 40, 0, 0)
 headerTitle.BackgroundTransparency = 1
 headerTitle.Text = "ZHX Hub v17"
 headerTitle.TextColor3 = TEXT_WHITE
 headerTitle.TextSize = 15
 headerTitle.Font = Enum.Font.GothamBold
 headerTitle.TextXAlignment = Enum.TextXAlignment.Left
-headerTitle.ZIndex = 103
+headerTitle.ZIndex = 102
 headerTitle.Parent = headerFrame
 
--- Garis pemisah bawah header
-local headerDivider = Instance.new("Frame")
-headerDivider.Size = UDim2.new(1, 0, 0, 1)
-headerDivider.Position = UDim2.new(0, 0, 1, -1)
-headerDivider.BackgroundColor3 = ZHX_GREEN
-headerDivider.BorderSizePixel = 0
-headerDivider.BackgroundTransparency = 0.6
-headerDivider.ZIndex = 103
-headerDivider.Parent = headerFrame
+-- Tombol minimize (tutup panel)
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
+minimizeBtn.Position = UDim2.new(1, -32, 0.5, -13)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Text = "_"   -- simbol underscore, akan terlihat seperti strip
+minimizeBtn.TextColor3 = TEXT_WHITE
+minimizeBtn.TextSize = 16
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.ZIndex = 102
+minimizeBtn.Parent = headerFrame
 
--- Close button
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 26, 0, 26)
-closeBtn.Position = UDim2.new(1, -34, 0.5, -13)
-closeBtn.BackgroundColor3 = Color3.fromRGB(255, 70, 70)
-closeBtn.BorderSizePixel = 0
-closeBtn.Text = "✕"
-closeBtn.TextColor3 = TEXT_WHITE
-closeBtn.TextSize = 14
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.ZIndex = 103
-closeBtn.Parent = headerFrame
+Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(0, 4)
 
-local closeCorner = Instance.new("UICorner", closeBtn)
-closeCorner.CornerRadius = UDim.new(0, 6)
-
-closeBtn.MouseButton1Click:Connect(function()
+minimizeBtn.MouseButton1Click:Connect(function()
     mainGui.Enabled = false
 end)
 
--- ── SIDEBAR (TAB DI KIRI) ───────────────────────────────────────
+-- Sidebar (tab kiri)
 local sidebarFrame = Instance.new("Frame")
-sidebarFrame.Size = UDim2.new(0, 130, 1, -40)
-sidebarFrame.Position = UDim2.new(0, 0, 0, 40)
-sidebarFrame.BackgroundColor3 = SIDEBAR_BG
+sidebarFrame.Size = UDim2.new(0, 140, 1, -36)
+sidebarFrame.Position = UDim2.new(0, 0, 0, 36)
+sidebarFrame.BackgroundColor3 = BLACK_SIDEBAR
 sidebarFrame.BorderSizePixel = 0
 sidebarFrame.ZIndex = 101
 sidebarFrame.Parent = rootFrame
 
--- Cover corner sidebar
-local sidebarCorner = Instance.new("UICorner", sidebarFrame)
-sidebarCorner.CornerRadius = UDim.new(0, 10)
-
--- Tutupi corner atas sidebar
-local sidebarTopCover = Instance.new("Frame")
-sidebarTopCover.Size = UDim2.new(1, 0, 0, 10)
-sidebarTopCover.Position = UDim2.new(0, 0, 0, 0)
-sidebarTopCover.BackgroundColor3 = SIDEBAR_BG
-sidebarTopCover.BorderSizePixel = 0
-sidebarTopCover.ZIndex = 102
-sidebarTopCover.Parent = sidebarFrame
-
--- Garis pemisah vertikal kanan sidebar
+-- Divider vertikal antara sidebar dan konten
 local sidebarDivider = Instance.new("Frame")
 sidebarDivider.Size = UDim2.new(0, 1, 1, 0)
-sidebarDivider.Position = UDim2.new(1, -1, 0, 0)
+sidebarDivider.Position = UDim2.new(1, 0, 0, 0)
 sidebarDivider.BackgroundColor3 = ZHX_GREEN
+sidebarDivider.BackgroundTransparency = 0.6
 sidebarDivider.BorderSizePixel = 0
-sidebarDivider.BackgroundTransparency = 0.7
 sidebarDivider.ZIndex = 102
 sidebarDivider.Parent = sidebarFrame
 
--- List tab buttons
+-- List layout untuk tombol tab
 local tabListLayout = Instance.new("UIListLayout")
 tabListLayout.FillDirection = Enum.FillDirection.Vertical
 tabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 tabListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 tabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabListLayout.Padding = UDim.new(0, 2)
+tabListLayout.Padding = UDim.new(0, 4)
 tabListLayout.Parent = sidebarFrame
 
--- ── KONTEN AREA (KANAN) ─────────────────────────────────────────
+-- Padding atas
+local topPad = Instance.new("Frame")
+topPad.Size = UDim2.new(1, 0, 0, 8)
+topPad.BackgroundTransparency = 1
+topPad.Parent = sidebarFrame
+
+-- Area konten
 local contentFrame = Instance.new("Frame")
-contentFrame.Size = UDim2.new(1, -130, 1, -40)
-contentFrame.Position = UDim2.new(0, 130, 0, 40)
-contentFrame.BackgroundColor3 = DARK_BG
+contentFrame.Size = UDim2.new(1, -140, 1, -36)
+contentFrame.Position = UDim2.new(0, 140, 0, 36)
+contentFrame.BackgroundColor3 = BLACK_PEKAT
 contentFrame.BorderSizePixel = 0
 contentFrame.ZIndex = 101
 contentFrame.Parent = rootFrame
 
--- Container untuk halaman tab
-local tabPages = {}
+-- ─────────────── FUNGSI PEMBANGUN UI ─────────────────────────
+local tabs = {}
+local activeTabName = nil
 
--- Fungsi untuk membuat halaman tab
 local function createTabPage()
     local page = Instance.new("Frame")
     page.Size = UDim2.new(1, 0, 1, 0)
-    page.BackgroundColor3 = DARK_BG
     page.BackgroundTransparency = 1
-    page.BorderSizePixel = 0
     page.Visible = false
     page.ZIndex = 102
     page.Parent = contentFrame
 
-    -- Scrolling frame untuk konten
-    local scrollFrame = Instance.new("ScrollingFrame")
-    scrollFrame.Size = UDim2.new(1, 0, 1, 0)
-    scrollFrame.BackgroundTransparency = 1
-    scrollFrame.BorderSizePixel = 0
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scrollFrame.ScrollBarThickness = 3
-    scrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
-    scrollFrame.ZIndex = 103
-    scrollFrame.Parent = page
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, 0, 1, 0)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.ScrollBarThickness = 3
+    scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+    scroll.ZIndex = 103
+    scroll.Parent = page
 
-    local sectionListLayout = Instance.new("UIListLayout")
-    sectionListLayout.FillDirection = Enum.FillDirection.Vertical
-    sectionListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    sectionListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-    sectionListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    sectionListLayout.Padding = UDim.new(0, 6)
-    sectionListLayout.Parent = scrollFrame
+    local list = Instance.new("UIListLayout")
+    list.FillDirection = Enum.FillDirection.Vertical
+    list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    list.VerticalAlignment = Enum.VerticalAlignment.Top
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Padding = UDim.new(0, 6)
+    list.Parent = scroll
 
-    -- Padding atas
-    local topPad = Instance.new("Frame")
-    topPad.Size = UDim2.new(1, 0, 0, 8)
-    topPad.BackgroundTransparency = 1
-    topPad.Parent = scrollFrame
+    -- Padding
+    local pad = Instance.new("Frame")
+    pad.Size = UDim2.new(1, 0, 0, 8)
+    pad.BackgroundTransparency = 1
+    pad.Parent = scroll
 
-    return page, scrollFrame
+    return page, scroll
 end
 
--- ── DATA TAB ─────────────────────────────────────────────────────
-local tabs = {}
-local activeTabName = nil
-
--- Fungsi untuk switch tab
 local function switchTab(tabName)
     if activeTabName and tabs[activeTabName] then
         tabs[activeTabName].Page.Visible = false
         if tabs[activeTabName].Button then
-            tabs[activeTabName].Button.BackgroundColor3 = SIDEBAR_BG
+            tabs[activeTabName].Button.BackgroundColor3 = BLACK_SIDEBAR
             tabs[activeTabName].Button.TextColor3 = TEXT_GRAY
         end
     end
     if tabs[tabName] then
         tabs[tabName].Page.Visible = true
         if tabs[tabName].Button then
-            tabs[tabName].Button.BackgroundColor3 = TAB_ACTIVE_BG
+            tabs[tabName].Button.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
             tabs[tabName].Button.TextColor3 = ZHX_GREEN
         end
         activeTabName = tabName
     end
 end
 
--- Fungsi untuk menambah tab
 local function addTab(config)
     local tab = {}
     tab.Name = config.Name
     tab.Page, tab.ScrollFrame = createTabPage()
     tab.Sections = {}
 
-    -- Buat tombol tab di sidebar
     local tabBtn = Instance.new("TextButton")
-    tabBtn.Size = UDim2.new(1, -12, 0, 34)
-    tabBtn.BackgroundColor3 = SIDEBAR_BG
+    tabBtn.Size = UDim2.new(1, -12, 0, 32)
+    tabBtn.BackgroundColor3 = BLACK_SIDEBAR
     tabBtn.BorderSizePixel = 0
     tabBtn.Text = tab.Name
     tabBtn.TextColor3 = TEXT_GRAY
@@ -541,66 +481,44 @@ local function addTab(config)
     tabBtn.ZIndex = 103
     tabBtn.Parent = sidebarFrame
 
-    -- Hover effect
+    Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 5)
+
     tabBtn.MouseEnter:Connect(function()
         if activeTabName ~= tab.Name then
-            tabBtn.BackgroundColor3 = TAB_HOVER_BG
+            tabBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 28)
             tabBtn.TextColor3 = TEXT_WHITE
         end
     end)
     tabBtn.MouseLeave:Connect(function()
         if activeTabName ~= tab.Name then
-            tabBtn.BackgroundColor3 = SIDEBAR_BG
+            tabBtn.BackgroundColor3 = BLACK_SIDEBAR
             tabBtn.TextColor3 = TEXT_GRAY
         end
     end)
-
     tabBtn.MouseButton1Click:Connect(function()
         switchTab(tab.Name)
     end)
 
-    local tabCorner = Instance.new("UICorner", tabBtn)
-    tabCorner.CornerRadius = UDim.new(0, 6)
-
-    -- Padding kiri untuk teks
-    local tabBtnPadding = Instance.new("Frame")
-    tabBtnPadding.Size = UDim2.new(0, 10, 1, 0)
-    tabBtnPadding.Position = UDim2.new(0, 0, 0, 0)
-    tabBtnPadding.BackgroundTransparency = 1
-    tabBtnPadding.Parent = tabBtn
-
     tab.Button = tabBtn
     tabs[tab.Name] = tab
 
-    -- Fungsi untuk menambah section di tab ini
+    -- Tambahkan section ke tab ini
     function tab.AddSection(sectionConfig)
         local section = {}
 
-        -- Frame section
         local sectionFrame = Instance.new("Frame")
         sectionFrame.Size = UDim2.new(1, -16, 0, 40)
-        sectionFrame.BackgroundColor3 = DARKER_BG
+        sectionFrame.BackgroundColor3 = BLACK_SECTION
         sectionFrame.BorderSizePixel = 0
         sectionFrame.ZIndex = 104
         sectionFrame.Parent = tab.ScrollFrame
 
-        local sectionCorner = Instance.new("UICorner", sectionFrame)
-        sectionCorner.CornerRadius = UDim.new(0, 8)
+        Instance.new("UICorner", sectionFrame).CornerRadius = UDim.new(0, 5)
 
-        -- Aksen kiri hijau
-        local sectionAccent = Instance.new("Frame")
-        sectionAccent.Size = UDim2.new(0, 3, 1, -10)
-        sectionAccent.Position = UDim2.new(0, 4, 0, 5)
-        sectionAccent.BackgroundColor3 = ZHX_GREEN
-        sectionAccent.BackgroundTransparency = 0.4
-        sectionAccent.BorderSizePixel = 0
-        sectionAccent.ZIndex = 105
-        sectionAccent.Parent = sectionFrame
-
-        -- Title section
+        -- Judul section
         local sectionTitle = Instance.new("TextLabel")
-        sectionTitle.Size = UDim2.new(1, -20, 0, 18)
-        sectionTitle.Position = UDim2.new(0, 14, 0, 5)
+        sectionTitle.Size = UDim2.new(1, -20, 0, 20)
+        sectionTitle.Position = UDim2.new(0, 12, 0, 6)
         sectionTitle.BackgroundTransparency = 1
         sectionTitle.Text = sectionConfig.Name or ""
         sectionTitle.TextColor3 = ZHX_GREEN
@@ -610,7 +528,7 @@ local function addTab(config)
         sectionTitle.ZIndex = 105
         sectionTitle.Parent = sectionFrame
 
-        -- Content list
+        -- List konten
         local contentList = Instance.new("UIListLayout")
         contentList.FillDirection = Enum.FillDirection.Vertical
         contentList.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -619,143 +537,109 @@ local function addTab(config)
         contentList.Padding = UDim.new(0, 4)
         contentList.Parent = sectionFrame
 
-        -- Spacer di bawah title
-        local titleSpacer = Instance.new("Frame")
-        titleSpacer.Size = UDim2.new(1, 0, 0, 20)
-        titleSpacer.BackgroundTransparency = 1
-        titleSpacer.ZIndex = 104
-        titleSpacer.Parent = sectionFrame
+        -- Spacer untuk memberi ruang setelah judul
+        local spacer = Instance.new("Frame")
+        spacer.Size = UDim2.new(1, 0, 0, 26)
+        spacer.BackgroundTransparency = 1
+        spacer.Parent = sectionFrame
 
-        -- Auto-size section
         sectionFrame.AutomaticSize = Enum.AutomaticSize.Y
 
-        -- ── FUNGSI UNTUK MENAMBAH ELEMEN ─────────────────────────
-
+        -- Fungsi penambah elemen
         function section.AddToggle(toggleConfig)
-            local toggleFrame = Instance.new("Frame")
-            toggleFrame.Size = UDim2.new(1, -28, 0, 28)
-            toggleFrame.BackgroundTransparency = 1
-            toggleFrame.ZIndex = 106
-            toggleFrame.Parent = sectionFrame
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, -24, 0, 28)
+            frame.BackgroundTransparency = 1
+            frame.Parent = sectionFrame
 
-            local toggleLabel = Instance.new("TextLabel")
-            toggleLabel.Size = UDim2.new(0.65, 0, 1, 0)
-            toggleLabel.Position = UDim2.new(0, 0, 0, 0)
-            toggleLabel.BackgroundTransparency = 1
-            toggleLabel.Text = toggleConfig.Name or ""
-            toggleLabel.TextColor3 = TEXT_WHITE
-            toggleLabel.TextSize = 11
-            toggleLabel.Font = Enum.Font.Gotham
-            toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
-            toggleLabel.ZIndex = 106
-            toggleLabel.Parent = toggleFrame
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(0.65, 0, 1, 0)
+            label.BackgroundTransparency = 1
+            label.Text = toggleConfig.Name or ""
+            label.TextColor3 = TEXT_WHITE
+            label.TextSize = 11
+            label.Font = Enum.Font.Gotham
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.Parent = frame
 
             local state = toggleConfig.Default or false
-            local toggleBtn = Instance.new("TextButton")
-            toggleBtn.Size = UDim2.new(0, 42, 0, 22)
-            toggleBtn.Position = UDim2.new(1, -42, 0.5, -11)
-            toggleBtn.BackgroundColor3 = state and ZHX_GREEN or Color3.fromRGB(60, 60, 65)
-            toggleBtn.BorderSizePixel = 0
-            toggleBtn.Text = state and "ON" or "OFF"
-            toggleBtn.TextColor3 = TEXT_WHITE
-            toggleBtn.TextSize = 10
-            toggleBtn.Font = Enum.Font.GothamBold
-            toggleBtn.ZIndex = 106
-            toggleBtn.Parent = toggleFrame
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0, 42, 0, 22)
+            btn.Position = UDim2.new(1, -42, 0.5, -11)
+            btn.BackgroundColor3 = state and ZHX_GREEN or Color3.fromRGB(60,60,65)
+            btn.BorderSizePixel = 0
+            btn.Text = state and "ON" or "OFF"
+            btn.TextColor3 = TEXT_WHITE
+            btn.TextSize = 10
+            btn.Font = Enum.Font.GothamBold
+            btn.Parent = frame
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
 
-            local toggleCorner = Instance.new("UICorner", toggleBtn)
-            toggleCorner.CornerRadius = UDim.new(0, 5)
-
-            local function updateVisual()
+            local function update()
                 if state then
-                    toggleBtn.BackgroundColor3 = ZHX_GREEN
-                    toggleBtn.Text = "ON"
+                    btn.BackgroundColor3 = ZHX_GREEN
+                    btn.Text = "ON"
                 else
-                    toggleBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
-                    toggleBtn.Text = "OFF"
+                    btn.BackgroundColor3 = Color3.fromRGB(60,60,65)
+                    btn.Text = "OFF"
                 end
             end
 
-            toggleBtn.MouseButton1Click:Connect(function()
+            btn.MouseButton1Click:Connect(function()
                 state = not state
-                updateVisual()
-                if toggleConfig.Callback then
-                    toggleConfig.Callback(state)
-                end
+                update()
+                if toggleConfig.Callback then toggleConfig.Callback(state) end
             end)
-
-            return toggleFrame
+            return frame
         end
 
         function section.AddButton(buttonConfig)
             local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(1, -28, 0, 30)
+            btn.Size = UDim2.new(1, -24, 0, 30)
             btn.BackgroundColor3 = ZHX_GREEN
             btn.BorderSizePixel = 0
             btn.Text = buttonConfig.Name or ""
-            btn.TextColor3 = Color3.fromRGB(0, 0, 0)
+            btn.TextColor3 = Color3.new(0,0,0)
             btn.TextSize = 12
             btn.Font = Enum.Font.GothamBold
-            btn.ZIndex = 106
             btn.Parent = sectionFrame
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
 
-            local btnCorner = Instance.new("UICorner", btn)
-            btnCorner.CornerRadius = UDim.new(0, 5)
-
-            btn.MouseEnter:Connect(function()
-                btn.BackgroundColor3 = ZHX_GREEN_DARK
-            end)
-            btn.MouseLeave:Connect(function()
-                btn.BackgroundColor3 = ZHX_GREEN
-            end)
-
+            btn.MouseEnter:Connect(function() btn.BackgroundColor3 = ZHX_GREEN_DARK end)
+            btn.MouseLeave:Connect(function() btn.BackgroundColor3 = ZHX_GREEN end)
             btn.MouseButton1Click:Connect(function()
-                if buttonConfig.Callback then
-                    buttonConfig.Callback()
-                end
+                if buttonConfig.Callback then buttonConfig.Callback() end
             end)
-
             return btn
         end
 
         function section.AddTextbox(textboxConfig)
             local boxFrame = Instance.new("Frame")
-            boxFrame.Size = UDim2.new(1, -28, 0, 48)
+            boxFrame.Size = UDim2.new(1, -24, 0, 48)
             boxFrame.BackgroundTransparency = 1
-            boxFrame.ZIndex = 106
             boxFrame.Parent = sectionFrame
 
-            local boxLabel = Instance.new("TextLabel")
-            boxLabel.Size = UDim2.new(1, 0, 0, 16)
-            boxLabel.Position = UDim2.new(0, 0, 0, 0)
-            boxLabel.BackgroundTransparency = 1
-            boxLabel.Text = textboxConfig.Name or ""
-            boxLabel.TextColor3 = TEXT_WHITE
-            boxLabel.TextSize = 11
-            boxLabel.Font = Enum.Font.Gotham
-            boxLabel.TextXAlignment = Enum.TextXAlignment.Left
-            boxLabel.ZIndex = 106
-            boxLabel.Parent = boxFrame
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(1, 0, 0, 16)
+            label.BackgroundTransparency = 1
+            label.Text = textboxConfig.Name or ""
+            label.TextColor3 = TEXT_WHITE
+            label.TextSize = 11
+            label.Font = Enum.Font.Gotham
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.Parent = boxFrame
 
             local inputFrame = Instance.new("Frame")
             inputFrame.Size = UDim2.new(1, 0, 0, 26)
             inputFrame.Position = UDim2.new(0, 0, 0, 20)
-            inputFrame.BackgroundColor3 = Color3.fromRGB(30, 33, 40)
+            inputFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
             inputFrame.BorderSizePixel = 0
-            inputFrame.ZIndex = 106
             inputFrame.Parent = boxFrame
-
-            local inputCorner = Instance.new("UICorner", inputFrame)
-            inputCorner.CornerRadius = UDim.new(0, 5)
-
-            local inputStroke = Instance.new("UIStroke", inputFrame)
-            inputStroke.Color = ZHX_GREEN
-            inputStroke.Thickness = 1
-            inputStroke.Transparency = 0.6
+            Instance.new("UICorner", inputFrame).CornerRadius = UDim.new(0, 4)
 
             local input = Instance.new("TextBox")
-            input.Size = UDim2.new(1, -10, 1, 0)
-            input.Position = UDim2.new(0, 5, 0, 0)
+            input.Size = UDim2.new(1, -8, 1, 0)
+            input.Position = UDim2.new(0, 4, 0, 0)
             input.BackgroundTransparency = 1
             input.Text = textboxConfig.Default or ""
             input.PlaceholderText = textboxConfig.Placeholder or ""
@@ -764,15 +648,11 @@ local function addTab(config)
             input.TextSize = 12
             input.Font = Enum.Font.Gotham
             input.ClearTextOnFocus = false
-            input.ZIndex = 107
             input.Parent = inputFrame
 
             input.FocusLost:Connect(function(enterPressed)
-                if textboxConfig.Callback then
-                    textboxConfig.Callback(input.Text)
-                end
+                if textboxConfig.Callback then textboxConfig.Callback(input.Text) end
             end)
-
             return boxFrame
         end
 
@@ -786,79 +666,54 @@ local function addTab(config)
             end
 
             local dropFrame = Instance.new("Frame")
-            dropFrame.Size = UDim2.new(1, -28, 0, 44)
+            dropFrame.Size = UDim2.new(1, -24, 0, 44)
             dropFrame.BackgroundTransparency = 1
-            dropFrame.ZIndex = 106
             dropFrame.ClipsDescendants = false
             dropFrame.Parent = sectionFrame
 
-            local dropLabel = Instance.new("TextLabel")
-            dropLabel.Size = UDim2.new(1, 0, 0, 16)
-            dropLabel.Position = UDim2.new(0, 0, 0, 0)
-            dropLabel.BackgroundTransparency = 1
-            dropLabel.Text = dropdownConfig.Name or ""
-            dropLabel.TextColor3 = TEXT_WHITE
-            dropLabel.TextSize = 11
-            dropLabel.Font = Enum.Font.Gotham
-            dropLabel.TextXAlignment = Enum.TextXAlignment.Left
-            dropLabel.ZIndex = 106
-            dropLabel.Parent = dropFrame
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(1, 0, 0, 16)
+            label.BackgroundTransparency = 1
+            label.Text = dropdownConfig.Name or ""
+            label.TextColor3 = TEXT_WHITE
+            label.TextSize = 11
+            label.Font = Enum.Font.Gotham
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.Parent = dropFrame
 
             local mainBtn = Instance.new("TextButton")
             mainBtn.Size = UDim2.new(1, 0, 0, 26)
             mainBtn.Position = UDim2.new(0, 0, 0, 18)
-            mainBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 40)
+            mainBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
             mainBtn.BorderSizePixel = 0
             mainBtn.Text = dropdownConfig.Default or (single and "- Pilih -" or "Tidak ada yang dipilih")
             mainBtn.TextColor3 = TEXT_WHITE
             mainBtn.TextSize = 11
             mainBtn.Font = Enum.Font.Gotham
             mainBtn.TextXAlignment = Enum.TextXAlignment.Left
-            mainBtn.ZIndex = 106
             mainBtn.Parent = dropFrame
+            Instance.new("UICorner", mainBtn).CornerRadius = UDim.new(0, 4)
 
-            local mainCorner = Instance.new("UICorner", mainBtn)
-            mainCorner.CornerRadius = UDim.new(0, 5)
+            -- Arrow
+            local arrow = Instance.new("ImageLabel")
+            arrow.Size = UDim2.new(0, 16, 0, 16)
+            arrow.Position = UDim2.new(1, -18, 0.5, -8)
+            arrow.BackgroundTransparency = 1
+            arrow.Image = "rbxassetid://7072708083"
+            arrow.ScaleType = Enum.ScaleType.Fit
+            arrow.Parent = mainBtn
 
-            local mainStroke = Instance.new("UIStroke", mainBtn)
-            mainStroke.Color = ZHX_GREEN
-            mainStroke.Thickness = 1
-            mainStroke.Transparency = 0.6
-
-            -- Padding teks
-            local textPad = Instance.new("Frame")
-            textPad.Size = UDim2.new(0, 8, 1, 0)
-            textPad.BackgroundTransparency = 1
-            textPad.Parent = mainBtn
-
-            -- Arrow icon
-            local arrowLabel = Instance.new("ImageLabel")
-            arrowLabel.Size = UDim2.new(0, 16, 0, 16)
-            arrowLabel.Position = UDim2.new(1, -18, 0.5, -8)
-            arrowLabel.BackgroundTransparency = 1
-            arrowLabel.Image = "rbxassetid://7072708083"
-            arrowLabel.ScaleType = Enum.ScaleType.Fit
-            arrowLabel.ZIndex = 107
-            arrowLabel.Parent = mainBtn
-
-            -- List opsi dropdown
             local listFrame = Instance.new("Frame")
             listFrame.Size = UDim2.new(1, 0, 0, 0)
             listFrame.Position = UDim2.new(0, 0, 1, 2)
-            listFrame.BackgroundColor3 = Color3.fromRGB(25, 28, 36)
+            listFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
             listFrame.BorderSizePixel = 0
             listFrame.Visible = false
             listFrame.ZIndex = 200
             listFrame.ClipsDescendants = true
             listFrame.Parent = dropFrame
-
-            local listCorner = Instance.new("UICorner", listFrame)
-            listCorner.CornerRadius = UDim.new(0, 5)
-
-            local listStroke = Instance.new("UIStroke", listFrame)
-            listStroke.Color = ZHX_GREEN
-            listStroke.Thickness = 1
-            listStroke.Transparency = 0.4
+            Instance.new("UICorner", listFrame).CornerRadius = UDim.new(0, 4)
+            listFrame.AutomaticSize = Enum.AutomaticSize.Y
 
             local listLayout = Instance.new("UIListLayout")
             listLayout.FillDirection = Enum.FillDirection.Vertical
@@ -867,14 +722,11 @@ local function addTab(config)
             listLayout.SortOrder = Enum.SortOrder.LayoutOrder
             listLayout.Parent = listFrame
 
-            listFrame.AutomaticSize = Enum.AutomaticSize.Y
-
-            -- Populate options
             for _, opt in ipairs(dropdownConfig.Options) do
                 if single then
                     local optBtn = Instance.new("TextButton")
                     optBtn.Size = UDim2.new(1, 0, 0, 24)
-                    optBtn.BackgroundColor3 = Color3.fromRGB(25, 28, 36)
+                    optBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
                     optBtn.BorderSizePixel = 0
                     optBtn.Text = "    " .. opt
                     optBtn.TextColor3 = TEXT_WHITE
@@ -884,26 +736,17 @@ local function addTab(config)
                     optBtn.ZIndex = 201
                     optBtn.Parent = listFrame
 
-                    optBtn.MouseEnter:Connect(function()
-                        optBtn.BackgroundColor3 = ZHX_GREEN
-                        optBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
-                    end)
-                    optBtn.MouseLeave:Connect(function()
-                        optBtn.BackgroundColor3 = Color3.fromRGB(25, 28, 36)
-                        optBtn.TextColor3 = TEXT_WHITE
-                    end)
+                    optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = ZHX_GREEN; optBtn.TextColor3 = Color3.new(0,0,0) end)
+                    optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = Color3.fromRGB(20,20,22); optBtn.TextColor3 = TEXT_WHITE end)
                     optBtn.MouseButton1Click:Connect(function()
                         mainBtn.Text = opt
                         listFrame.Visible = false
-                        if dropdownConfig.Callback then
-                            dropdownConfig.Callback(opt)
-                        end
+                        if dropdownConfig.Callback then dropdownConfig.Callback(opt) end
                     end)
                 else
                     local checkFrame = Instance.new("Frame")
                     checkFrame.Size = UDim2.new(1, 0, 0, 26)
                     checkFrame.BackgroundTransparency = 1
-                    checkFrame.ZIndex = 201
                     checkFrame.Parent = listFrame
 
                     local checkIcon = Instance.new("ImageLabel")
@@ -912,7 +755,6 @@ local function addTab(config)
                     checkIcon.BackgroundTransparency = 1
                     checkIcon.Image = selectedOptions[opt] and "rbxassetid://7072720342" or "rbxassetid://7072720870"
                     checkIcon.ScaleType = Enum.ScaleType.Fit
-                    checkIcon.ZIndex = 202
                     checkIcon.Parent = checkFrame
 
                     local checkLabel = Instance.new("TextLabel")
@@ -924,368 +766,200 @@ local function addTab(config)
                     checkLabel.TextSize = 11
                     checkLabel.Font = Enum.Font.Gotham
                     checkLabel.TextXAlignment = Enum.TextXAlignment.Left
-                    checkLabel.ZIndex = 202
                     checkLabel.Parent = checkFrame
 
                     local checkBtn = Instance.new("TextButton")
                     checkBtn.Size = UDim2.new(1, 0, 1, 0)
                     checkBtn.BackgroundTransparency = 1
                     checkBtn.Text = ""
-                    checkBtn.ZIndex = 203
                     checkBtn.Parent = checkFrame
-
-                    checkBtn.MouseEnter:Connect(function()
-                        checkFrame.BackgroundColor3 = Color3.fromRGB(40, 43, 52)
-                    end)
-                    checkBtn.MouseLeave:Connect(function()
-                        checkFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                        checkFrame.BackgroundTransparency = 1
-                    end)
-
+                    checkBtn.MouseEnter:Connect(function() checkFrame.BackgroundColor3 = Color3.fromRGB(35,35,40) end)
+                    checkBtn.MouseLeave:Connect(function() checkFrame.BackgroundColor3 = Color3.fromRGB(0,0,0); checkFrame.BackgroundTransparency = 1 end)
                     checkBtn.MouseButton1Click:Connect(function()
                         selectedOptions[opt] = not selectedOptions[opt]
                         checkIcon.Image = selectedOptions[opt] and "rbxassetid://7072720342" or "rbxassetid://7072720870"
-                        -- Update main button text
                         local chosen = {}
-                        for k, v in pairs(selectedOptions) do
-                            if v then table.insert(chosen, k) end
-                        end
-                        if #chosen == 0 then
-                            mainBtn.Text = "Tidak ada yang dipilih"
-                        else
-                            mainBtn.Text = table.concat(chosen, ", ")
-                        end
-                        if dropdownConfig.Callback then
-                            dropdownConfig.Callback(selectedOptions)
-                        end
+                        for k,v in pairs(selectedOptions) do if v then table.insert(chosen, k) end end
+                        mainBtn.Text = #chosen == 0 and "Tidak ada yang dipilih" or table.concat(chosen, ", ")
+                        if dropdownConfig.Callback then dropdownConfig.Callback(selectedOptions) end
                     end)
                 end
             end
 
-            -- Toggle list
             mainBtn.MouseButton1Click:Connect(function()
                 listFrame.Visible = not listFrame.Visible
             end)
-
-            -- Close list ketika klik di luar
-            local function closeList()
-                listFrame.Visible = false
-            end
-
-            -- Deteksi klik di luar via rootFrame
+            -- Klik di luar menutup dropdown
             rootFrame.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1
-                    or input.UserInputType == Enum.UserInputType.Touch then
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     if listFrame.Visible then
-                        -- Delay sedikit agar klik tombol dulu terproses
-                        task.delay(0.1, function()
-                            if listFrame.Visible then
-                                closeList()
-                            end
-                        end)
+                        task.delay(0.1, function() if listFrame.Visible then listFrame.Visible = false end end)
                     end
                 end
             end)
-
             return dropFrame
         end
 
         function section.AddParagraph(title, content)
-            local paraFrame = Instance.new("Frame")
-            paraFrame.Size = UDim2.new(1, -28, 0, 40)
-            paraFrame.BackgroundTransparency = 1
-            paraFrame.ZIndex = 106
-            paraFrame.Parent = sectionFrame
+            local pFrame = Instance.new("Frame")
+            pFrame.Size = UDim2.new(1, -24, 0, 40)
+            pFrame.BackgroundTransparency = 1
+            pFrame.Parent = sectionFrame
 
-            local titleLabel = Instance.new("TextLabel")
-            titleLabel.Size = UDim2.new(1, 0, 0, 16)
-            titleLabel.Position = UDim2.new(0, 0, 0, 0)
-            titleLabel.BackgroundTransparency = 1
-            titleLabel.Text = title or ""
-            titleLabel.TextColor3 = ZHX_GREEN
-            titleLabel.TextSize = 11
-            titleLabel.Font = Enum.Font.GothamBold
-            titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-            titleLabel.ZIndex = 106
-            titleLabel.Parent = paraFrame
+            local tLabel = Instance.new("TextLabel")
+            tLabel.Size = UDim2.new(1, 0, 0, 16)
+            tLabel.BackgroundTransparency = 1
+            tLabel.Text = title or ""
+            tLabel.TextColor3 = ZHX_GREEN
+            tLabel.TextSize = 11
+            tLabel.Font = Enum.Font.GothamBold
+            tLabel.TextXAlignment = Enum.TextXAlignment.Left
+            tLabel.Parent = pFrame
 
-            local contentLabel = Instance.new("TextLabel")
-            contentLabel.Size = UDim2.new(1, 0, 1, -18)
-            contentLabel.Position = UDim2.new(0, 0, 0, 18)
-            contentLabel.BackgroundTransparency = 1
-            contentLabel.Text = content or ""
-            contentLabel.TextColor3 = TEXT_GRAY
-            contentLabel.TextSize = 10
-            contentLabel.Font = Enum.Font.Gotham
-            contentLabel.TextXAlignment = Enum.TextXAlignment.Left
-            contentLabel.TextWrapped = true
-            contentLabel.ZIndex = 106
-            contentLabel.Parent = paraFrame
+            local cLabel = Instance.new("TextLabel")
+            cLabel.Size = UDim2.new(1, 0, 1, -18)
+            cLabel.Position = UDim2.new(0, 0, 0, 18)
+            cLabel.BackgroundTransparency = 1
+            cLabel.Text = content or ""
+            cLabel.TextColor3 = TEXT_GRAY
+            cLabel.TextSize = 10
+            cLabel.Font = Enum.Font.Gotham
+            cLabel.TextXAlignment = Enum.TextXAlignment.Left
+            cLabel.TextWrapped = true
+            cLabel.Parent = pFrame
 
-            paraFrame.AutomaticSize = Enum.AutomaticSize.Y
-            return paraFrame
+            pFrame.AutomaticSize = Enum.AutomaticSize.Y
+            return pFrame
         end
 
-        tab.Sections[#tab.Sections + 1] = section
+        table.insert(tab.Sections, section)
         return section
     end
 
     return tab
 end
 
--- ══════════════════════════════════════════════════════════════════
--- ISI TAB DAN ELEMEN
--- ══════════════════════════════════════════════════════════════════
+-- ═══════════════════ MEMBANGUN ISI TAB (SIMULASI v16) ══════════
+-- Tab Home
+local homeTab = addTab({ Name = "Home" })
+local secHome = homeTab.AddSection({ Name = "Informasi" })
+secHome.AddParagraph("Selamat Datang", "Ini adalah UI test simulasi fitur lengkap v16.\nGunakan tombol ZHX untuk buka/tutup panel.")
 
--- Tab: Home
-local tabHome = addTab({ Name = "Home" })
-local secHome = tabHome.AddSection({ Name = "Informasi" })
-secHome.AddParagraph(
-    "Selamat Datang di ZHX Hub",
-    "Ini adalah UI kustom generasi baru tanpa library eksternal.\nFloating button ZHX di layar berfungsi sebagai toggle buka/tutup panel.\nSemua elemen siap, ringan, dan mobile-friendly.",
-    ""
-)
+-- Tab Setup (lengkap seperti v16)
+local setupTab = addTab({ Name = "Setup" })
+local secPersiapan = setupTab.AddSection({ Name = "Persiapan" })
+secPersiapan.AddParagraph("Langkah 1 — Claim Booth", "Auto klaim booth kosong.")
+secPersiapan.AddButton({ Name = "🏪 AUTO CLAIM BOOTH", Callback = function()
+    Notifier.new({ Title = "Claim", Content = "Mencari booth...", Duration = 2 })
+end })
+secPersiapan.AddParagraph("Langkah 2 — Muat Inventory", "Muat daftar item & siapkan sistem.")
+secPersiapan.AddButton({ Name = "🔄 MUAT DAFTAR ITEM", Callback = function()
+    Notifier.new({ Title = "Muat", Content = "Memuat item...", Duration = 2 })
+end })
+secPersiapan.AddToggle({ Name = "▶ MULAI AUTO BOOTH", Default = false, Callback = function(v)
+    Notifier.new({ Title = "Auto Booth", Content = v and "AKTIF" or "MATI", Duration = 2 })
+end })
+secPersiapan.AddButton({ Name = "🗑️ HAPUS ITEM DI BOOTH", Callback = function()
+    Notifier.new({ Title = "Hapus", Content = "Menghapus...", Duration = 2 })
+end })
 
--- Tab: Setup
-local tabSetup = addTab({ Name = "Setup" })
-local secSetup1 = tabSetup.AddSection({ Name = "Persiapan (Contoh)" })
-secSetup1.AddToggle({
-    Name = "Auto Booth",
-    Default = false,
-    Callback = function(val)
-        Notifier.new({
-            Title = "Auto Booth",
-            Content = val and "✅ Sistem aktif" or "⛔ Sistem mati",
-            Duration = 2
-        })
-    end
-})
-secSetup1.AddButton({
-    Name = "Muat Daftar Item",
-    Callback = function()
-        Notifier.new({
-            Title = "Muat Item",
-            Content = "Memuat daftar item...",
-            Duration = 2
-        })
-    end
-})
-secSetup1.AddTextbox({
-    Name = "Harga Slot 1",
-    Placeholder = "Masukkan harga...",
-    Default = "",
-    Callback = function(val)
-        print("Harga diinput:", val)
-    end
-})
+-- Tab Single Slots (8 slot)
+local singleTab = addTab({ Name = "Single Slots" })
+for i = 1, 8 do
+    local sec = singleTab.AddSection({ Name = "Slot " .. i })
+    sec.AddDropdown({
+        Name = "Item Slot " .. i,
+        Default = "- Kosongkan -",
+        Options = { "- Kosongkan -", "Ikan Emas", "Ikan Hiu", "Pancing Legendaris", "Umpan Premium" },
+        Callback = function(val) Notifier.new({ Title = "Slot "..i, Content = val, Duration = 1 }) end
+    })
+    sec.AddTextbox({
+        Name = "Harga Slot " .. i,
+        Placeholder = "Isi harga",
+        Default = "",
+        Callback = function(val) print("Harga Slot", i, val) end
+    })
+    sec.AddParagraph("Status Slot " .. i, "Stok: 12 | ✅ Aktif")
+end
 
--- Tab: Single Slots
-local tabSlots = addTab({ Name = "Single Slots" })
-local secSlot1 = tabSlots.AddSection({ Name = "Slot 1 (Dropdown Single)" })
-secSlot1.AddDropdown({
-    Name = "Pilih Item",
-    Default = "- Kosongkan -",
-    Options = { "- Kosongkan -", "Ikan Emas", "Ikan Hiu", "Pancing Legendaris", "Umpan Premium" },
-    Callback = function(val)
-        Notifier.new({
-            Title = "Item Dipilih",
-            Content = val,
-            Duration = 2
-        })
-    end
-})
-local secSlot1Status = tabSlots.AddSection({ Name = "Status Slot 1" })
-secSlot1Status.AddParagraph("Status", "Stok: 12 | ✅ Aktif", "")
-
--- Tab: Multi Slots (Multi-Select)
-local tabMulti = addTab({ Name = "Multi Slots" })
-local secMulti1 = tabMulti.AddSection({ Name = "Multi M1 (Multi-Select Dropdown)" })
-secMulti1.AddDropdown({
-    Name = "Item M1",
-    Multi = true,
-    Options = {
-        "Ikan Emas",
-        "Ikan Hiu",
-        "Pancing Legendaris",
-        "Umpan Premium",
-        "Ikan Paus",
-        "Ikan Badut",
-        "Kepiting",
-        "Kerang Mutiara"
-    },
-    Callback = function(selectedTable)
-        local chosen = {}
-        for k, v in pairs(selectedTable) do
-            if v then table.insert(chosen, k) end
+-- Tab Multi Slots (2 slot)
+local multiTab = addTab({ Name = "Multi Slots" })
+for m = 1, 2 do
+    local sec = multiTab.AddSection({ Name = "Multi M" .. m })
+    sec.AddDropdown({
+        Name = "Item M" .. m,
+        Multi = true,
+        Options = { "Ikan Emas", "Ikan Hiu", "Pancing Legendaris", "Umpan Premium", "Ikan Paus", "Ikan Badut", "Kepiting", "Kerang Mutiara" },
+        Callback = function(sel)
+            local c = {}
+            for k,v in pairs(sel) do if v then table.insert(c, k) end end
+            Notifier.new({ Title = "Multi M"..m, Content = #c .. " item", Duration = 2 })
         end
-        Notifier.new({
-            Title = "Multi-Select",
-            Content = #chosen .. " item dipilih: " .. table.concat(chosen, ", "),
-            Duration = 3
-        })
-    end
-})
-local secMulti1Status = tabMulti.AddSection({ Name = "Status M1" })
-secMulti1Status.AddParagraph("Status", "Stok: 24 | 2 item | ⛔ Cek harga", "")
+    })
+    sec.AddTextbox({
+        Name = "Harga M" .. m,
+        Placeholder = "Isi harga",
+        Default = "",
+        Callback = function(val) print("Harga M", m, val) end
+    })
+    sec.AddParagraph("Status M" .. m, "Stok: 24 | 2 item | ⛔ Cek harga")
+end
 
--- Tab: Webhook
-local tabWebhook = addTab({ Name = "Webhook" })
-local secWH = tabWebhook.AddSection({ Name = "Notifikasi Discord" })
-secWH.AddTextbox({
-    Name = "URL Webhook",
-    Placeholder = "https://discord.com/api/webhooks/...",
-    Default = "",
-    Callback = function(val)
-        print("Webhook:", val)
-    end
-})
-secWH.AddToggle({
-    Name = "Aktifkan Webhook",
-    Default = false,
-    Callback = function(val)
-        Notifier.new({
-            Title = "Webhook",
-            Content = val and "🔔 AKTIF" or "🔕 MATI",
-            Duration = 2
-        })
-    end
-})
+-- Tab Webhook
+local whTab = addTab({ Name = "Webhook" })
+local secWH = whTab.AddSection({ Name = "Notifikasi Discord" })
+secWH.AddParagraph("Webhook URL", "Isi URL Discord Webhook.")
+secWH.AddTextbox({ Name = "URL Webhook", Placeholder = "https://...", Callback = function(v) end })
+secWH.AddToggle({ Name = "Aktifkan Webhook", Default = false, Callback = function(v)
+    Notifier.new({ Title = "Webhook", Content = v and "AKTIF" or "MATI", Duration = 2 })
+end })
 
--- Tab: Config
-local tabConfig = addTab({ Name = "Config" })
-local secCfg = tabConfig.AddSection({ Name = "Kelola Config" })
-secCfg.AddTextbox({
-    Name = "Nama Config",
-    Placeholder = "Masukkan nama config...",
-    Default = "",
-    Callback = function(val)
-        print("Nama Config:", val)
-    end
-})
+-- Tab Config
+local cfgTab = addTab({ Name = "Config" })
+local secCfg = cfgTab.AddSection({ Name = "Kelola Config" })
+secCfg.AddTextbox({ Name = "Nama Config", Placeholder = "Isi nama", Callback = function() end })
 secCfg.AddDropdown({
     Name = "Pilih Config",
     Default = "- Belum Ada Config -",
-    Options = { "- Belum Ada Config -", "Config Farming", "Config Boss", "Config Event" },
-    Callback = function(val)
-        Notifier.new({
-            Title = "Config",
-            Content = "Dipilih: " .. val,
-            Duration = 2
-        })
-    end
+    Options = { "- Belum Ada Config -", "Config Farming", "Config Boss" },
+    Callback = function(v) Notifier.new({ Title = "Config", Content = v, Duration = 1 }) end
 })
-secCfg.AddButton({
-    Name = "Simpan Config",
-    Callback = function()
-        Notifier.new({
-            Title = "💾 Config",
-            Content = "Config disimpan!",
-            Duration = 2
-        })
-    end
-})
-secCfg.AddButton({
-    Name = "Load Config",
-    Callback = function()
-        Notifier.new({
-            Title = "📂 Config",
-            Content = "Config dimuat!",
-            Duration = 2
-        })
-    end
-})
+secCfg.AddButton({ Name = "💾 SIMPAN CONFIG", Callback = function() Notifier.new({ Title = "Config", Content = "Tersimpan", Duration = 2 }) end })
+secCfg.AddButton({ Name = "📂 LOAD CONFIG", Callback = function() Notifier.new({ Title = "Config", Content = "Dimuat", Duration = 2 }) end })
+secCfg.AddButton({ Name = "🗑 HAPUS CONFIG", Callback = function() Notifier.new({ Title = "Config", Content = "Dihapus", Duration = 2 }) end })
 
--- Tab: Misc
-local tabMisc = addTab({ Name = "Misc" })
-local secFitur = tabMisc.AddSection({ Name = "Fitur Tambahan" })
-secFitur.AddToggle({
-    Name = "Anti AFK",
-    Default = true,
-    Callback = function(val)
-        Notifier.new({
-            Title = "Anti AFK",
-            Content = val and "🛡️ Aktif" or "🛡️ Mati",
-            Duration = 2
-        })
-    end
-})
-secFitur.AddToggle({
-    Name = "Boost FPS",
-    Default = false,
-    Callback = function(val)
-        Notifier.new({
-            Title = "Boost FPS",
-            Content = val and "⚡ Aktif" or "⚡ Mati",
-            Duration = 2
-        })
-    end
-})
-secFitur.AddToggle({
-    Name = "Show FPS Panel",
-    Default = false,
-    Callback = function(val)
-        Notifier.new({
-            Title = "FPS Panel",
-            Content = val and "📊 Tampil" or "📊 Sembunyi",
-            Duration = 2
-        })
-    end
-})
-local secPengaturan = tabMisc.AddSection({ Name = "Pengaturan" })
-secPengaturan.AddButton({
-    Name = "Reset Semua",
-    Callback = function()
-        Notifier.new({
-            Title = "🔄 Reset",
-            Content = "Semua direset!",
-            Duration = 2
-        })
-    end
-})
-secPengaturan.AddButton({
-    Name = "Server Hop",
-    Callback = function()
-        Notifier.new({
-            Title = "🌐 Server Hop",
-            Content = "Mencari server...",
-            Duration = 2
-        })
-    end
-})
+-- Tab Misc
+local miscTab = addTab({ Name = "Misc" })
+local secFitur = miscTab.AddSection({ Name = "Fitur Tambahan" })
+secFitur.AddToggle({ Name = "🛡️ Anti AFK", Default = true, Callback = function(v) Notifier.new({ Title = "Anti AFK", Content = v and "Aktif" or "Mati" }) end })
+secFitur.AddToggle({ Name = "⚡ Boost FPS", Default = false, Callback = function(v) Notifier.new({ Title = "Boost FPS", Content = v and "Aktif" or "Mati" }) end })
+secFitur.AddToggle({ Name = "🛡️ Auto Reject Trade", Default = false, Callback = function(v) Notifier.new({ Title = "Auto Reject", Content = v and "Aktif" or "Mati" }) end })
+secFitur.AddToggle({ Name = "📊 Show FPS Panel", Default = false, Callback = function(v) Notifier.new({ Title = "FPS Panel", Content = v and "Tampil" or "Sembunyi" }) end })
+local secPengaturan = miscTab.AddSection({ Name = "Pengaturan Umum" })
+secPengaturan.AddButton({ Name = "🌐 Server Hop (10-18 Player)", Callback = function() Notifier.new({ Title = "Server Hop", Content = "Mencari...", Duration = 2 }) end })
+secPengaturan.AddButton({ Name = "🔄 Reset Semua Slot", Callback = function() Notifier.new({ Title = "Reset", Content = "Slot direset", Duration = 2 }) end })
+local secTema = miscTab.AddSection({ Name = "Tema UI" })
+secTema.AddDropdown({ Name = "Pilih Tema", Default = "Default", Options = { "Default", "Dark Green", "Dark Blue" }, Callback = function(v) Notifier.new({ Title = "Tema", Content = v }) end })
 
--- ══════════════════════════════════════════════════════════════════
--- INISIALISASI AKHIR
--- ══════════════════════════════════════════════════════════════════
-
--- Fungsi toggle panel untuk floating button
+-- ═══════════════ FUNGSI TOGGLE PANEL ══════════════════════════
 _G.ZHX_TogglePanel = function()
     mainGui.Enabled = not mainGui.Enabled
 end
 
--- Aktifkan tab pertama
+-- Aktifkan tab Home pertama
 switchTab("Home")
 
--- ══════════════════════════════════════════════════════════════════
--- JADWAL MUNCUL (detik ke-4 setelah notif startup 3 detik)
--- ══════════════════════════════════════════════════════════════════
--- Notif startup sudah muncul di awal. Semua elemen lain (floating button,
--- panel) sudah dibuat tapi mainGui kita set Enabled = true dari awal.
--- Floating button juga sudah tampil. Jadi semua muncul bersamaan di detik 0.
--- Tapi sesuai permintaan, seharusnya panel + floating button tampil di detik 4.
--- Jadi kita set mainGui.Enabled = false dulu, lalu delay 4 detik.
-
-mainGui.Enabled = false
-floatingGui.Enabled = true  -- tombol tetap tampil
-
+-- ═══════════════ JADWAL MUNCUL (detik ke-4) ═══════════════════
+-- Notif startup sudah muncul 3 detik. Kita munculkan floating button & panel di detik ke-4.
 task.delay(4, function()
+    floatingGui.Enabled = true
     mainGui.Enabled = true
     Notifier.new({
         Title = "✅ ZHX Hub Siap",
-        Content = "UI kustom v2 aktif! Gunakan tombol ZHX untuk buka/tutup panel.",
-        Duration = 5,
-        Icon = ZHX_PNG
+        Content = "UI test siap. Gunakan tombol ZHX untuk toggle panel.",
+        Duration = 5
     })
-    print("ZHX Hub v17 Test — Semua sistem dan UI kustom siap.")
+    print("ZHX Hub v17 Test — UI kustom v3 aktif.")
 end)
 
-print("ZHX Hub v17 Test — Script loaded. Panel akan muncul dalam 4 detik.")
+print("ZHX Hub v17 Test — Script loaded. Panel muncul dalam 4 detik.")
