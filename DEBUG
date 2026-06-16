@@ -1952,39 +1952,83 @@ end)
 
 print("🐟 ZhxHub Auto Booth v16 [BETA] — Custom Dropdown — "..#configNameList.." config dimuat")
 
+local WEBHOOK_URL = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+
+local function sendToWebhook(msg)
+    local HttpService = game:GetService("HttpService")
+    -- Deteksi fungsi request bawaan executor (Delta, Arceus, dll)
+    local httprequest = (request or http_request or (syn and syn.request))
+    
+    if not httprequest then 
+        warn("❌ Executor Anda tidak mendukung HTTP Request!")
+        return 
+    end
+    
+    -- Potong pesan per 1800 karakter agar aman dari limit 2000 karakter Discord
+    for i = 1, #msg, 1800 do
+        local chunk = string.sub(msg, i, i + 1799)
+        pcall(function()
+            httprequest({
+                Url = WEBHOOK_URL,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
+                Body = HttpService:JSONEncode({
+                    content = "```yaml\n" .. chunk .. "\n
+```"
+                })
+            })
+        end)
+        task.wait(0.5) -- Jeda anti rate-limit
+    end
+end
+
 task.spawn(function()
-    print("\n\n=== MEMULAI DEBUG INVENTORY AMAN ===")
+    local debugLog = "=== MEMULAI DEBUG INVENTORY AMAN ===\n"
+    
     local inv = PlayerData:Get("Inventory")
-    if type(inv) ~= "table" then return warn("❌ Inventory gagal dimuat!") end
+    if type(inv) ~= "table" then 
+        debugLog = debugLog .. "❌ Inventory gagal dimuat!\n"
+        sendToWebhook(debugLog)
+        return 
+    end
     
     for catName, catData in pairs(inv) do
-        print("\n📁 KATEGORI: " .. tostring(catName))
+        debugLog = debugLog .. "\n📁 KATEGORI: " .. tostring(catName) .. "\n"
         local count = 0
+        
+        -- Hanya scan 2 item per kategori agar log tidak terlalu panjang
         for _, item in pairs(catData) do
             if type(item) == "table" and count < 2 then 
                 local rawKeys = {}
                 local itemId = item.Id or item.id or item.ItemId or "TIDAK_ADA_ID"
                 for k, _ in pairs(item) do table.insert(rawKeys, tostring(k)) end
                 
-                print("  -> ID/Nilai: " .. tostring(itemId))
-                print("     [RAW KEYS]: " .. table.concat(rawKeys, ", "))
+                debugLog = debugLog .. "  -> ID/Nilai: " .. tostring(itemId) .. "\n"
+                debugLog = debugLog .. "     [RAW KEYS]: " .. table.concat(rawKeys, ", ") .. "\n"
                 
                 if itemId ~= "TIDAK_ADA_ID" then
                     local ok, res = pcall(function() return ItemUtility:GetItemData(itemId) end)
                     if ok and res then
                         local utilKeys = {}
-                        -- Hanya ambil boolean untuk mencari tahu flag TradeLocked/Unsellable/dll
+                        -- Ambil nilai boolean untuk cek status trade (TradeLocked, IsStarter, dll)
                         for k, v in pairs(res) do
                             if type(v) == "boolean" then
                                 table.insert(utilKeys, k .. "=" .. tostring(v))
                             end
                         end
-                        print("     [UTILITY BOOLEANS]: " .. table.concat(utilKeys, " | "))
+                        debugLog = debugLog .. "     [UTILITY BOOLEANS]: " .. table.concat(utilKeys, " | ") .. "\n"
                     end
                 end
                 count = count + 1
             end
         end
     end
-    print("=== DEBUG SELESAI ===\n\n")
+    
+    debugLog = debugLog .. "\n=== DEBUG SELESAI ==="
+    
+    -- Kirim semua teks yang sudah dikumpulkan ke Webhook
+    sendToWebhook(debugLog)
+    print("✅ Debug log sedang dikirim ke Webhook...")
 end)
