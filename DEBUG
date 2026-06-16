@@ -1953,80 +1953,76 @@ end)
 print("🐟 ZhxHub Auto Booth v16 [BETA] — Custom Dropdown — "..#configNameList.." config dimuat")
 
 task.spawn(function()
-    local debugLog = "=== MEMULAI DEBUG INVENTORY AMAN ===\n\n"
-    
-    local inv = PlayerData:Get("Inventory")
-    if type(inv) ~= "table" then 
-        debugLog = debugLog .. "❌ Inventory gagal dimuat!\n"
-    else
-        for catName, catData in pairs(inv) do
-            debugLog = debugLog .. "\n📁 KATEGORI: " .. tostring(catName) .. "\n"
-            local count = 0
-            for _, item in pairs(catData) do
-                if type(item) == "table" and count < 2 then 
-                    local rawKeys = {}
-                    local itemId = item.Id or item.id or item.ItemId or "TIDAK_ADA_ID"
-                    for k, _ in pairs(item) do table.insert(rawKeys, tostring(k)) end
-                    
-                    debugLog = debugLog .. "  -> ID/Nilai: " .. tostring(itemId) .. "\n"
-                    debugLog = debugLog .. "     [RAW KEYS]: " .. table.concat(rawKeys, ", ") .. "\n"
-                    
-                    if itemId ~= "TIDAK_ADA_ID" then
-                        local ok, res = pcall(function() return ItemUtility:GetItemData(itemId) end)
-                        if ok and res then
-                            local utilKeys = {}
-                            for k, v in pairs(res) do
-                                if type(v) == "boolean" then
-                                    table.insert(utilKeys, k .. "=" .. tostring(v))
-                                end
-                            end
-                            debugLog = debugLog .. "     [UTILITY BOOLEANS]: " .. table.concat(utilKeys, " | ") .. "\n"
-                        end
-                    end
-                    count = count + 1
-                end
-            end
+    local IU = ItemUtility
+    local log = "=== BONGKAR RAHASIA ITEM UTILITY ===\n\n"
+
+    local funcs = {}
+    local tables = {}
+
+    for k, v in pairs(IU) do
+        if type(v) == "function" then table.insert(funcs, tostring(k))
+        elseif type(v) == "table" then table.insert(tables, tostring(k))
         end
     end
-    
-    debugLog = debugLog .. "\n=== DEBUG SELESAI ==="
-    
-    -- MEMBUAT UI KOTAK TEKS UNTUK COPY-PASTE DI HP
+
+    log = log .. "[1] FUNGSI DI DALAMNYA:\n" .. table.concat(funcs, ", ") .. "\n\n"
+    log = log .. "[2] TABEL DI DALAMNYA:\n" .. table.concat(tables, ", ") .. "\n\n"
+
+    log = log .. "[3] UJI COBA AMBIL DATA BOATS ID 3:\n"
+    local ok1, r1 = pcall(function() return IU:GetItemData("Boats", 3) end)
+    if ok1 and type(r1)=="table" then log = log .. " - Test 1 (Kategori, ID) Berhasil! Nama Item: " .. tostring(r1.Name) .. "\n" end
+
+    local ok2, r2 = pcall(function() return IU:GetItemData(3, "Boats") end)
+    if ok2 and type(r2)=="table" then log = log .. " - Test 2 (ID, Kategori) Berhasil! Nama Item: " .. tostring(r2.Name) .. "\n" end
+
+    log = log .. "\n[4] BONGKAR ISI TABEL (Max 8 Sample):\n"
+    for _, tName in ipairs(tables) do
+        local t = IU[tName]
+        local subKeys = {}
+        local count = 0
+        for k, v in pairs(t) do
+            table.insert(subKeys, tostring(k))
+            count = count + 1
+            if count > 8 then break end
+        end
+        log = log .. " - " .. tName .. " berisi: " .. table.concat(subKeys, ", ") .. "...\n"
+    end
+
+    log = log .. "\n=== SELESAI ==="
+
+    -- UI KOTAK TEKS UNTUK COPY-PASTE DI HP
     local CoreGui = game:GetService("CoreGui")
     local SG = Instance.new("ScreenGui")
-    SG.Name = "DebugCopyUI"
-    -- Coba masukkan ke CoreGui agar tidak terhapus, kalau gagal masuk ke PlayerGui
+    SG.Name = "DebugUI_ItemUtil"
     local success = pcall(function() SG.Parent = CoreGui end)
     if not success then SG.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui") end
     
     local Frame = Instance.new("Frame")
     Frame.Size = UDim2.new(0.9, 0, 0.8, 0)
     Frame.Position = UDim2.new(0.05, 0, 0.1, 0)
-    Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    Frame.BorderSizePixel = 2
-    Frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     Frame.Parent = SG
     
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Size = UDim2.new(1, 0, 0.1, 0)
     CloseBtn.Text = "TUTUP & HAPUS UI"
-    CloseBtn.Font = Enum.Font.GothamBold
-    CloseBtn.TextSize = 16
     CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
     CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.TextSize = 14
     CloseBtn.Parent = Frame
     CloseBtn.MouseButton1Click:Connect(function() SG:Destroy() end)
     
     local TextBox = Instance.new("TextBox")
     TextBox.Size = UDim2.new(1, 0, 0.9, 0)
     TextBox.Position = UDim2.new(0, 0, 0.1, 0)
-    TextBox.Text = debugLog
+    TextBox.Text = log
     TextBox.TextXAlignment = Enum.TextXAlignment.Left
     TextBox.TextYAlignment = Enum.TextYAlignment.Top
     TextBox.MultiLine = true
     TextBox.ClearTextOnFocus = false
     TextBox.TextEditable = false
-    TextBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    TextBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     TextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
     TextBox.TextSize = 11
     TextBox.Font = Enum.Font.Code
