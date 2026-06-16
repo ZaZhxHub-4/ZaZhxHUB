@@ -4392,8 +4392,9 @@ function Compkiller:_LoadDropdown(BaseParent: TextButton , Callback: () -> any)
 
 		local MUL = Window.AbsoluteSize.Y / 2;
 
-		local MainPosition = UDim2.fromOffset(BaseParent.AbsolutePosition.X + 1,BaseParent.AbsolutePosition.Y + 80);
-		local DropPosition = UDim2.fromOffset(MainPosition.X.Offset,MainPosition.Y.Offset + 25);
+		local sc = getgenv().ZHX_UIScale or 1
+local MainPosition = UDim2.fromOffset(BaseParent.AbsolutePosition.X / sc + 1, BaseParent.AbsolutePosition.Y / sc + 80)
+local DropPosition = UDim2.fromOffset(MainPosition.X.Offset, MainPosition.Y.Offset + 25)
 
 		if MainPosition.Y.Offset > MUL then -- go up
 			MainPosition = UDim2.fromOffset(BaseParent.AbsolutePosition.X + 1,BaseParent.AbsolutePosition.Y + 55);
@@ -4412,7 +4413,7 @@ function Compkiller:_LoadDropdown(BaseParent: TextButton , Callback: () -> any)
 			Compkiller:_Animation(DropdownWindow,TweenInfo.new(0.2),{
 				BackgroundTransparency = 0,
 				Position = MainPosition,
-				Size = UDim2.new(0, BaseParent.AbsoluteSize.X - 1, 0, math.clamp(UIListLayout.AbsoluteContentSize.Y + 10,10 , 200))
+				Size = UDim2.new(0, BaseParent.AbsoluteSize.X / sc - 1, 0, math.clamp(UIListLayout.AbsoluteContentSize.Y + 10, 10, 200))
 			})
 
 			Compkiller:_Animation(UIStroke,TweenInfo.new(0.2),{
@@ -4422,7 +4423,7 @@ function Compkiller:_LoadDropdown(BaseParent: TextButton , Callback: () -> any)
 			Compkiller:_Animation(DropdownWindow,TweenInfo.new(0.2),{
 				BackgroundTransparency = 1,
 				Position = DropPosition,
-				Size = UDim2.new(0, BaseParent.AbsoluteSize.X - 1, 0, math.clamp(UIListLayout.AbsoluteContentSize.Y / 1.5, 10 , 200))
+				Size = UDim2.new(0, BaseParent.AbsoluteSize.X / sc - 1, 0, math.clamp(UIListLayout.AbsoluteContentSize.Y / 1.5, 10, 200))
 			})
 
 			Compkiller:_Animation(UIStroke,TweenInfo.new(0.2),{
