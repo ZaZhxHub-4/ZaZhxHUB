@@ -30,8 +30,8 @@ local pg = lp:WaitForChild("PlayerGui", 9e9)
 
 pcall(function()
     StarterGui:SetCore("SendNotification", {
-        Title = "ZHX Hub v16", Text = "Menyiapkan Data & Sistem",
-        Icon = ZHX_PNG, Duration = 5
+        Title = "ZHX Hub Loaded!", Text = "Menyiapkan Data & Sistem",
+        Icon = ZHX_PNG, Duration = 3
     })
 end)
 
@@ -636,9 +636,9 @@ local function updateAllUIStatus()
         if UIStatusSingle[i] then
             if slotData[i].itemId then
                 local cnt=#getUUIDsForItemId(slotData[i].itemId, slotData[i].category)
-                UIStatusSingle[i]:SetContent("Stok: "..cnt.." | "..(slotData[i].active and "✅ Aktif" or "⛔ Cek harga"))
+                UIStatusSingle[i]:SetContent("Stok: "..cnt.." | "..(slotData[i].active and "✅ Aktif" or "⛔ Isi harga"))
             else
-                UIStatusSingle[i]:SetContent("Kosong — pilih item & harga")
+                UIStatusSingle[i]:SetContent("Belum Dipilih")
             end
         end
     end
@@ -683,11 +683,14 @@ local function getThemeColors()
     return hl, bg, drop
 end
 
+local posUpdateConn = nil
+
 local function closeCustomDropdown()
-    if customDropConn then customDropConn:Disconnect(); customDropConn=nil end
+    if posUpdateConn then posUpdateConn:Disconnect(); posUpdateConn = nil end
+    if customDropConn then customDropConn:Disconnect(); customDropConn = nil end
     if customDropGui then
         customDropGui:Destroy()
-        customDropGui  = nil
+        customDropGui   = nil
         customDropFrame = nil
     end
     activeDropType = nil
@@ -695,8 +698,7 @@ local function closeCustomDropdown()
 end
 
 local function getDropdownPosition()
-    local vp   = workspace.CurrentCamera.ViewportSize
-    local scale = currentGlobalScale
+    local vp = workspace.CurrentCamera.ViewportSize
     local winRoot = Window.Root
     local panelFrame = nil
     if winRoot then
@@ -709,22 +711,20 @@ local function getDropdownPosition()
 
     local px, py = 0, 0
     if panelFrame then
-        local absPos = panelFrame.AbsolutePosition
+        local absPos  = panelFrame.AbsolutePosition
         local absSize = panelFrame.AbsoluteSize
-        px = absPos.X + absSize.X + 6   -- 6px gap kanan panel
+        px = absPos.X + absSize.X + 6
         py = absPos.Y
     else
-        px = vp.X/2 + (PANEL_W * scale)/2 + 6
-        py = vp.Y/2 - (DROP_H * scale)/2
+        px = vp.X / 2 + 156
+        py = vp.Y / 2 - 155
     end
 
-    local dropW = DROP_W * scale
-    local dropH = DROP_H * scale
-    if px + dropW > vp.X then px = vp.X - dropW - 4 end
-    if py + dropH > vp.Y then py = vp.Y - dropH - 4 end
+    if px + DROP_W > vp.X then px = vp.X - DROP_W - 4 end
+    if py + DROP_H > vp.Y then py = vp.Y - DROP_H - 4 end
     if py < 0 then py = 4 end
 
-    return px, py, dropW, dropH, scale
+    return px, py
 end
 
 local function openCustomDropdown(dropType, slotIdx, itemList, onSelect, selectedSet)
@@ -740,11 +740,12 @@ local function openCustomDropdown(dropType, slotIdx, itemList, onSelect, selecte
     customDropGui.ResetOnSpawn   = false
     customDropGui.Parent         = pg
 
-    local px, py, dropW, dropH, sc = getDropdownPosition()
+    local px, py = getDropdownPosition()
+    local sc = currentGlobalScale
 
     customDropFrame = Instance.new("Frame")
     customDropFrame.Name             = "DropFrame"
-    customDropFrame.Size             = UDim2.new(0, dropW, 0, dropH)
+    customDropFrame.Size             = UDim2.new(0, DROP_W, 0, DROP_H)
     customDropFrame.Position         = UDim2.new(0, px, 0, py)
     customDropFrame.BackgroundColor3 = bg
     customDropFrame.BorderSizePixel  = 0
@@ -773,7 +774,7 @@ local function openCustomDropdown(dropType, slotIdx, itemList, onSelect, selecte
     headerLbl.Size             = UDim2.new(1,-28,1,0)
     headerLbl.Position         = UDim2.new(0,8,0,0)
     headerLbl.BackgroundTransparency = 1
-    headerLbl.Text             = (dropType == "multi") and "✦ Pilih Item (Multi)" or "✦ Pilih Item"
+    headerLbl.Text             = (dropType == "multi") and ">> Pilih Item" or ">> Pilih Item"
     headerLbl.TextColor3       = Color3.fromRGB(255,255,255)
     headerLbl.TextSize         = math.floor(12 * sc)
     headerLbl.Font             = Enum.Font.GothamBold
@@ -785,7 +786,7 @@ local function openCustomDropdown(dropType, slotIdx, itemList, onSelect, selecte
     closeBtn.Size             = UDim2.new(0, headerH, 0, headerH)
     closeBtn.Position         = UDim2.new(1, -headerH, 0, 0)
     closeBtn.BackgroundTransparency = 1
-    closeBtn.Text             = "✕"
+    closeBtn.Text             = "X"
     closeBtn.TextColor3       = Color3.fromRGB(255,255,255)
     closeBtn.TextSize         = math.floor(13 * sc)
     closeBtn.Font             = Enum.Font.GothamBold
@@ -990,14 +991,36 @@ local function openCustomDropdown(dropType, slotIdx, itemList, onSelect, selecte
         scrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalH + 8)
     end
 
+    posUpdateConn = RunService.Heartbeat:Connect(function()
+        if not customDropFrame or not customDropFrame.Parent then return end
+        local winRoot2 = Window.Root
+        local pFrame = nil
+        if winRoot2 then
+            for _, obj in ipairs(winRoot2:GetChildren()) do
+                if obj:IsA("Frame") and obj.ZIndex == 4 then pFrame = obj; break end
+            end
+        end
+        if pFrame then
+            local vp2    = workspace.CurrentCamera.ViewportSize
+            local aPos   = pFrame.AbsolutePosition
+            local aSize  = pFrame.AbsoluteSize
+            local npx    = aPos.X + aSize.X + 6
+            local npy    = aPos.Y
+            if npx + DROP_W > vp2.X then npx = vp2.X - DROP_W - 4 end
+            if npy + DROP_H > vp2.Y then npy = vp2.Y - DROP_H - 4 end
+            if npy < 0 then npy = 4 end
+            customDropFrame.Position = UDim2.new(0, npx, 0, npy)
+        end
+    end)
+
     buildItemRows("")
     searchBox:GetPropertyChangedSignal("Text"):Connect(function() buildItemRows(searchBox.Text) end)
 
     customDropConn = UIS.InputBegan:Connect(function(inp, gameProc)
-        if gameProc then return end
         if inp.UserInputType == Enum.UserInputType.MouseButton1
-        or inp.UserInputType == Enum.UserInputType.Touch then
-            local pos = inp.Position
+        or inp.UserInputType == Enum.UserInputType.Touch
+        or inp.UserInputType == Enum.UserInputType.MouseWheel then
+            local pos = UIS:GetMouseLocation()
             if customDropFrame then
                 local absPos  = customDropFrame.AbsolutePosition
                 local absSize = customDropFrame.AbsoluteSize
@@ -1227,7 +1250,7 @@ for i = 1, MAX_SLOTS do
     slotButtonLabel["single_"..i] = btnObj
 
     sec:AddButton({
-        Name = "✕ Kosongkan Slot",
+        Name = "X Kosongkan Slot",
         Callback = function()
             slotData[i] = {itemId=nil,itemName=nil,category=nil,price=slotData[i].price,active=false,listedUUID=nil}
             setSlotButtonText("single_"..i, "🎣 Pilih Item...")
@@ -1290,7 +1313,7 @@ for m = 1, MAX_MULTI do
     slotButtonLabel["multi_"..m] = btnObj
 
     sec:AddButton({
-        Name = "✕ Kosongkan Antrian",
+        Name = "X Kosongkan Antrian",
         Callback = function()
             multiSlotData[m] = {items={},price=0,active=false,currentItemIdx=1,listedUUID=nil}
             setSlotButtonText("multi_"..m, "🎣 Pilih Item...")
