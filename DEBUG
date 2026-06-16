@@ -1010,22 +1010,9 @@ local function openCustomDropdown(dropType, slotIdx, itemList, onSelect, selecte
 end
 
 local function setSlotButtonText(key, text)
-    if slotButtonLabel[key] then
-        local btn = slotButtonLabel[key]
-        if btn then
-            pcall(function()
-                for _, c in ipairs(btn:GetDescendants()) do
-                    if c:IsA("TextLabel") and c.Name == "Title" then
-                        c.Text = text; return
-                    end
-                end
-                for _, c in ipairs(btn:GetDescendants()) do
-                    if c:IsA("TextLabel") then
-                        c.Text = text; break
-                    end
-                end
-            end)
-        end
+    local btn = slotButtonLabel[key]
+    if btn and btn.SetText then
+        btn:SetText(text)
     end
 end
 
