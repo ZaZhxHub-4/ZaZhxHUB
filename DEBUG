@@ -1,11 +1,17 @@
 -- =========================================================
--- SCRIPT DIAGNOSA INVENTORY & FILTER TRADEABILITY
+-- SCRIPT DIAGNOSA INVENTORY EKSTREM (FULL STANDALONE)
 -- =========================================================
--- (PASTIKAN ANDA SUDAH ME-REQUIRE PlayerData & ItemUtility DI ATAS SINI SEPERTI DI F4)
+if not game:IsLoaded() then game.Loaded:Wait() end
 
-local ItemUtility    = require(SharedFolder:WaitForChild("ItemUtility", 9e9))
-local Replion        = require(PackagesFolder:WaitForChild("Replion", 9e9))
-local PlayerData     = Replion.Client:WaitReplion("Data")
+local RS = game:GetService("ReplicatedStorage")
+local SharedFolder = RS:WaitForChild("Shared", 9e9)
+local PackagesFolder = RS:WaitForChild("Packages", 9e9)
+
+print("⏳ Sedang memuat modul game...")
+local ItemUtility = require(SharedFolder:WaitForChild("ItemUtility", 9e9))
+local Replion = require(PackagesFolder:WaitForChild("Replion", 9e9))
+local PlayerData = Replion.Client:WaitReplion("Data")
+print("✅ Modul berhasil dimuat!")
 
 local function DebugInventoryEkstrem()
     local inv = PlayerData:Get("Inventory")
@@ -40,14 +46,15 @@ local function DebugInventoryEkstrem()
                     local ok, res = pcall(function() return ItemUtility:GetItemData(itemId) end)
                     if ok and res then
                         itemInfo = res
-                        itemName = res.Name or itemName
+                        itemName = res.Name or res.Data.Name or itemName
                         
-                        -- Evaluasi ulang Tradeability
+                        -- Evaluasi ulang Tradeability (Bongkar flag yang mungkin bikin Ares lolos)
                         local isLocked = res.TradeLocked
                         local isSoulbound = res.Soulbound
                         local canTrade = res.CanTrade
+                        local isStarter = res.IsStarter
                         
-                        if isLocked == true or isSoulbound == true or canTrade == false then
+                        if isLocked == true or isSoulbound == true or canTrade == false or isStarter == true then
                             statusTrade = "❌ UNTRADEABLE"
                         else
                             statusTrade = "✅ TRADEABLE"
@@ -56,7 +63,7 @@ local function DebugInventoryEkstrem()
                         statusTrade = "⚠️ GAGAL BACA ITEM_UTILITY"
                     end
                 else
-                    statusTrade = "❌ ITEM TIDAK PUNYA ID (Format Beda!)"
+                    statusTrade = "❌ ITEM TIDAK PUNYA ID (Cek Raw Keys)"
                 end
                 
                 print(string.format("  -> Item: %s | ID: %s | Status: %s", tostring(itemName), tostring(itemId), statusTrade))
@@ -78,6 +85,7 @@ local function DebugInventoryEkstrem()
         end
     end
     print("=========================================================\n\n")
+    print("✅ DEBUG SELESAI. SILAKAN FOTOKAN / COPAS HASIL INI!")
 end
 
 task.spawn(DebugInventoryEkstrem)
