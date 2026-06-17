@@ -1,5 +1,8 @@
--- // PET FISHING BUG MONITOR: Hook semua remote terkait Fishing & Pets
--- // Tanpa mengirim data palsu, hanya memonitor untuk menangkap race condition
+-- // PET FISHING BUG MONITOR & AUTO-TRIGGER (HASH-AWARE)
+-- // Mencari remote hash di dalam folder label RF/RE terkait Fish/Pet,
+-- // lalu hook untuk logging, dan secara periodik memicu race condition
+-- // dengan memanggil RF/UpdateAutoFishingState dan RF/MarkAutoFishingUsed.
+
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
@@ -14,67 +17,152 @@ local function send(msg)
     end)
 end
 
-send("🔍 Memasang hook pemantau pada remote Fishing & Pets (mode aman)...")
+send("🔍 Memulai pemindaian & hook remote hash terkait Fishing/Pets...")
 
-local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
+local netFolder
+pcall(function() netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net end)
+if not netFolder then
+    send("❌ Folder net tidak ditemukan.")
+    return
+end
 
--- Daftar remote yang ingin kita monitor
-local targetNames = {
-    "RE/FishCaught",
-    "RE/CatchFishCompleted",
-    "RE/PlayFishingEffect",
-    "RE/BaitCastVisual",
-    "RE/BaitDestroyed",
-    "RE/BaitSpawned",
-    "RE/ObtainedNewFishNotification",
-    "RE/FishingStopped",
-    "RE/FishingMinigameChanged",
-    "RE/CaughtFishVisual",
-    "RF/UpdateAutoFishingState",
-    "RF/MarkAutoFishingUsed",
-    "RF/CancelFishingInputs",
-    "RF/ChargeFishingRod",
-    "RF/RequestFishingMinigameStarted",
-    "RF/UpdateFishingRadar",
-    "RF/Pets/Equip",
-    "RF/Pets/Unequip",
-}
+-- Fungsi untuk mengecek apakah string adalah hash 64-char hex
+local function isHash64(s)
+    return s:match("^[a-fA-F0-9]{64}$") ~= nil
+end
 
-local hooked = 0
-for _, name in ipairs(targetNames) do
-    local remote = netFolder:FindFirstChild(name)
-    if remote then
-        if remote:IsA("RemoteEvent") then
-            pcall(function()
-                local oldFire = remote.FireServer
-                remote.FireServer = function(self, ...)
-                    local args = {...}
-                    local argsStr = ""
-                    for i, v in ipairs(args) do
-                        argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
-                    end
-                    send("📤 " .. name .. " : FireServer(" .. argsStr .. ")")
-                    return oldFire(self, ...)
-                end
-                hooked = hooked + 1
-            end)
-        elseif remote:IsA("RemoteFunction") then
-            pcall(function()
-                local oldInvoke = remote.InvokeServer
-                remote.InvokeServer = function(self, ...)
-                    local args = {...}
-                    local argsStr = ""
-                    for i, v in ipairs(args) do
-                        argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
-                    end
-                    send("📤 " .. name .. " : InvokeServer(" .. argsStr .. ")")
-                    return oldInvoke(self, ...)
-                end
-                hooked = hooked + 1
-            end)
+-- Kumpulkan semua folder label yang relevan
+local labelFolders = {}
+for _, child in ipairs(netFolder:GetChildren()) do
+    if child:IsA("Folder") and (child.Name:find("^RF/") or child.Name:find("^RE/")) then
+        local lower = child.Name:lower()
+        if lower:find("fish") or lower:find("pet") or lower:find("auto") then
+            table.insert(labelFolders, child)
         end
     end
 end
 
-send("✅ Terpasang " .. hooked .. " hook. Sekarang silakan mancing seperti biasa, tangkap ikan langka, dan perhatikan Discord saat bug pet terjadi.")
-send("⚠️ Jangan gunakan auto-click atau exploit lain, biarkan bug terjadi alami.")
+if #labelFolders == 0 then
+    send("❌ Tidak ada folder label Fish/Pet. Dump semua folder label:")
+    local allLabels = {}
+    for _, child in ipairs(netFolder:GetChildren()) do
+        if child:IsA("Folder") and (child.Name:find("^RF/") or child.Name:find("^RE/")) then
+            table.insert(allLabels, child.Name)
+        end
+    end
+    send(table.concat(allLabels, "\n"))
+    return
+end
+
+-- Mencari remote hash di dalam setiap folder label
+local remoteHooks = {} -- simpan {label, remote}
+for _, folder in ipairs(labelFolders) do
+    for _, obj in ipairs(folder:GetChildren()) do
+        if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and isHash64(obj.Name) then
+            table.insert(remoteHooks, {label = folder.Name, remote = obj})
+            send("🎯 Ditemukan remote hash: " .. obj.Name .. " di folder " .. folder.Name)
+        end
+    end
+end
+
+if #remoteHooks == 0 then
+    send("❌ Tidak ada remote hash di dalam folder label. Mungkin struktur berbeda. Coba dump isi folder label pertama:")
+    if #labelFolders > 0 then
+        local sample = labelFolders[1]
+        local childrenNames = {}
+        for _, obj in ipairs(sample:GetChildren()) do
+            table.insert(childrenNames, obj.Name .. " (" .. obj.ClassName .. ")")
+        end
+        send("Isi folder " .. sample.Name .. ": " .. table.concat(childrenNames, ", "))
+    end
+    return
+end
+
+-- Hook semua remote hash yang ditemukan
+for _, h in ipairs(remoteHooks) do
+    local remote = h.remote
+    local label = h.label
+    if remote:IsA("RemoteEvent") then
+        pcall(function()
+            local oldFire = remote.FireServer
+            remote.FireServer = function(self, ...)
+                local args = {...}
+                local argsStr = ""
+                for i, v in ipairs(args) do
+                    argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
+                end
+                send("📤 [" .. label .. "] FireServer(" .. argsStr .. ")")
+                return oldFire(self, ...)
+            end
+        end)
+    elseif remote:IsA("RemoteFunction") then
+        pcall(function()
+            local oldInvoke = remote.InvokeServer
+            remote.InvokeServer = function(self, ...)
+                local args = {...}
+                local argsStr = ""
+                for i, v in ipairs(args) do
+                    argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
+                end
+                send("📤 [" .. label .. "] InvokeServer(" .. argsStr .. ")")
+                return oldInvoke(self, ...)
+            end
+        end)
+    end
+end
+
+send("✅ Terpasang " .. #remoteHooks .. " hook. Sekarang kami akan memicu race condition secara berkala.")
+
+-- Cari remote untuk auto fishing state (mungkin di folder label RF/UpdateAutoFishingState atau RF/MarkAutoFishingUsed)
+local autoStateRF, markAutoRF
+for _, folder in ipairs(labelFolders) do
+    if folder.Name == "RF/UpdateAutoFishingState" then
+        for _, obj in ipairs(folder:GetChildren()) do
+            if obj:IsA("RemoteFunction") and isHash64(obj.Name) then
+                autoStateRF = obj
+            end
+        end
+    elseif folder.Name == "RF/MarkAutoFishingUsed" then
+        for _, obj in ipairs(folder:GetChildren()) do
+            if obj:IsA("RemoteFunction") and isHash64(obj.Name) then
+                markAutoRF = obj
+            end
+        end
+    end
+end
+
+-- Jika tidak ditemukan di folder label khusus, coba cari langsung di netFolder (mungkin tanpa folder label)
+if not autoStateRF then
+    -- cari remote dengan nama "RF/UpdateAutoFishingState" (mungkin bukan hash)
+    autoStateRF = netFolder:FindFirstChild("RF/UpdateAutoFishingState")
+end
+if not markAutoRF then
+    markAutoRF = netFolder:FindFirstChild("RF/MarkAutoFishingUsed")
+end
+
+if autoStateRF or markAutoRF then
+    send("🔁 Memulai trigger race condition setiap 50 detik...")
+    spawn(function()
+        while true do
+            -- Spam toggling auto state
+            for i = 1, 5 do
+                if autoStateRF then
+                    pcall(function() autoStateRF:InvokeServer(true) end)
+                    task.wait(0.1)
+                    pcall(function() autoStateRF:InvokeServer(false) end)
+                    task.wait(0.1)
+                end
+                if markAutoRF then
+                    pcall(function() markAutoRF:InvokeServer() end)
+                    task.wait(0.1)
+                end
+            end
+            send("🔄 Trigger race condition dijalankan.")
+            task.wait(50) -- tunggu 50 detik sebelum mengulang
+        end
+    end)
+else
+    send("⚠️ Tidak dapat menemukan remote UpdateAutoFishingState/MarkAutoFishingUsed. Tidak bisa auto-trigger.")
+end
+
+send("✅ Script lengkap berjalan. Pantau Discord untuk log panggilan remote saat bug terjadi.")
