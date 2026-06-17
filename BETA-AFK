@@ -1,138 +1,123 @@
--- // RUNTIME MONITOR v2 (No Hook Global, Polling-Based)
--- // Memonitor GUI, Workspace Pets, dan mencoba mengakses modul Pets secara aman
+-- // DEEP GUI & MODEL INSPECTOR + AGGRESSIVE POLLING
+-- // Fokus: Isi GUI Fishing, properti model pet, dan deteksi perubahan teks cooldown
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-
 local HS = game:GetService("HttpService")
 local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
 local WS = game:GetService("Workspace")
 local LP = Players.LocalPlayer
 
--- Fungsi kirim ke Discord (pakai contoh user yang berhasil)
 local function send(msg)
     pcall(function()
-        local body = HS:JSONEncode({content = "`" .. os.date("%H:%M:%S") .. "` " .. tostring(msg)})
-        if http_request then
-            http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        elseif syn and syn.request then
-            syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        else
-            request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        end
+        local body = HS:JSONEncode({content = tostring(msg)})
+        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body}) end
     end)
 end
 
-send("🔍 Runtime monitor v2 dimulai. Lakukan mancing + trigger bug...")
+send("=== INSPEKSI GUI FISHING & MODEL PET ===")
 
--- 1. Akses modul Pets tanpa require (coba beberapa metode)
-local petsModule = RS:FindFirstChild("Pets")
-if petsModule and petsModule:IsA("ModuleScript") then
-    send("📦 Mencoba baca modul Pets...")
-    -- coba ambil environment
-    local env = getsenv(petsModule)
-    if env then
-        send("✅ getsenv Pets berhasil. Keys: " .. table.concat({}, ", ") .. " (kosong)")
-        -- List semua fungsi/variabel di env
-        local keys = {}
-        for k,v in pairs(env) do
-            table.insert(keys, tostring(k) .. ":" .. type(v))
-        end
-        send("📋 Isi Pets env: " .. table.concat(keys, ", "))
-    else
-        -- coba debug.getconstants
-        pcall(function()
-            local constants = debug.getconstants(petsModule)
-            send("📋 Constants Pets: " .. table.concat(constants, ", "))
-        end)
-    end
-end
-
--- 2. Cari CmdrClient dan cek event yang mungkin
-local cmdr = RS:FindFirstChild("CmdrClient")
-if cmdr and cmdr:IsA("ModuleScript") then
-    send("📡 CmdrClient ditemukan.")
-    pcall(function()
-        local env = getsenv(cmdr)
-        if env then
-            local keys = {}
-            for k,v in pairs(env) do
-                if type(v) == "table" or type(v) == "function" then
-                    table.insert(keys, k)
-                end
-            end
-            send("📡 CmdrClient env keys: " .. table.concat(keys, ", "))
-        end
-    end)
-end
-
--- 3. Polling GUI Fishing setiap 0.5 detik (monitor teks dan progres bar)
+-- 1. Dump seluruh isi GUI Fishing (nama, kelas, properti penting)
 local fishingGUI = LP.PlayerGui:FindFirstChild("Fishing")
 if fishingGUI then
-    send("🎣 Memulai polling GUI Fishing...")
-    -- Ambil snapshot awal semua label dan bar
-    local tracked = {}
+    send("📦 GUI Fishing ditemukan. Mengurai struktur...")
+    local dump = ""
+    for _, child in pairs(fishingGUI:GetDescendants()) do
+        local info = child.Name .. " [" .. child.ClassName .. "] "
+        if child:IsA("TextLabel") then
+            info = info .. "Text='" .. child.Text .. "' "
+        elseif child:IsA("Frame") then
+            info = info .. "Size=" .. tostring(child.Size) .. " "
+        elseif child:IsA("ImageLabel") or child:IsA("ImageButton") then
+            info = info .. "Image=" .. tostring(child.Image) .. " "
+        elseif child:IsA("LocalScript") or child:IsA("ModuleScript") then
+            info = info .. "ScriptSourceAvailable=" .. (pcall(function() return child.Source end) and "yes" or "no") .. " "
+        end
+        if child:GetAttribute("Cooldown") then
+            info = info .. "CooldownAttr=" .. tostring(child:GetAttribute("Cooldown")) .. " "
+        end
+        if child:GetAttribute("PetName") then
+            info = info .. "PetNameAttr=" .. tostring(child:GetAttribute("PetName")) .. " "
+        end
+        if #dump + #info + 2 > 1900 then
+            send("```\n" .. dump .. "\n```")
+            dump = ""
+        end
+        dump = dump .. info .. "\n"
+    end
+    if #dump > 0 then send("```\n" .. dump .. "\n```") end
+else
+    send("❌ GUI Fishing tidak ada.")
+end
+
+-- 2. Inspeksi model pet Otter dan Axolotl (cari script, humanoid, animasi)
+local petNames = {"Otter", "Axolotl"}
+for _, name in ipairs(petNames) do
+    local pet = WS:FindFirstChild(name)
+    if pet then
+        send("🐾 Inspeksi " .. name .. ":")
+        local details = ""
+        for _, child in pairs(pet:GetDescendants()) do
+            details = details .. child.Name .. " [" .. child.ClassName .. "]\n"
+            if child:IsA("LocalScript") or child:IsA("ModuleScript") then
+                -- coba ambil source
+                local ok, src = pcall(function() return child.Source end)
+                if ok and src then
+                    send("📜 Source " .. child.Name .. ":\n```lua\n" .. src:sub(1, 1500) .. "\n```")
+                end
+            end
+            if child:IsA("Animation") then
+                details = details .. "  AnimationId: " .. tostring(child.AnimationId) .. "\n"
+            end
+        end
+        if #details > 0 then send("```\n" .. details .. "\n```") end
+    end
+end
+
+-- 3. Polling agresif pada label yang mengandung teks cooldown (22s, 35s, dll.)
+send("🔍 Memulai polling teks cooldown...")
+local cooldownLabels = {}
+if fishingGUI then
     for _, obj in pairs(fishingGUI:GetDescendants()) do
-        if obj:IsA("TextLabel") or obj:IsA("Frame") then
-            tracked[obj] = {
-                text = obj:IsA("TextLabel") and obj.Text or nil,
-                size = obj.Size,
-                pos = obj.Position,
-                color = obj.BackgroundColor3
-            }
-        end
-    end
-    -- Loop deteksi perubahan
-    spawn(function()
-        while true do
-            for obj, last in pairs(tracked) do
-                if obj.Parent then
-                    if obj:IsA("TextLabel") then
-                        if obj.Text ~= last.text then
-                            send("📝 GUI Text: " .. obj.Name .. " -> \"" .. obj.Text .. "\"")
-                            last.text = obj.Text
-                        end
-                    end
-                    if obj:IsA("Frame") and (obj.Name:lower():find("pet") or obj.Name:lower():find("cooldown")) then
-                        if obj.Size ~= last.size then
-                            send("📏 GUI Size: " .. obj.Name .. " -> " .. tostring(obj.Size))
-                            last.size = obj.Size
-                        end
-                    end
-                else
-                    tracked[obj] = nil
-                end
+        if obj:IsA("TextLabel") then
+            if obj.Text:match("%d+s") then
+                table.insert(cooldownLabels, obj)
+                send("Target label: " .. obj.Name .. " Text: " .. obj.Text)
             end
-            task.wait(0.5)
         end
-    end)
-else
-    send("❌ GUI Fishing tidak ditemukan.")
-end
-
--- 4. Polling Workspace untuk objek pet (Axolotl, Otter, dll)
-local petModels = {}
-for _, obj in pairs(WS:GetChildren()) do
-    if obj:IsA("Model") and obj.Name:lower():find("pet") or obj.Name:lower():find("axolotl") or obj.Name:lower():find("otter") then
-        table.insert(petModels, obj)
-        send("🐾 Pet model ditemukan: " .. obj.Name)
     end
 end
 
-if #petModels > 0 then
-    spawn(function()
-        while true do
-            for _, pet in pairs(petModels) do
-                -- cek apakah ada humanoid yang sedang animasi memancing
-                local hum = pet:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    send("🤖 " .. pet.Name .. " Humanoid state: " .. tostring(hum.MoveDirection))
-                end
+if #cooldownLabels == 0 then
+    send("❌ Tidak ada label cooldown ditemukan. Mencari alternatif...")
+    -- Cari semua label teks
+    if fishingGUI then
+        for _, obj in pairs(fishingGUI:GetDescendants()) do
+            if obj:IsA("TextLabel") then
+                table.insert(cooldownLabels, obj)
             end
-            task.wait(1)
         end
-    end)
-else
-    send("❌ Tidak ada pet model langsung di workspace.")
+    end
 end
 
-send("✅ Monitoring berjalan. Trigger bug sekarang.")
+-- Polling setiap 0.2 detik, catat perubahan
+local lastTexts = {}
+for _, label in pairs(cooldownLabels) do
+    lastTexts[label] = label.Text
+end
+
+spawn(function()
+    while true do
+        for _, label in pairs(cooldownLabels) do
+            if label.Parent then
+                if label.Text ~= lastTexts[label] then
+                    send("⏱️ " .. label.Name .. ": \"" .. lastTexts[label] .. "\" -> \"" .. label.Text .. "\"")
+                    lastTexts[label] = label.Text
+                end
+            end
+        end
+        task.wait(0.2)
+    end
+end)
+
+send("✅ Inspeksi selesai, polling berjalan. Lakukan mancing + pemicu bug.")
