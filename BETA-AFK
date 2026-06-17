@@ -1,12 +1,17 @@
--- // RUNTIME MONITOR: Tangkap semua aktivitas komunikasi & GUI saat mancing
+-- // RUNTIME MONITOR v2 (No Hook Global, Polling-Based)
+-- // Memonitor GUI, Workspace Pets, dan mencoba mengakses modul Pets secara aman
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
--- Fungsi kirim ke Discord (ringan, tanpa buffer)
-local function log(msg)
+local HS = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local WS = game:GetService("Workspace")
+local LP = Players.LocalPlayer
+
+-- Fungsi kirim ke Discord (pakai contoh user yang berhasil)
+local function send(msg)
     pcall(function()
-        local body = game:GetService("HttpService"):JSONEncode({
-            content = "`" .. os.date("%H:%M:%S") .. "` " .. tostring(msg)
-        })
+        local body = HS:JSONEncode({content = "`" .. os.date("%H:%M:%S") .. "` " .. tostring(msg)})
         if http_request then
             http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
         elseif syn and syn.request then
@@ -17,118 +22,117 @@ local function log(msg)
     end)
 end
 
-log("🚀 Runtime monitor aktif. Mulai mancing dan pemicu bug...")
+send("🔍 Runtime monitor v2 dimulai. Lakukan mancing + trigger bug...")
 
--- 1. Hook Instance.new untuk menangkap objek baru
-local oldNew = Instance.new
-local function hookNew(className, parent)
-    local obj = oldNew(className, parent)
-    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("BindableEvent") or obj:IsA("BindableFunction") then
-        log("🆕 Instance baru: " .. className .. " - " .. tostring(obj.Name) .. " di " .. tostring(parent))
-        -- Hook fungsi komunikasi pada objek baru
-        if obj:IsA("RemoteEvent") then
-            local oldFire = obj.FireServer
-            obj.FireServer = function(self, ...)
-                log("📤 [RemoteEvent:FireServer] " .. self.Name .. " args: " .. table.concat({...}, ", "))
-                return oldFire(self, ...)
-            end
-        elseif obj:IsA("RemoteFunction") then
-            local oldInvoke = obj.InvokeServer
-            obj.InvokeServer = function(self, ...)
-                log("📤 [RemoteFunction:InvokeServer] " .. self.Name .. " args: " .. table.concat({...}, ", "))
-                return oldInvoke(self, ...)
-            end
-        elseif obj:IsA("BindableEvent") then
-            local oldFire = obj.Fire
-            obj.Fire = function(self, ...)
-                log("🔗 [BindableEvent:Fire] " .. self.Name .. " args: " .. table.concat({...}, ", "))
-                return oldFire(self, ...)
-            end
-        elseif obj:IsA("BindableFunction") then
-            local oldInvoke = obj.Invoke
-            obj.Invoke = function(self, ...)
-                log("🔗 [BindableFunction:Invoke] " .. self.Name .. " args: " .. table.concat({...}, ", "))
-                return oldInvoke(self, ...)
-            end
+-- 1. Akses modul Pets tanpa require (coba beberapa metode)
+local petsModule = RS:FindFirstChild("Pets")
+if petsModule and petsModule:IsA("ModuleScript") then
+    send("📦 Mencoba baca modul Pets...")
+    -- coba ambil environment
+    local env = getsenv(petsModule)
+    if env then
+        send("✅ getsenv Pets berhasil. Keys: " .. table.concat({}, ", ") .. " (kosong)")
+        -- List semua fungsi/variabel di env
+        local keys = {}
+        for k,v in pairs(env) do
+            table.insert(keys, tostring(k) .. ":" .. type(v))
         end
-    end
-    return obj
-end
-Instance.new = hookNew
-
--- 2. Hook semua objek komunikasi yang sudah ada
-for _, obj in pairs(game:GetDescendants()) do
-    if obj:IsA("RemoteEvent") then
+        send("📋 Isi Pets env: " .. table.concat(keys, ", "))
+    else
+        -- coba debug.getconstants
         pcall(function()
-            local oldFire = obj.FireServer
-            obj.FireServer = function(self, ...)
-                log("📤 [Existing Remote:FireServer] " .. obj:GetFullName() .. " args: " .. table.concat({...}, ", "))
-                return oldFire(self, ...)
-            end
-        end)
-    elseif obj:IsA("RemoteFunction") then
-        pcall(function()
-            local oldInvoke = obj.InvokeServer
-            obj.InvokeServer = function(self, ...)
-                log("📤 [Existing Remote:InvokeServer] " .. obj:GetFullName() .. " args: " .. table.concat({...}, ", "))
-                return oldInvoke(self, ...)
-            end
-        end)
-    elseif obj:IsA("BindableEvent") then
-        pcall(function()
-            local oldFire = obj.Fire
-            obj.Fire = function(self, ...)
-                log("🔗 [Existing Bindable:Fire] " .. obj:GetFullName() .. " args: " .. table.concat({...}, ", "))
-                return oldFire(self, ...)
-            end
-        end)
-    elseif obj:IsA("BindableFunction") then
-        pcall(function()
-            local oldInvoke = obj.Invoke
-            obj.Invoke = function(self, ...)
-                log("🔗 [Existing Bindable:Invoke] " .. obj:GetFullName() .. " args: " .. table.concat({...}, ", "))
-                return oldInvoke(self, ...)
-            end
+            local constants = debug.getconstants(petsModule)
+            send("📋 Constants Pets: " .. table.concat(constants, ", "))
         end)
     end
 end
 
--- 3. Hook require untuk melihat modul yang dipanggil
-local oldRequire = require
-local function hookedRequire(module)
-    log("📚 require: " .. tostring(module))
-    local result = oldRequire(module)
-    -- Jika result adalah table, kita bisa hook fungsi-fungsi di dalamnya (nanti kita kembangkan)
-    return result
+-- 2. Cari CmdrClient dan cek event yang mungkin
+local cmdr = RS:FindFirstChild("CmdrClient")
+if cmdr and cmdr:IsA("ModuleScript") then
+    send("📡 CmdrClient ditemukan.")
+    pcall(function()
+        local env = getsenv(cmdr)
+        if env then
+            local keys = {}
+            for k,v in pairs(env) do
+                if type(v) == "table" or type(v) == "function" then
+                    table.insert(keys, k)
+                end
+            end
+            send("📡 CmdrClient env keys: " .. table.concat(keys, ", "))
+        end
+    end)
 end
-require = hookedRequire
 
--- 4. Monitor GUI Fishing (ProgressBar cooldown pet)
-local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-local fishingGUI = playerGui:FindFirstChild("Fishing")
+-- 3. Polling GUI Fishing setiap 0.5 detik (monitor teks dan progres bar)
+local fishingGUI = LP.PlayerGui:FindFirstChild("Fishing")
 if fishingGUI then
-    log("🎣 Memonitor GUI Fishing...")
-    -- Cari semua Frame/ProgressBar dan kaitkan perubahan
+    send("🎣 Memulai polling GUI Fishing...")
+    -- Ambil snapshot awal semua label dan bar
+    local tracked = {}
     for _, obj in pairs(fishingGUI:GetDescendants()) do
-        if obj:IsA("Frame") and (obj.Name:lower():find("pet") or obj.Name:lower():find("cooldown")) then
-            log("🔍 Mencurigai frame pet: " .. obj:GetFullName())
-            -- Monitor perubahan ukuran/posisi (cooldown bar)
-            local conn = obj.Changed:Connect(function(prop)
-                if prop == "Size" or prop == "Position" or prop == "BackgroundColor3" then
-                    log("🖼️ GUI Change: " .. obj:GetFullName() .. " prop: " .. prop)
-                end
-            end)
-        end
-        if obj:IsA("TextLabel") and (obj.Name:lower():find("pet") or obj.Text:lower():find("cooldown") or obj.Text:lower():find("22s") or obj.Text:lower():find("35s")) then
-            local conn = obj.Changed:Connect(function(prop)
-                if prop == "Text" then
-                    log("📝 Text Change: " .. obj:GetFullName() .. " -> \"" .. obj.Text .. "\"")
-                end
-            end)
+        if obj:IsA("TextLabel") or obj:IsA("Frame") then
+            tracked[obj] = {
+                text = obj:IsA("TextLabel") and obj.Text or nil,
+                size = obj.Size,
+                pos = obj.Position,
+                color = obj.BackgroundColor3
+            }
         end
     end
+    -- Loop deteksi perubahan
+    spawn(function()
+        while true do
+            for obj, last in pairs(tracked) do
+                if obj.Parent then
+                    if obj:IsA("TextLabel") then
+                        if obj.Text ~= last.text then
+                            send("📝 GUI Text: " .. obj.Name .. " -> \"" .. obj.Text .. "\"")
+                            last.text = obj.Text
+                        end
+                    end
+                    if obj:IsA("Frame") and (obj.Name:lower():find("pet") or obj.Name:lower():find("cooldown")) then
+                        if obj.Size ~= last.size then
+                            send("📏 GUI Size: " .. obj.Name .. " -> " .. tostring(obj.Size))
+                            last.size = obj.Size
+                        end
+                    end
+                else
+                    tracked[obj] = nil
+                end
+            end
+            task.wait(0.5)
+        end
+    end)
 else
-    log("⚠️ GUI Fishing tidak ditemukan!")
+    send("❌ GUI Fishing tidak ditemukan.")
 end
 
-log("✅ Monitoring siap. Silakan pancing dengan pet dan trigger bug.")
+-- 4. Polling Workspace untuk objek pet (Axolotl, Otter, dll)
+local petModels = {}
+for _, obj in pairs(WS:GetChildren()) do
+    if obj:IsA("Model") and obj.Name:lower():find("pet") or obj.Name:lower():find("axolotl") or obj.Name:lower():find("otter") then
+        table.insert(petModels, obj)
+        send("🐾 Pet model ditemukan: " .. obj.Name)
+    end
+end
+
+if #petModels > 0 then
+    spawn(function()
+        while true do
+            for _, pet in pairs(petModels) do
+                -- cek apakah ada humanoid yang sedang animasi memancing
+                local hum = pet:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    send("🤖 " .. pet.Name .. " Humanoid state: " .. tostring(hum.MoveDirection))
+                end
+            end
+            task.wait(1)
+        end
+    end)
+else
+    send("❌ Tidak ada pet model langsung di workspace.")
+end
+
+send("✅ Monitoring berjalan. Trigger bug sekarang.")
