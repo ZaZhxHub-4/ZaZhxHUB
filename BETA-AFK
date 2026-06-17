@@ -1,60 +1,39 @@
--- // Langsung saja, ini script monitoring pasif.
--- // TIDAK mengirim data palsu, TIDAK memicu apapun. Aman.
--- // Hanya mencatat log panggilan remote.
--- // Jalankan script ini, lalu mancing manual & picu bug seperti biasa.
+-- // FINAL ATTEMPT: Race Condition Exploit via Toggle Auto-Fishing + Mark Auto
+-- // Tidak ada hook, tidak ada monitoring tidak berguna.
+-- // Hanya mengirim kombinasi remote yang mungkin mengacaukan timer pet.
+-- // Lakukan saat kamu sudah berada di air, pet equip, dan auto-fishing ON (manual).
 
-local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-local HS = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
-local LP = game:GetService("Players").LocalPlayer
+local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
 
-local function send(msg)
-    pcall(function()
-        local body = HS:JSONEncode({content = "`" .. os.date("%H:%M:%S") .. "` " .. msg})
-        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body}) end
-    end)
+local autoStateRF  = net:FindFirstChild("RF/UpdateAutoFishingState")
+local markAutoRF   = net:FindFirstChild("RF/MarkAutoFishingUsed")
+local cancelRF     = net:FindFirstChild("RF/CancelFishingInputs")
+local minigameRF   = net:FindFirstChild("RF/RequestFishingMinigameStarted")
+
+if not autoStateRF or not markAutoRF or not cancelRF then
+    return print("Remote tidak lengkap.")
 end
 
-send("🔬 Monitor pasif aktif. Silakan mancing + trigger bug manual.")
+print("Race Condition Exploit aktif. Jangan matikan auto-fishing manual.")
 
-local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
-local keywords = {"Fish","Pet","Auto","Fishing","Catch","Bait","Minigame","Reel","Cast","Finish","Complete","Cooldown","Update","State","Mark","Cancel"}
-
-for _, obj in pairs(netFolder:GetDescendants()) do
-    if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
-        local name = obj.Name
-        local lower = name:lower()
-        for _, kw in ipairs(keywords) do
-            if lower:find(kw:lower()) then
-                if obj:IsA("RemoteEvent") then
-                    pcall(function()
-                        local old = obj.FireServer
-                        obj.FireServer = function(self, ...)
-                            local args = {...}
-                            local astr = ""
-                            for i, v in ipairs(args) do astr = astr .. tostring(v):sub(1,30) .. (i==#args and "" or ", ") end
-                            send("📤 " .. name .. "(" .. astr .. ")")
-                            return old(self, ...)
-                        end
-                    end)
-                elseif obj:IsA("RemoteFunction") then
-                    pcall(function()
-                        local old = obj.InvokeServer
-                        obj.InvokeServer = function(self, ...)
-                            local args = {...}
-                            local astr = ""
-                            for i, v in ipairs(args) do astr = astr .. tostring(v):sub(1,30) .. (i==#args and "" or ", ") end
-                            send("📤 " .. name .. "(" .. astr .. ")")
-                            return old(self, ...)
-                        end
-                    end)
-                end
-                break
-            end
+task.spawn(function()
+    while true do
+        -- Spam toggle state dengan cepat (5x dalam 1 detik)
+        for i = 1, 5 do
+            pcall(function() autoStateRF:InvokeServer(true) end)
+            task.wait(0.05)
+            pcall(function() autoStateRF:InvokeServer(false) end)
+            task.wait(0.05)
         end
-    end
-end
+        
+        -- Panggil MarkAutoFishingUsed untuk mereset cooldown
+        pcall(function() markAutoRF:InvokeServer() end)
+        task.wait(0.1)
 
-send("✅ Siap. Kirimkan SEMUA log yang muncul di Discord saat bug terjadi (terutama saat pet skip cooldown).")
+        -- Pastikan berakhir dalam keadaan ON
+        pcall(function() autoStateRF:InvokeServer(true) end)
+
+        task.wait(45) -- ulangi setiap 45 detik
+    end
+end)
