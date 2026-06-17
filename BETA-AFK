@@ -1,12 +1,13 @@
--- // PET FISHING BUG MONITOR & AUTO-TRIGGER (HASH-AWARE)
--- // Mencari remote hash di dalam folder label RF/RE terkait Fish/Pet,
--- // lalu hook untuk logging, dan secara periodik memicu race condition
--- // dengan memanggil RF/UpdateAutoFishingState dan RF/MarkAutoFishingUsed.
+-- // PET BUG MAINTAINER: Pertahankan race condition dengan toggle auto secara halus
+-- // + Monitor Fill bar untuk memastikan bug tetap aktif
+-- // Script ini tidak agresif, hanya mempertahankan bug yang sudah ada.
 
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
+local WS = game:GetService("Workspace")
 local LP = game:GetService("Players").LocalPlayer
+local UIS = game:GetService("UserInputService")
 
 local function send(msg)
     pcall(function()
@@ -17,152 +18,98 @@ local function send(msg)
     end)
 end
 
-send("🔍 Memulai pemindaian & hook remote hash terkait Fishing/Pets...")
+send("🔄 PET BUG MAINTAINER aktif. Menjaga bug tetap berjalan...")
 
-local netFolder
-pcall(function() netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net end)
-if not netFolder then
-    send("❌ Folder net tidak ditemukan.")
-    return
-end
+-- Cari remote untuk auto fishing (tanpa hash, langsung)
+local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
+local autoRF = netFolder:FindFirstChild("RF/UpdateAutoFishingState")
+local markRF = netFolder:FindFirstChild("RF/MarkAutoFishingUsed")
 
--- Fungsi untuk mengecek apakah string adalah hash 64-char hex
-local function isHash64(s)
-    return s:match("^[a-fA-F0-9]{64}$") ~= nil
-end
-
--- Kumpulkan semua folder label yang relevan
-local labelFolders = {}
-for _, child in ipairs(netFolder:GetChildren()) do
-    if child:IsA("Folder") and (child.Name:find("^RF/") or child.Name:find("^RE/")) then
-        local lower = child.Name:lower()
-        if lower:find("fish") or lower:find("pet") or lower:find("auto") then
-            table.insert(labelFolders, child)
+if not autoRF and not markRF then
+    send("❌ Remote AutoFishing tidak ditemukan. Mencari manual...")
+    -- Cari remote yang namanya mengandung "auto" di seluruh net
+    for _, obj in pairs(netFolder:GetDescendants()) do
+        if obj:IsA("RemoteFunction") and obj.Name:lower():find("auto") then
+            autoRF = obj
+            send("🎯 Ditemukan remote auto alternatif: " .. obj.Name)
+            break
         end
     end
 end
 
-if #labelFolders == 0 then
-    send("❌ Tidak ada folder label Fish/Pet. Dump semua folder label:")
-    local allLabels = {}
-    for _, child in ipairs(netFolder:GetChildren()) do
-        if child:IsA("Folder") and (child.Name:find("^RF/") or child.Name:find("^RE/")) then
-            table.insert(allLabels, child.Name)
-        end
-    end
-    send(table.concat(allLabels, "\n"))
-    return
-end
-
--- Mencari remote hash di dalam setiap folder label
-local remoteHooks = {} -- simpan {label, remote}
-for _, folder in ipairs(labelFolders) do
-    for _, obj in ipairs(folder:GetChildren()) do
-        if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and isHash64(obj.Name) then
-            table.insert(remoteHooks, {label = folder.Name, remote = obj})
-            send("🎯 Ditemukan remote hash: " .. obj.Name .. " di folder " .. folder.Name)
-        end
-    end
-end
-
-if #remoteHooks == 0 then
-    send("❌ Tidak ada remote hash di dalam folder label. Mungkin struktur berbeda. Coba dump isi folder label pertama:")
-    if #labelFolders > 0 then
-        local sample = labelFolders[1]
-        local childrenNames = {}
-        for _, obj in ipairs(sample:GetChildren()) do
-            table.insert(childrenNames, obj.Name .. " (" .. obj.ClassName .. ")")
-        end
-        send("Isi folder " .. sample.Name .. ": " .. table.concat(childrenNames, ", "))
-    end
-    return
-end
-
--- Hook semua remote hash yang ditemukan
-for _, h in ipairs(remoteHooks) do
-    local remote = h.remote
-    local label = h.label
-    if remote:IsA("RemoteEvent") then
+-- Fungsi untuk toggle auto fishing (dengan aman)
+local function toggleAuto()
+    -- Klik tombol AutoFishingButton di GUI sebagai alternatif yang lebih aman
+    local btn = LP.PlayerGui.Backpack:FindFirstChild("AutoFishingButton")
+    if btn then
         pcall(function()
-            local oldFire = remote.FireServer
-            remote.FireServer = function(self, ...)
-                local args = {...}
-                local argsStr = ""
-                for i, v in ipairs(args) do
-                    argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
-                end
-                send("📤 [" .. label .. "] FireServer(" .. argsStr .. ")")
-                return oldFire(self, ...)
-            end
+            local pos = btn.AbsolutePosition + btn.AbsoluteSize/2
+            firesignal(UIS.InputBegan, {UserInputType=Enum.UserInputType.MouseButton1, Position=pos})
+            task.wait(0.05)
+            firesignal(UIS.InputEnded, {UserInputType=Enum.UserInputType.MouseButton1, Position=pos})
         end)
-    elseif remote:IsA("RemoteFunction") then
-        pcall(function()
-            local oldInvoke = remote.InvokeServer
-            remote.InvokeServer = function(self, ...)
-                local args = {...}
-                local argsStr = ""
-                for i, v in ipairs(args) do
-                    argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
-                end
-                send("📤 [" .. label .. "] InvokeServer(" .. argsStr .. ")")
-                return oldInvoke(self, ...)
-            end
-        end)
+        return true
     end
+    -- Fallback ke remote jika tombol tidak ada
+    if autoRF then
+        pcall(function() autoRF:InvokeServer(true) end)
+        task.wait(0.1)
+        pcall(function() autoRF:InvokeServer(false) end)
+        return true
+    end
+    return false
 end
 
-send("✅ Terpasang " .. #remoteHooks .. " hook. Sekarang kami akan memicu race condition secara berkala.")
-
--- Cari remote untuk auto fishing state (mungkin di folder label RF/UpdateAutoFishingState atau RF/MarkAutoFishingUsed)
-local autoStateRF, markAutoRF
-for _, folder in ipairs(labelFolders) do
-    if folder.Name == "RF/UpdateAutoFishingState" then
-        for _, obj in ipairs(folder:GetChildren()) do
-            if obj:IsA("RemoteFunction") and isHash64(obj.Name) then
-                autoStateRF = obj
-            end
+-- Pemicu periodik setiap 30 detik (cukup 2x toggle)
+spawn(function()
+    while true do
+        task.wait(30)
+        send("🔄 Menyegarkan bug: toggle auto...")
+        for i = 1, 2 do
+            toggleAuto()
+            task.wait(0.3)
         end
-    elseif folder.Name == "RF/MarkAutoFishingUsed" then
-        for _, obj in ipairs(folder:GetChildren()) do
-            if obj:IsA("RemoteFunction") and isHash64(obj.Name) then
-                markAutoRF = obj
+    end
+end)
+
+-- Monitoring Fill bar untuk memastikan bug aktif (opsional, jika Fill bisa ditemukan)
+local function findPetFills()
+    local fills = {}
+    for _, obj in pairs(WS:GetDescendants()) do
+        if obj:IsA("BillboardGui") and obj.Name == "PetFishingStatus" then
+            local fill = obj:FindFirstChild("Frame") and obj.Frame:FindFirstChild("Fill")
+            if fill then
+                local petModel = obj.Parent
+                table.insert(fills, {Name = petModel and petModel.Name or "Unknown", Fill = fill})
             end
         end
     end
+    return fills
 end
 
--- Jika tidak ditemukan di folder label khusus, coba cari langsung di netFolder (mungkin tanpa folder label)
-if not autoStateRF then
-    -- cari remote dengan nama "RF/UpdateAutoFishingState" (mungkin bukan hash)
-    autoStateRF = netFolder:FindFirstChild("RF/UpdateAutoFishingState")
-end
-if not markAutoRF then
-    markAutoRF = netFolder:FindFirstChild("RF/MarkAutoFishingUsed")
-end
-
-if autoStateRF or markAutoRF then
-    send("🔁 Memulai trigger race condition setiap 50 detik...")
+task.wait(2)
+local fills = findPetFills()
+if #fills > 0 then
+    send("🐾 Ditemukan " .. #fills .. " pet Fill bar. Memonitor lompatan cooldown...")
+    local lastScales = {}
+    for _, f in ipairs(fills) do lastScales[f.Fill] = f.Fill.Size.X.Scale end
     spawn(function()
         while true do
-            -- Spam toggling auto state
-            for i = 1, 5 do
-                if autoStateRF then
-                    pcall(function() autoStateRF:InvokeServer(true) end)
-                    task.wait(0.1)
-                    pcall(function() autoStateRF:InvokeServer(false) end)
-                    task.wait(0.1)
-                end
-                if markAutoRF then
-                    pcall(function() markAutoRF:InvokeServer() end)
-                    task.wait(0.1)
+            for _, f in ipairs(fills) do
+                if f.Fill.Parent then
+                    local scale = f.Fill.Size.X.Scale
+                    local last = lastScales[f.Fill]
+                    if math.abs(scale - last) > 0.2 and last > 0.1 then
+                        send("🚨 Lompatan terdeteksi pada " .. f.Name .. ": " .. string.format("%.2f", last) .. " -> " .. string.format("%.2f", scale))
+                    end
+                    lastScales[f.Fill] = scale
                 end
             end
-            send("🔄 Trigger race condition dijalankan.")
-            task.wait(50) -- tunggu 50 detik sebelum mengulang
+            task.wait(0.3)
         end
     end)
 else
-    send("⚠️ Tidak dapat menemukan remote UpdateAutoFishingState/MarkAutoFishingUsed. Tidak bisa auto-trigger.")
+    send("⚠️ Tidak bisa menemukan Fill bar pet. Monitoring visual tidak aktif.")
 end
 
-send("✅ Script lengkap berjalan. Pantau Discord untuk log panggilan remote saat bug terjadi.")
+send("✅ Script berjalan. Bug akan dipertahankan dengan toggle setiap 30 detik.")
