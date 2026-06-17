@@ -1,11 +1,9 @@
--- // PET FISHING RACE CONDITION EXPLOIT v2
--- // Menggunakan RF/CancelFishingInputs & RF/UpdateAutoFishingState untuk memicu bug skip cooldown
--- // Monitoring Fill bar sebagai deteksi bug
-
+-- // PET FISHING REMOTE HOOK & MONITOR (HASH-BASED)
+-- // Mencari label folder RF/RE terkait "Pet" dan "Fish",
+-- // menemukan remote hash di sebelahnya, lalu hook untuk memonitor panggilan.
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
-local WS = game:GetService("Workspace")
 local LP = game:GetService("Players").LocalPlayer
 
 local function send(msg)
@@ -17,104 +15,81 @@ local function send(msg)
     end)
 end
 
-send("⚡ RACE CONDITION EXPLOIT v2 dimulai...")
+send("🔎 Memulai pemindaian label RF/RE untuk Pet & Fish, hook remote hash...")
 
--- Dapatkan remote yang diperlukan
-local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
-local cancelRF = netFolder:FindFirstChild("RF/CancelFishingInputs")
-local autoFishingRF = netFolder:FindFirstChild("RF/UpdateAutoFishingState")
-local markAutoRF = netFolder:FindFirstChild("RF/MarkAutoFishingUsed")
-
-if not cancelRF or not autoFishingRF then
-    send("❌ Remote yang dibutuhkan tidak ditemukan!")
+local netFolder
+pcall(function() netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net end)
+if not netFolder then
+    send("❌ Folder net tidak ditemukan.")
     return
 end
 
--- Mulai trigger race condition: kirim cancel dan toggle auto secara acak
-spawn(function()
-    while true do
-        for i = 1, 5 do
-            pcall(function() cancelRF:InvokeServer() end)
-            task.wait(0.05)
-            pcall(function() autoFishingRF:InvokeServer(true) end)
-            task.wait(0.05)
-            pcall(function() autoFishingRF:InvokeServer(false) end)
-            task.wait(0.05)
-        end
-        -- Jika ada MarkAutoFishingUsed, coba panggil
-        if markAutoRF then
-            pcall(function() markAutoRF:InvokeServer() end)
-        end
-        task.wait(3) -- jeda 3 detik sebelum mengulang
-    end
-end)
+local children = netFolder:GetChildren()
+local targets = {} -- {label, remoteObj}
 
-send("🔁 Trigger race condition aktif (Cancel + Toggle Auto 5x setiap 3 detik).")
-
--- Monitoring Fill bar untuk deteksi lompatan
-local function monitorPets()
-    local pets = {}
-    -- Cari semua pet model yang memiliki PetFishingStatus
-    for _, model in pairs(WS:GetChildren()) do
-        if model:IsA("Model") then
-            local gui = model:FindFirstChild("PetFishingStatus")
-            if gui then
-                local fill = gui:FindFirstChild("Frame") and gui.Frame:FindFirstChild("Fill")
-                if fill and fill:IsA("Frame") then
-                    table.insert(pets, {
-                        Name = model.Name,
-                        Fill = fill,
-                        LastScale = fill.Size.X.Scale,
-                        StartTime = nil,
-                        ExpectedDuration = 22 -- default
-                    })
-                    send("🐾 Monitoring " .. model.Name .. " (Fill bar siap)")
+-- Iterasi semua anak
+for i, child in ipairs(children) do
+    if child:IsA("Folder") and (child.Name:find("^RF/") or child.Name:find("^RE/")) then
+        local lower = child.Name:lower()
+        if lower:find("pet") or lower:find("fish") then
+            send("📁 Label ditemukan: " .. child.Name)
+            -- Cari remote di indeks berikutnya
+            local nextChild = children[i+1]
+            if nextChild and (nextChild:IsA("RemoteEvent") or nextChild:IsA("RemoteFunction")) then
+                local hashMatch = nextChild.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if hashMatch and #hashMatch == 64 then
+                    table.insert(targets, {label = child.Name, remote = nextChild})
+                    send("🎯 Remote hash terkait: " .. nextChild.Name .. " (" .. nextChild.ClassName .. ")")
                 end
             end
         end
     end
-
-    if #pets == 0 then
-        send("❌ Tidak ada pet dengan Fill bar. Monitoring tidak berjalan.")
-        return
-    end
-
-    spawn(function()
-        while true do
-            local now = tick()
-            for _, pet in pairs(pets) do
-                if pet.Fill and pet.Fill.Parent then
-                    local scale = pet.Fill.Size.X.Scale
-                    local lastScale = pet.LastScale
-                    if math.abs(scale - lastScale) > 0.001 then
-                        local delta = scale - lastScale
-                        if delta > 0.3 and lastScale > 0.1 then
-                            send("🚨 LOMPAT BESAR " .. pet.Name .. ": " .. string.format("%.2f", lastScale) .. " -> " .. string.format("%.2f", scale))
-                            if pet.StartTime then
-                                local elapsed = now - pet.StartTime
-                                send("⏱️ " .. pet.Name .. " selesai dalam " .. string.format("%.2f", elapsed) .. "s (expected " .. pet.ExpectedDuration .. "s)")
-                                pet.StartTime = nil
-                            end
-                        end
-                        if pet.StartTime == nil and scale < 0.05 and lastScale == 0 then
-                            pet.StartTime = now
-                        end
-                        if scale > 0.99 and pet.StartTime then
-                            local elapsed = now - pet.StartTime
-                            send("✅ " .. pet.Name .. " selesai normal " .. string.format("%.2f", elapsed) .. "s")
-                            pet.StartTime = nil
-                        end
-                        pet.LastScale = scale
-                    end
-                end
-            end
-            task.wait(0.2)
-        end
-    end)
 end
 
--- Jalankan monitoring setelah 2 detik (beri waktu pet muncul)
-task.wait(2)
-monitorPets()
+if #targets == 0 then
+    send("❌ Tidak ada remote Pet/Fish ter-hash ditemukan. Dump semua label:")
+    local labels = {}
+    for _, child in ipairs(children) do
+        if child:IsA("Folder") and (child.Name:find("^RF/") or child.Name:find("^RE/")) then
+            table.insert(labels, child.Name)
+        end
+    end
+    send(table.concat(labels, "\n"))
+    return
+end
 
-send("✅ Script siap. Race condition berjalan, pantau Discord untuk lompatan cooldown.")
+-- Hook semua remote tersebut
+for _, t in ipairs(targets) do
+    local remote = t.remote
+    local label = t.label
+    if remote:IsA("RemoteEvent") then
+        pcall(function()
+            local oldFire = remote.FireServer
+            remote.FireServer = function(self, ...)
+                local args = {...}
+                local argsStr = ""
+                for i, v in ipairs(args) do
+                    argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
+                end
+                send("📤 [" .. label .. "] " .. remote.Name .. " : FireServer(" .. argsStr .. ")")
+                return oldFire(self, ...)
+            end
+        end)
+    elseif remote:IsA("RemoteFunction") then
+        pcall(function()
+            local oldInvoke = remote.InvokeServer
+            remote.InvokeServer = function(self, ...)
+                local args = {...}
+                local argsStr = ""
+                for i, v in ipairs(args) do
+                    argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
+                end
+                send("📤 [" .. label .. "] " .. remote.Name .. " : InvokeServer(" .. argsStr .. ")")
+                return oldInvoke(self, ...)
+            end
+        end)
+    end
+end
+
+send("✅ Hook terpasang pada " .. #targets .. " remote. Silakan mancing dengan pet, amati Discord untuk log panggilan.")
+send("🧪 Jika log menunjukkan panggilan saat pet selesai, kita akan tahu remote mana yang mengatur cooldown.")
