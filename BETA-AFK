@@ -1,10 +1,11 @@
--- // PET FISHING EXPLOIT: Cari Remote via sleitnick_net & Paksa EndFishing
--- // Asumsi: Game menggunakan library networking "sleitnick_net"
--- // Mencari Remote yang mengatur fishing pet (Start/End/Cooldown)
+-- // PET FISHING RACE CONDITION EXPLOIT v2
+-- // Menggunakan RF/CancelFishingInputs & RF/UpdateAutoFishingState untuk memicu bug skip cooldown
+-- // Monitoring Fill bar sebagai deteksi bug
 
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
+local WS = game:GetService("Workspace")
 local LP = game:GetService("Players").LocalPlayer
 
 local function send(msg)
@@ -16,108 +17,104 @@ local function send(msg)
     end)
 end
 
-send("🔎 Mencari Remote Fishing/Pets di dalam sleitnick_net...")
+send("⚡ RACE CONDITION EXPLOIT v2 dimulai...")
 
--- Dapatkan folder net
-local netFolder
-pcall(function()
-    netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
-end)
-if not netFolder then
-    -- Mungkin nama berbeda, cari manual
-    for _, obj in pairs(RS.Packages._Index:GetChildren()) do
-        if obj.Name:find("sleitnick_net") then
-            netFolder = obj.net
-            break
-        end
-    end
-end
+-- Dapatkan remote yang diperlukan
+local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
+local cancelRF = netFolder:FindFirstChild("RF/CancelFishingInputs")
+local autoFishingRF = netFolder:FindFirstChild("RF/UpdateAutoFishingState")
+local markAutoRF = netFolder:FindFirstChild("RF/MarkAutoFishingUsed")
 
-if not netFolder then
-    send("❌ Folder sleitnick_net tidak ditemukan!")
+if not cancelRF or not autoFishingRF then
+    send("❌ Remote yang dibutuhkan tidak ditemukan!")
     return
 end
 
--- Kumpulkan semua RemoteEvent/Function di dalam netFolder
-local allRemotes = {}
-local function scan(parent, depth)
-    if depth > 5 then return end
-    for _, child in pairs(parent:GetChildren()) do
-        if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-            table.insert(allRemotes, child)
-        end
-        if child:IsA("Folder") then
-            scan(child, depth+1)
-        end
-    end
-end
-scan(netFolder, 0)
-
-send("📋 Total Remote di net: " .. #allRemotes)
-
--- Cari yang mengandung keyword fishing/pet
-local keywords = {"fish", "pet", "cast", "reel", "catch", "hook", "bait", "auto", "cooldown", "end", "start"}
-local targets = {}
-for _, remote in ipairs(allRemotes) do
-    local nameLower = remote.Name:lower()
-    for _, kw in ipairs(keywords) do
-        if nameLower:find(kw) then
-            table.insert(targets, remote)
-            send("🎯 Ditemukan: " .. remote.Name .. " (" .. remote.ClassName .. ") | Path: " .. remote:GetFullName())
-            break
-        end
-    end
-end
-
-if #targets == 0 then
-    send("❌ Tidak ada remote fishing/pet ditemukan. Mencetak semua nama remote:")
-    local list = {}
-    for _, r in ipairs(allRemotes) do
-        table.insert(list, r.Name)
-    end
-    send(table.concat(list, "\n"))
-    return
-end
-
-send("🔥 Menyiapkan exploit: akan mencoba memanggil Remote 'EndFishing' untuk semua pet setiap 0.5 detik...")
-
--- Cari remote yang namanya mengandung "end" atau "finish"
-local endRemote
-for _, r in ipairs(targets) do
-    if r.Name:lower():find("end") or r.Name:lower():find("finish") then
-        endRemote = r
-        send("🚀 Menggunakan Remote: " .. r.Name .. " untuk mempercepat fishing.")
-        break
-    end
-end
-
-if not endRemote then
-    -- Cari remote apa saja yang mungkin menjadi pengganti
-    send("⚠️ Tidak ada remote End. Mencoba remote lain yang mungkin (Start/Cast/Toggle)...")
-    for _, r in ipairs(targets) do
-        send("-> " .. r.Name)
-    end
-    -- Mungkin pet fishing dimulai/diakhiri via server otomatis tanpa remote khusus.
-    -- Kita bisa coba kirim sinyal dengan nama pet ke remote yang ada, atau kita perlu melihat lebih dalam modul.
-    return
-end
-
--- Eksekusi exploit
-local petNames = {"Axolotl", "ArcticFox", "Penguin", "Capybara", "Otter"} -- semua pet yang mungkin
+-- Mulai trigger race condition: kirim cancel dan toggle auto secara acak
 spawn(function()
     while true do
-        for _, petName in ipairs(petNames) do
-            pcall(function()
-                if endRemote:IsA("RemoteEvent") then
-                    endRemote:FireServer(petName)
-                elseif endRemote:IsA("RemoteFunction") then
-                    endRemote:InvokeServer(petName)
-                end
-                send("📤 Mengirim End untuk " .. petName)
-            end)
+        for i = 1, 5 do
+            pcall(function() cancelRF:InvokeServer() end)
+            task.wait(0.05)
+            pcall(function() autoFishingRF:InvokeServer(true) end)
+            task.wait(0.05)
+            pcall(function() autoFishingRF:InvokeServer(false) end)
+            task.wait(0.05)
         end
-        task.wait(0.5)
+        -- Jika ada MarkAutoFishingUsed, coba panggil
+        if markAutoRF then
+            pcall(function() markAutoRF:InvokeServer() end)
+        end
+        task.wait(3) -- jeda 3 detik sebelum mengulang
     end
 end)
 
-send("✅ Exploit aktif. Periksa apakah ikan dari pet bertambah cepat.")
+send("🔁 Trigger race condition aktif (Cancel + Toggle Auto 5x setiap 3 detik).")
+
+-- Monitoring Fill bar untuk deteksi lompatan
+local function monitorPets()
+    local pets = {}
+    -- Cari semua pet model yang memiliki PetFishingStatus
+    for _, model in pairs(WS:GetChildren()) do
+        if model:IsA("Model") then
+            local gui = model:FindFirstChild("PetFishingStatus")
+            if gui then
+                local fill = gui:FindFirstChild("Frame") and gui.Frame:FindFirstChild("Fill")
+                if fill and fill:IsA("Frame") then
+                    table.insert(pets, {
+                        Name = model.Name,
+                        Fill = fill,
+                        LastScale = fill.Size.X.Scale,
+                        StartTime = nil,
+                        ExpectedDuration = 22 -- default
+                    })
+                    send("🐾 Monitoring " .. model.Name .. " (Fill bar siap)")
+                end
+            end
+        end
+    end
+
+    if #pets == 0 then
+        send("❌ Tidak ada pet dengan Fill bar. Monitoring tidak berjalan.")
+        return
+    end
+
+    spawn(function()
+        while true do
+            local now = tick()
+            for _, pet in pairs(pets) do
+                if pet.Fill and pet.Fill.Parent then
+                    local scale = pet.Fill.Size.X.Scale
+                    local lastScale = pet.LastScale
+                    if math.abs(scale - lastScale) > 0.001 then
+                        local delta = scale - lastScale
+                        if delta > 0.3 and lastScale > 0.1 then
+                            send("🚨 LOMPAT BESAR " .. pet.Name .. ": " .. string.format("%.2f", lastScale) .. " -> " .. string.format("%.2f", scale))
+                            if pet.StartTime then
+                                local elapsed = now - pet.StartTime
+                                send("⏱️ " .. pet.Name .. " selesai dalam " .. string.format("%.2f", elapsed) .. "s (expected " .. pet.ExpectedDuration .. "s)")
+                                pet.StartTime = nil
+                            end
+                        end
+                        if pet.StartTime == nil and scale < 0.05 and lastScale == 0 then
+                            pet.StartTime = now
+                        end
+                        if scale > 0.99 and pet.StartTime then
+                            local elapsed = now - pet.StartTime
+                            send("✅ " .. pet.Name .. " selesai normal " .. string.format("%.2f", elapsed) .. "s")
+                            pet.StartTime = nil
+                        end
+                        pet.LastScale = scale
+                    end
+                end
+            end
+            task.wait(0.2)
+        end
+    end)
+end
+
+-- Jalankan monitoring setelah 2 detik (beri waktu pet muncul)
+task.wait(2)
+monitorPets()
+
+send("✅ Script siap. Race condition berjalan, pantau Discord untuk lompatan cooldown.")
