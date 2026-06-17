@@ -1,162 +1,98 @@
--- // DIAGNOSTIC SCANNER v1.0 untuk Fish It
--- // Output: Discord Webhook real-time
--- // Pastikan kamu sudah di dalam game.
-
+-- // DEEP INSPECT: Bongkar ModuleScript kunci
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
--- Fungsi kirim ke Discord (kompatibel Delta/CodeX)
-local function sendDiscord(msg, title)
-    local payload = {
-        content = msg or "",
-        embeds = title and {{
-            title = title,
-            description = msg,
-            color = 0x00ff00
-        }} or nil
-    }
-    local body = game:GetService("HttpService"):JSONEncode(payload)
-    local ok, err = pcall(function()
-        -- Gunakan http_request (lebih universal)
-        if http_request then
-            http_request({
-                Url = webhook,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = body
-            })
-        elseif syn and syn.request then
-            syn.request({
-                Url = webhook,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = body
-            })
-        else
-            -- fallback ke request (executor lama)
-            request({
-                Url = webhook,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = body
-            })
+local function sendLong(msg, title)
+    local maxLen = 1900
+    local chunk = ""
+    local function flush()
+        if chunk ~= "" then
+            pcall(function()
+                local body = game:GetService("HttpService"):JSONEncode({content = chunk})
+                if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+                elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+                else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+                end
+            end)
+            chunk = ""
         end
-    end)
-    if not ok then
-        warn("Webhook gagal: " .. tostring(err))
     end
+    if title then
+        sendLong("**" .. title .. "**")
+    end
+    for line in msg:gmatch("[^\r\n]+") do
+        if #chunk + #line + 5 > maxLen then
+            flush()
+        end
+        chunk = chunk .. line .. "\n"
+    end
+    flush()
 end
 
--- Tunggu game siap
-repeat task.wait() until game:IsLoaded()
-local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
-local WS = game:GetService("Workspace")
-local LP = Players.LocalPlayer
+local function getSource(module)
+    -- ModuleScript source via getsenv atau debug.getinfo (executor harus support)
+    local success, source = pcall(function()
+        return getsenv(module).script.Source -- alternatif
+    end)
+    if not success or not source then
+        -- fallback: coba loadstring
+        success, source = pcall(function()
+            return module.Source
+        end)
+    end
+    if not success then
+        -- coba debug.getconstant
+        pcall(function()
+            local constants = debug.getconstants(module)
+            source = table.concat(constants, "\n")
+        end)
+    end
+    return tostring(source)
+end
 
-sendDiscord("Script diagnostik dimulai. Player: " .. LP.Name, "🔍 DIAGNOSTIC START")
-
--- Fungsi untuk memindai semua descendants dan mencari remote/keywords
-local function scanRemote(parent, depth, results)
-    if depth > 8 then return end
-    for _, obj in ipairs(parent:GetChildren()) do
-        local fullName = obj:GetFullName()
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            table.insert(results, {type=obj.ClassName, name=obj.Name, path=fullName})
+-- Modul yang ingin diperiksa
+local modules = {"Pets", "CmdrClient", "FishingRodModifiers", "FishWeightChances"}
+for _, name in ipairs(modules) do
+    local mod = RS:FindFirstChild(name)
+    if mod and mod:IsA("ModuleScript") then
+        local src = getSource(mod)
+        if src and #src > 10 then
+            sendLong(src, "📄 " .. name .. " source")
+        else
+            sendLong("Tidak bisa membaca source " .. name .. " (mungkin dikaburkan).", "⚠️ " .. name)
         end
-        -- rekursi ke folder/model
-        if obj:IsA("Folder") or obj:IsA("Model") or obj:IsA("Configuration") then
-            scanRemote(obj, depth+1, results)
+    end
+end
+
+-- Periksa juga PlayerGui > Fishing untuk LocalScript
+local PG = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+local fishingGUI = PG:FindFirstChild("Fishing")
+if fishingGUI then
+    for _, obj in pairs(fishingGUI:GetDescendants()) do
+        if obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+            sendLong(getSource(obj), "🎣 Fishing GUI Script: " .. obj.Name)
         end
     end
 end
 
-local foundRemotes = {}
-scanRemote(game, 0, foundRemotes)
-
--- Filter yang mengandung kata kunci
-local keywords = {"fish", "pet", "auto", "cast", "reel", "catch", "hook", "bait"}
-local filtered = {}
-for _, r in ipairs(foundRemotes) do
-    local lower = r.name:lower()
-    for _, kw in ipairs(keywords) do
-        if lower:find(kw) then
-            table.insert(filtered, r)
-            break
-        end
-    end
+-- Periksa PlayerScripts untuk script loader
+local PS = game:GetService("Players").LocalPlayer:WaitForChild("PlayerScripts")
+local loader = PS:FindFirstChild("PlayerScriptsLoader")
+if loader and loader:IsA("LocalScript") then
+    sendLong(getSource(loader), "📜 PlayerScriptsLoader")
 end
 
--- Kirim semua remote (maks 1900 karakter per pesan)
-local msg = "**SEMUA REMOTE DITEMUKAN (" .. #foundRemotes .. "):**\n```\n"
-for i, r in ipairs(foundRemotes) do
-    local line = string.format("[%d] %s %s\n", i, r.type, r.path)
-    if #msg + #line > 1900 then
-        msg = msg .. "```"
-        sendDiscord(msg)
-        msg = "```\n"
+-- Cari BindableEvent/Func di seluruh game
+local bindables = {}
+for _, obj in pairs(game:GetDescendants()) do
+    if obj:IsA("BindableEvent") or obj:IsA("BindableFunction") then
+        table.insert(bindables, obj.Name .. " (" .. obj.ClassName .. ") - Parent: " .. obj.Parent:GetFullName())
     end
-    msg = msg .. line
 end
-if msg ~= "```\n" then
-    msg = msg .. "```"
-    sendDiscord(msg)
-end
-
--- Kirim yang terfilter
-if #filtered > 0 then
-    local fmsg = "**REMOTE DENGAN KATA KUNCI (" .. #filtered .. "):**\n```\n"
-    for _, r in ipairs(filtered) do
-        fmsg = fmsg .. r.path .. "\n"
-    end
-    fmsg = fmsg .. "```"
-    sendDiscord(fmsg, "🎯 KEYWORD MATCH")
+if #bindables > 0 then
+    sendLong(table.concat(bindables, "\n"), "🔗 Bindable Events/Functions")
 else
-    sendDiscord("Tidak ada remote dengan kata kunci fish/pet/auto/dll. Perlu pencarian manual.")
+    sendLong("Tidak ada BindableEvent/Function ditemukan.")
 end
 
--- Pindai struktur folder penting
-local function dumpFolderStructure(parent, depth, output)
-    local indent = string.rep("  ", depth)
-    for _, child in ipairs(parent:GetChildren()) do
-        local info = indent .. child.Name .. " (" .. child.ClassName .. ")"
-        table.insert(output, info)
-        if child:IsA("Folder") or child:IsA("Model") then
-            if #child:GetChildren() > 0 and depth < 4 then
-                dumpFolderStructure(child, depth+1, output)
-            end
-        end
-    end
-end
-
--- ReplicatedStorage
-local rsStructure = {}
-dumpFolderStructure(RS, 0, rsStructure)
-sendDiscord("**ReplicatedStorage Structure:**\n```\n" .. table.concat(rsStructure, "\n"):sub(1,1900) .. "\n```", "📁 RS STRUCTURE")
-
--- PlayerScripts
-local ps = LP:WaitForChild("PlayerScripts", 5)
-if ps then
-    local psStructure = {}
-    dumpFolderStructure(ps, 0, psStructure)
-    sendDiscord("**PlayerScripts Structure:**\n```\n" .. table.concat(psStructure, "\n"):sub(1,1900) .. "\n```", "📁 PS STRUCTURE")
-end
-
--- PlayerGui
-local pg = LP:WaitForChild("PlayerGui", 5)
-if pg then
-    local pgStructure = {}
-    dumpFolderStructure(pg, 0, pgStructure)
-    sendDiscord("**PlayerGui Structure:**\n```\n" .. table.concat(pgStructure, "\n"):sub(1,1900) .. "\n```", "📁 PG STRUCTURE")
-end
-
--- Workspace (hanya folder utama)
-local wsChildren = {}
-for _, child in ipairs(WS:GetChildren()) do
-    if child:IsA("Folder") or child:IsA("Model") then
-        table.insert(wsChildren, child.Name .. " (" .. child.ClassName .. ")")
-    end
-end
-sendDiscord("**Workspace Folders:**\n```\n" .. table.concat(wsChildren, "\n") .. "\n```", "📁 WS FOLDERS")
-
-sendDiscord("Diagnostik awal selesai. Cek Discord untuk data lengkap.", "✅ SCAN COMPLETE")
-print("Diagnostic scan sent to Discord.")
+print("Deep inspect dikirim ke Discord.")
