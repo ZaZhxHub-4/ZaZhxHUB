@@ -42,5 +42,5 @@ end
 -- Lakukan spam setiap 0.5 detik
 while true do
     spamCutscene()
-    task.wait(0.5)
+    task.wait(5.0)
 end
