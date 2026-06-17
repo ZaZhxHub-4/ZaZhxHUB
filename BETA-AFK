@@ -1,39 +1,46 @@
--- // FINAL ATTEMPT: Race Condition Exploit via Toggle Auto-Fishing + Mark Auto
--- // Tidak ada hook, tidak ada monitoring tidak berguna.
--- // Hanya mengirim kombinasi remote yang mungkin mengacaukan timer pet.
--- // Lakukan saat kamu sudah berada di air, pet equip, dan auto-fishing ON (manual).
+-- // CUTSCENE SPAMMER untuk memicu Race Condition pada Pet Fishing
+-- // Mencari dan memanggil remote/event terkait cutscene/efek tangkapan ikan langka
 
 local RS = game:GetService("ReplicatedStorage")
 local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
 
-local autoStateRF  = net:FindFirstChild("RF/UpdateAutoFishingState")
-local markAutoRF   = net:FindFirstChild("RF/MarkAutoFishingUsed")
-local cancelRF     = net:FindFirstChild("RF/CancelFishingInputs")
-local minigameRF   = net:FindFirstChild("RF/RequestFishingMinigameStarted")
-
-if not autoStateRF or not markAutoRF or not cancelRF then
-    return print("Remote tidak lengkap.")
+-- Cari remote yang berpotensi memicu cutscene
+local cutsceneRemotes = {}
+for _, obj in pairs(net:GetDescendants()) do
+    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+        local n = obj.Name:lower()
+        if n:find("cutscene") or n:find("effect") or n:find("visual") or n:find("caught") or n:find("notification") or n:find("complete") then
+            table.insert(cutsceneRemotes, obj)
+        end
+    end
 end
 
-print("Race Condition Exploit aktif. Jangan matikan auto-fishing manual.")
+if #cutsceneRemotes == 0 then
+    -- Fallback: gunakan remote yang kita tahu bisa dipakai
+    cutsceneRemotes = {
+        net:FindFirstChild("RE/PlayFishingEffect"),
+        net:FindFirstChild("RE/CaughtFishVisual"),
+        net:FindFirstChild("RE/CatchFishCompleted")
+    }
+end
 
-task.spawn(function()
-    while true do
-        -- Spam toggle state dengan cepat (5x dalam 1 detik)
-        for i = 1, 5 do
-            pcall(function() autoStateRF:InvokeServer(true) end)
-            task.wait(0.05)
-            pcall(function() autoStateRF:InvokeServer(false) end)
-            task.wait(0.05)
+-- Fungsi spam cutscene
+local function spamCutscene()
+    for _, remote in ipairs(cutsceneRemotes) do
+        if remote then
+            pcall(function()
+                if remote:IsA("RemoteEvent") then
+                    remote:FireServer()
+                else
+                    remote:InvokeServer()
+                end
+            end)
         end
-        
-        -- Panggil MarkAutoFishingUsed untuk mereset cooldown
-        pcall(function() markAutoRF:InvokeServer() end)
-        task.wait(0.1)
-
-        -- Pastikan berakhir dalam keadaan ON
-        pcall(function() autoStateRF:InvokeServer(true) end)
-
-        task.wait(45) -- ulangi setiap 45 detik
     end
-end)
+end
+
+-- Lakukan spam setiap 0.5 detik
+while true do
+    spamCutscene()
+    task.wait(0.5)
+end
