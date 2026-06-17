@@ -1,5 +1,7 @@
--- // DEEP MONITOR: Hook semua fungsi internal & remote untuk menangkap bug race condition
--- // Tidak mengirim data palsu, hanya logging pasif. Aman dari anti-cheat.
+-- // Langsung saja, ini script monitoring pasif.
+-- // TIDAK mengirim data palsu, TIDAK memicu apapun. Aman.
+-- // Hanya mencatat log panggilan remote.
+-- // Jalankan script ini, lalu mancing manual & picu bug seperti biasa.
 
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
@@ -15,133 +17,44 @@ local function send(msg)
     end)
 end
 
-send("🔬 DEEP MONITOR: Memasang hook pasif pada semua fungsi terkait Pet & Fish...")
+send("🔬 Monitor pasif aktif. Silakan mancing + trigger bug manual.")
 
--- ------------------------------------------------------------
--- 1. Hook fungsi di dalam modul Pets (getsenv)
--- ------------------------------------------------------------
-local function hookModule(name)
-    local found = false
-    for _, mod in ipairs(getloadedmodules()) do
-        if mod.Name == name and mod:IsA("ModuleScript") then
-            local env = getsenv(mod)
-            if not env then
-                send("⚠️ getsenv " .. name .. " gagal.")
-                break
-            end
-            for k, v in pairs(env) do
-                if type(v) == "function" then
-                    local fname = tostring(k)
+local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
+local keywords = {"Fish","Pet","Auto","Fishing","Catch","Bait","Minigame","Reel","Cast","Finish","Complete","Cooldown","Update","State","Mark","Cancel"}
+
+for _, obj in pairs(netFolder:GetDescendants()) do
+    if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
+        local name = obj.Name
+        local lower = name:lower()
+        for _, kw in ipairs(keywords) do
+            if lower:find(kw:lower()) then
+                if obj:IsA("RemoteEvent") then
                     pcall(function()
-                        local old = v
-                        env[k] = function(...)
+                        local old = obj.FireServer
+                        obj.FireServer = function(self, ...)
                             local args = {...}
-                            local argsStr = ""
-                            for i, a in ipairs(args) do
-                                argsStr = argsStr .. tostring(a):sub(1, 30) .. (i == #args and "" or ", ")
-                            end
-                            send("⚙️ [Internal:" .. name .. "] " .. fname .. "(" .. argsStr .. ")")
-                            return old(...)
+                            local astr = ""
+                            for i, v in ipairs(args) do astr = astr .. tostring(v):sub(1,30) .. (i==#args and "" or ", ") end
+                            send("📤 " .. name .. "(" .. astr .. ")")
+                            return old(self, ...)
+                        end
+                    end)
+                elseif obj:IsA("RemoteFunction") then
+                    pcall(function()
+                        local old = obj.InvokeServer
+                        obj.InvokeServer = function(self, ...)
+                            local args = {...}
+                            local astr = ""
+                            for i, v in ipairs(args) do astr = astr .. tostring(v):sub(1,30) .. (i==#args and "" or ", ") end
+                            send("📤 " .. name .. "(" .. astr .. ")")
+                            return old(self, ...)
                         end
                     end)
                 end
-            end
-            send("✅ Hook dipasang pada semua fungsi di " .. name)
-            found = true
-            break
-        end
-    end
-    if not found then
-        send("❌ Modul " .. name .. " tidak ditemukan di memori.")
-    end
-end
-
-hookModule("Pets")
-hookModule("CmdrClient")
-
--- ------------------------------------------------------------
--- 2. Hook RemoteEvent/Fungsi di sleitnick_net yang relevan (hanya log)
--- ------------------------------------------------------------
-local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
-local keywords = {"Fish", "Pet", "Auto", "Fishing", "Catch", "Bait", "Minigame"}
-
-local function hookRemote(obj, label)
-    if obj:IsA("RemoteEvent") then
-        pcall(function()
-            local oldFire = obj.FireServer
-            obj.FireServer = function(self, ...)
-                local args = {...}
-                local argsStr = ""
-                for i, a in ipairs(args) do
-                    argsStr = argsStr .. tostring(a):sub(1, 30) .. (i == #args and "" or ", ")
-                end
-                send("📤 [Server:" .. label .. "] FireServer(" .. argsStr .. ")")
-                return oldFire(self, ...)
-            end
-        end)
-    elseif obj:IsA("RemoteFunction") then
-        pcall(function()
-            local oldInvoke = obj.InvokeServer
-            obj.InvokeServer = function(self, ...)
-                local args = {...}
-                local argsStr = ""
-                for i, a in ipairs(args) do
-                    argsStr = argsStr .. tostring(a):sub(1, 30) .. (i == #args and "" or ", ")
-                end
-                send("📤 [Server:" .. label .. "] InvokeServer(" .. argsStr .. ")")
-                return oldInvoke(self, ...)
-            end
-        end)
-    end
-end
-
-for _, obj in ipairs(netFolder:GetChildren()) do
-    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-        local name = obj.Name
-        for _, kw in ipairs(keywords) do
-            if name:lower():find(kw:lower()) then
-                hookRemote(obj, name)
-                send("🪝 Hook " .. name)
                 break
             end
         end
     end
 end
 
--- ------------------------------------------------------------
--- 3. Monitor Fill bar untuk deteksi visual (sekadar informasi)
--- ------------------------------------------------------------
-task.spawn(function()
-    task.wait(3)
-    local fills = {}
-    for _, obj in ipairs(game:GetService("Workspace"):GetDescendants()) do
-        if obj:IsA("BillboardGui") and obj.Name == "PetFishingStatus" then
-            local fill = obj.Frame and obj.Frame.Fill
-            if fill then
-                fills[#fills + 1] = fill
-            end
-        end
-    end
-    if #fills > 0 then
-        send("👁️ Monitoring visual " .. #fills .. " pet Fill bar...")
-        local lastScales = {}
-        for _, f in ipairs(fills) do lastScales[f] = f.Size.X.Scale end
-        while true do
-            for _, f in ipairs(fills) do
-                if f.Parent then
-                    local scale = f.Size.X.Scale
-                    local last = lastScales[f]
-                    if math.abs(scale - last) > 0.25 and last > 0.1 then
-                        send("📊 Visual jump: " .. string.format("%.2f -> %.2f", last, scale))
-                    end
-                    lastScales[f] = scale
-                end
-            end
-            task.wait(0.3)
-        end
-    else
-        send("⚠️ Tidak ada Fill bar ditemukan.")
-    end
-end)
-
-send("✅ Deep monitor aktif. Silakan pancing seperti biasa, trigger bug secara manual (tanpa script). Amati Discord.")
+send("✅ Siap. Kirimkan SEMUA log yang muncul di Discord saat bug terjadi (terutama saat pet skip cooldown).")
