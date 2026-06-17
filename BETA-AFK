@@ -1,6 +1,5 @@
--- // PET FISHING REMOTE HOOK & MONITOR (HASH-BASED)
--- // Mencari label folder RF/RE terkait "Pet" dan "Fish",
--- // menemukan remote hash di sebelahnya, lalu hook untuk memonitor panggilan.
+-- // PET FISHING BUG MONITOR: Hook semua remote terkait Fishing & Pets
+-- // Tanpa mengirim data palsu, hanya memonitor untuk menangkap race condition
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
@@ -15,81 +14,67 @@ local function send(msg)
     end)
 end
 
-send("🔎 Memulai pemindaian label RF/RE untuk Pet & Fish, hook remote hash...")
+send("🔍 Memasang hook pemantau pada remote Fishing & Pets (mode aman)...")
 
-local netFolder
-pcall(function() netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net end)
-if not netFolder then
-    send("❌ Folder net tidak ditemukan.")
-    return
-end
+local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
 
-local children = netFolder:GetChildren()
-local targets = {} -- {label, remoteObj}
+-- Daftar remote yang ingin kita monitor
+local targetNames = {
+    "RE/FishCaught",
+    "RE/CatchFishCompleted",
+    "RE/PlayFishingEffect",
+    "RE/BaitCastVisual",
+    "RE/BaitDestroyed",
+    "RE/BaitSpawned",
+    "RE/ObtainedNewFishNotification",
+    "RE/FishingStopped",
+    "RE/FishingMinigameChanged",
+    "RE/CaughtFishVisual",
+    "RF/UpdateAutoFishingState",
+    "RF/MarkAutoFishingUsed",
+    "RF/CancelFishingInputs",
+    "RF/ChargeFishingRod",
+    "RF/RequestFishingMinigameStarted",
+    "RF/UpdateFishingRadar",
+    "RF/Pets/Equip",
+    "RF/Pets/Unequip",
+}
 
--- Iterasi semua anak
-for i, child in ipairs(children) do
-    if child:IsA("Folder") and (child.Name:find("^RF/") or child.Name:find("^RE/")) then
-        local lower = child.Name:lower()
-        if lower:find("pet") or lower:find("fish") then
-            send("📁 Label ditemukan: " .. child.Name)
-            -- Cari remote di indeks berikutnya
-            local nextChild = children[i+1]
-            if nextChild and (nextChild:IsA("RemoteEvent") or nextChild:IsA("RemoteFunction")) then
-                local hashMatch = nextChild.Name:match("^R[FE]/([a-fA-F0-9]+)$")
-                if hashMatch and #hashMatch == 64 then
-                    table.insert(targets, {label = child.Name, remote = nextChild})
-                    send("🎯 Remote hash terkait: " .. nextChild.Name .. " (" .. nextChild.ClassName .. ")")
+local hooked = 0
+for _, name in ipairs(targetNames) do
+    local remote = netFolder:FindFirstChild(name)
+    if remote then
+        if remote:IsA("RemoteEvent") then
+            pcall(function()
+                local oldFire = remote.FireServer
+                remote.FireServer = function(self, ...)
+                    local args = {...}
+                    local argsStr = ""
+                    for i, v in ipairs(args) do
+                        argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
+                    end
+                    send("📤 " .. name .. " : FireServer(" .. argsStr .. ")")
+                    return oldFire(self, ...)
                 end
-            end
+                hooked = hooked + 1
+            end)
+        elseif remote:IsA("RemoteFunction") then
+            pcall(function()
+                local oldInvoke = remote.InvokeServer
+                remote.InvokeServer = function(self, ...)
+                    local args = {...}
+                    local argsStr = ""
+                    for i, v in ipairs(args) do
+                        argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
+                    end
+                    send("📤 " .. name .. " : InvokeServer(" .. argsStr .. ")")
+                    return oldInvoke(self, ...)
+                end
+                hooked = hooked + 1
+            end)
         end
     end
 end
 
-if #targets == 0 then
-    send("❌ Tidak ada remote Pet/Fish ter-hash ditemukan. Dump semua label:")
-    local labels = {}
-    for _, child in ipairs(children) do
-        if child:IsA("Folder") and (child.Name:find("^RF/") or child.Name:find("^RE/")) then
-            table.insert(labels, child.Name)
-        end
-    end
-    send(table.concat(labels, "\n"))
-    return
-end
-
--- Hook semua remote tersebut
-for _, t in ipairs(targets) do
-    local remote = t.remote
-    local label = t.label
-    if remote:IsA("RemoteEvent") then
-        pcall(function()
-            local oldFire = remote.FireServer
-            remote.FireServer = function(self, ...)
-                local args = {...}
-                local argsStr = ""
-                for i, v in ipairs(args) do
-                    argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
-                end
-                send("📤 [" .. label .. "] " .. remote.Name .. " : FireServer(" .. argsStr .. ")")
-                return oldFire(self, ...)
-            end
-        end)
-    elseif remote:IsA("RemoteFunction") then
-        pcall(function()
-            local oldInvoke = remote.InvokeServer
-            remote.InvokeServer = function(self, ...)
-                local args = {...}
-                local argsStr = ""
-                for i, v in ipairs(args) do
-                    argsStr = argsStr .. tostring(v) .. (i == #args and "" or ", ")
-                end
-                send("📤 [" .. label .. "] " .. remote.Name .. " : InvokeServer(" .. argsStr .. ")")
-                return oldInvoke(self, ...)
-            end
-        end)
-    end
-end
-
-send("✅ Hook terpasang pada " .. #targets .. " remote. Silakan mancing dengan pet, amati Discord untuk log panggilan.")
-send("🧪 Jika log menunjukkan panggilan saat pet selesai, kita akan tahu remote mana yang mengatur cooldown.")
+send("✅ Terpasang " .. hooked .. " hook. Sekarang silakan mancing seperti biasa, tangkap ikan langka, dan perhatikan Discord saat bug pet terjadi.")
+send("⚠️ Jangan gunakan auto-click atau exploit lain, biarkan bug terjadi alami.")
