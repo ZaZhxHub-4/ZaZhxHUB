@@ -1,5 +1,4 @@
--- // CORRECTED PET MONITOR + AUTO BUTTON FINDER
--- // Hanya pet memancing: ArcticFox, Axolotl, Penguin, Capybara
+-- // UNIVERSAL PET MONITOR + AUTO BUTTON SCANNER + MODULE HOOK
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
 local WS = game:GetService("Workspace")
@@ -15,133 +14,122 @@ local function send(msg)
     end)
 end
 
-send("🔍 Memulai monitoring pet khusus (ArcticFox, Axolotl, Penguin, Capybara)...")
+send("🔬 Memulai pemindaian universal pet & tombol auto...")
 
--- Daftar pet yang bisa memancing
-local fishingPets = {"ArcticFox", "Axolotl", "Penguin", "Capybara"}
-
--- Temukan semua model pet di workspace dengan PetFishingStatus
-local pets = {}
+-- 1. Cari SEMUA model di Workspace yang memiliki BillboardGui bernama "PetFishingStatus"
+local petModels = {}
 for _, model in pairs(WS:GetChildren()) do
-    if model:IsA("Model") and fishingPets[model.Name] then
+    if model:IsA("Model") then
         local gui = model:FindFirstChild("PetFishingStatus")
         if gui and gui:IsA("BillboardGui") then
-            local frame = gui:FindFirstChild("Frame")
-            if frame then
-                local fill = frame:FindFirstChild("Fill")
-                local label = frame:FindFirstChild("Label")
-                if fill then
-                    table.insert(pets, {
-                        Name = model.Name,
-                        Gui = gui,
-                        Fill = fill,
-                        Label = label,
-                        LastFillSize = fill.Size,
-                        LastText = label and label.Text or "",
-                        StartTime = nil,
-                        ExpectedDuration = model.Name == "Penguin" and 35 or (model.Name == "Capybara" and 65 or 22)
-                    })
-                    send("✅ " .. model.Name .. " terdaftar (expected " .. (model.Name == "Penguin" and 35 or (model.Name == "Capybara" and 65 or 22)) .. "s)")
+            table.insert(petModels, model)
+            send("🐾 Ditemukan pet dengan status: " .. model.Name)
+            -- Dump semua turunan di dalam BillboardGui
+            local dump = ""
+            for _, child in pairs(gui:GetDescendants()) do
+                dump = dump .. child.Name .. " [" .. child.ClassName .. "] "
+                if child:IsA("Frame") or child:IsA("ImageLabel") then
+                    dump = dump .. "Size=" .. tostring(child.Size) .. " "
+                end
+                if child:IsA("TextLabel") then
+                    dump = dump .. "Text='" .. child.Text .. "' "
+                end
+                dump = dump .. "\n"
+            end
+            if #dump > 0 then send("```\n" .. dump .. "\n```") end
+        end
+    end
+end
+
+if #petModels == 0 then
+    send("❌ Tidak ada pet dengan BillboardGui PetFishingStatus ditemukan. Cek apakah pet benar-benar muncul di sampingmu.")
+    -- Mungkin pet ada di folder lain?
+    for _, folder in pairs(WS:GetChildren()) do
+        if folder:IsA("Folder") then
+            for _, model in pairs(folder:GetChildren()) do
+                if model:IsA("Model") and model:FindFirstChild("PetFishingStatus") then
+                    send("🐾 Ditemukan di folder " .. folder.Name .. ": " .. model.Name)
                 end
             end
         end
     end
 end
 
-if #pets == 0 then
-    send("❌ Tidak ada pet dengan skill memancing ditemukan. Pastikan pet sudah di-equip.")
-    return
-end
-
--- Cari tombol Auto-Fish di semua ScreenGui
-local autoBtn = nil
-for _, screenGui in pairs(LP.PlayerGui:GetChildren()) do
-    if screenGui:IsA("ScreenGui") then
-        for _, obj in pairs(screenGui:GetDescendants()) do
+-- 2. Cari semua tombol yang mengandung kata "auto" di SEMUA ScreenGui
+send("🔎 Mencari tombol 'Auto'...")
+local autoButtons = {}
+for _, gui in pairs(LP.PlayerGui:GetChildren()) do
+    if gui:IsA("ScreenGui") then
+        for _, obj in pairs(gui:GetDescendants()) do
             if obj:IsA("TextButton") or obj:IsA("ImageButton") then
-                local text = obj:IsA("TextButton") and obj.Text or ""
+                local text = obj:IsA("TextButton") and obj.Text or obj.Name
                 if text:lower():find("auto") then
-                    autoBtn = obj
-                    send("🎯 Tombol Auto ditemukan: " .. obj:GetFullName() .. " Text: " .. text)
+                    table.insert(autoButtons, obj)
+                    send("🎯 Tombol Auto: " .. obj:GetFullName() .. " | Text: " .. text)
                 end
             end
         end
     end
 end
 
-if not autoBtn then
-    send("⚠️ Tombol Auto tidak ditemukan. Cari manual: biasanya ada tombol bertuliskan 'Auto' di dekat mini-game.")
+if #autoButtons == 0 then
+    send("⚠️ Tidak ada tombol dengan teks 'auto'. Kirimkan screenshot UI Fishing kamu ke saya.")
+else
+    send("✅ Total " .. #autoButtons .. " tombol auto ditemukan.")
 end
 
--- Fungsi klik tombol (simulasi)
-local function clickButton(btn)
-    if not btn then return end
-    pcall(function()
-        local pos = btn.AbsolutePosition + btn.AbsoluteSize/2
-        firesignal(UIS.InputBegan, {
-            UserInputType = Enum.UserInputType.MouseButton1,
-            Position = pos,
-            Delta = Vector2.new(0, 0)
-        })
-        task.wait(0.03)
-        firesignal(UIS.InputEnded, {
-            UserInputType = Enum.UserInputType.MouseButton1,
-            Position = pos,
-            Delta = Vector2.new(0, 0)
-        })
+-- 3. Monitoring perubahan ukuran objek apa pun di dalam PetFishingStatus (polling 0.2s)
+if #petModels > 0 then
+    send("📏 Memulai monitoring perubahan ukuran pada bar cooldown...")
+    local tracked = {}
+    for _, model in pairs(petModels) do
+        local gui = model.PetFishingStatus
+        for _, obj in pairs(gui:GetDescendants()) do
+            if obj:IsA("Frame") or obj:IsA("ImageLabel") then
+                tracked[obj] = {lastSize = obj.Size, pet = model.Name}
+            end
+        end
+    end
+
+    spawn(function()
+        while true do
+            for obj, data in pairs(tracked) do
+                if obj.Parent then
+                    if obj.Size ~= data.lastSize then
+                        send("📊 " .. data.pet .. " | " .. obj.Name .. " Size: " .. tostring(data.lastSize) .. " -> " .. tostring(obj.Size))
+                        data.lastSize = obj.Size
+                        -- Deteksi jika ukuran mendekati penuh (X scale > 0.9)
+                        if obj.Size.X.Scale > 0.9 and data.lastSize.X.Scale <= 0.9 then
+                            send("⏱️ " .. data.pet .. " bar penuh terdeteksi!")
+                        end
+                    end
+                else
+                    tracked[obj] = nil
+                end
+            end
+            task.wait(0.2)
+        end
     end)
 end
 
--- Loop monitoring fill bar
-spawn(function()
-    while true do
-        local now = tick()
-        for _, pet in pairs(pets) do
-            if pet.Fill and pet.Fill.Parent then
-                local newSize = pet.Fill.Size
-                local newText = pet.Label and pet.Label.Text or ""
-
-                if newSize ~= pet.LastFillSize then
-                    local scale = newSize.X.Scale
-                    send(string.format("📊 %s Fill: %.0f%% (Text: %s)", pet.Name, scale*100, newText))
-
-                    -- Mulai memancing jika fill baru naik dari 0
-                    if pet.StartTime == nil and scale > 0.02 and scale < 0.5 then
-                        pet.StartTime = now
-                        send("⏱️ " .. pet.Name .. " mulai memancing...")
-                    end
-
-                    -- Selesai jika fill penuh
-                    if scale > 0.95 and pet.StartTime then
-                        local elapsed = now - pet.StartTime
-                        send(string.format("✅ %s selesai dalam %.2fs (expected %ds)", pet.Name, elapsed, pet.ExpectedDuration))
-                        if elapsed < pet.ExpectedDuration * 0.8 then
-                            send("🚨 BUG COOLDOWN SKIP TERDETEKSI pada " .. pet.Name .. "!")
-                        end
-                        pet.StartTime = nil
-                    end
-
-                    pet.LastFillSize = newSize
+-- 4. Opsional: coba akses modul Pets lewat getloadedmodules (jika executor support)
+pcall(function()
+    send("🔬 Mencoba getloadedmodules...")
+    local modules = getloadedmodules and getloadedmodules() or {}
+    for _, mod in pairs(modules) do
+        if mod.Name == "Pets" then
+            send("📦 Modul Pets ditemukan di memori.")
+            -- Coba ambil environment
+            local env = getsenv and getsenv(mod)
+            if env then
+                local keys = {}
+                for k,v in pairs(env) do
+                    keys[#keys+1] = k .. ":" .. type(v)
                 end
+                send("📋 Keys: " .. table.concat(keys, ", "))
             end
         end
-        task.wait(0.1)
     end
 end)
 
--- Auto-trigger bug dengan toggle cepat (setiap 8 detik)
-if autoBtn then
-    send("🔁 Auto-trigger bug: klik tombol setiap 8 detik...")
-    spawn(function()
-        while true do
-            task.wait(8)
-            send("🔄 Toggle Auto-Fish cepat...")
-            for i=1, 4 do
-                clickButton(autoBtn)
-                task.wait(0.08)
-            end
-        end
-    end)
-end
-
-send("✅ Semua siap. Silakan mulai memancing dengan pet, biarkan bug terjadi. Pantau Discord.")
+send("✅ Script siap. Silakan mancing dengan pet. Jika fill bar terpantau, akan muncul di Discord.")
