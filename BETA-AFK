@@ -1,9 +1,11 @@
--- // DIRECT PET FISHING EXPLOIT: Force Fill Bar to Full (Cooldown Skip)
--- // Setiap 0.3 detik, paksa Fill bar semua pet menjadi penuh (scale=1)
--- // Jika game menggunakan Fill bar sebagai trigger server, ini akan menghasilkan tangkapan instan.
+-- // PET FISHING EXPLOIT: Cari Remote via sleitnick_net & Paksa EndFishing
+-- // Asumsi: Game menggunakan library networking "sleitnick_net"
+-- // Mencari Remote yang mengatur fishing pet (Start/End/Cooldown)
+
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
-local WS = game:GetService("Workspace")
+local RS = game:GetService("ReplicatedStorage")
+local LP = game:GetService("Players").LocalPlayer
 
 local function send(msg)
     pcall(function()
@@ -14,43 +16,108 @@ local function send(msg)
     end)
 end
 
-send("⚡ DIRECT FILL EXPLOIT AKTIF: Memaksa semua pet menyelesaikan fishing setiap 0.3 detik...")
+send("🔎 Mencari Remote Fishing/Pets di dalam sleitnick_net...")
 
--- Kumpulkan semua Fill bar
-local fills = {}
-for _, model in pairs(WS:GetChildren()) do
-    if model:IsA("Model") then
-        pcall(function()
-            local fill = model.PetFishingStatus.Frame.Fill
-            if fill and fill:IsA("Frame") then
-                table.insert(fills, {Name = model.Name, Fill = fill})
-                send("🐾 Ditemukan " .. model.Name .. " Fill, siap exploit.")
-            end
-        end)
+-- Dapatkan folder net
+local netFolder
+pcall(function()
+    netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
+end)
+if not netFolder then
+    -- Mungkin nama berbeda, cari manual
+    for _, obj in pairs(RS.Packages._Index:GetChildren()) do
+        if obj.Name:find("sleitnick_net") then
+            netFolder = obj.net
+            break
+        end
     end
 end
 
-if #fills == 0 then
-    send("❌ Tidak ada pet Fill bar. Pastikan pet muncul.")
+if not netFolder then
+    send("❌ Folder sleitnick_net tidak ditemukan!")
     return
 end
 
--- Loop exploit
+-- Kumpulkan semua RemoteEvent/Function di dalam netFolder
+local allRemotes = {}
+local function scan(parent, depth)
+    if depth > 5 then return end
+    for _, child in pairs(parent:GetChildren()) do
+        if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+            table.insert(allRemotes, child)
+        end
+        if child:IsA("Folder") then
+            scan(child, depth+1)
+        end
+    end
+end
+scan(netFolder, 0)
+
+send("📋 Total Remote di net: " .. #allRemotes)
+
+-- Cari yang mengandung keyword fishing/pet
+local keywords = {"fish", "pet", "cast", "reel", "catch", "hook", "bait", "auto", "cooldown", "end", "start"}
+local targets = {}
+for _, remote in ipairs(allRemotes) do
+    local nameLower = remote.Name:lower()
+    for _, kw in ipairs(keywords) do
+        if nameLower:find(kw) then
+            table.insert(targets, remote)
+            send("🎯 Ditemukan: " .. remote.Name .. " (" .. remote.ClassName .. ") | Path: " .. remote:GetFullName())
+            break
+        end
+    end
+end
+
+if #targets == 0 then
+    send("❌ Tidak ada remote fishing/pet ditemukan. Mencetak semua nama remote:")
+    local list = {}
+    for _, r in ipairs(allRemotes) do
+        table.insert(list, r.Name)
+    end
+    send(table.concat(list, "\n"))
+    return
+end
+
+send("🔥 Menyiapkan exploit: akan mencoba memanggil Remote 'EndFishing' untuk semua pet setiap 0.5 detik...")
+
+-- Cari remote yang namanya mengandung "end" atau "finish"
+local endRemote
+for _, r in ipairs(targets) do
+    if r.Name:lower():find("end") or r.Name:lower():find("finish") then
+        endRemote = r
+        send("🚀 Menggunakan Remote: " .. r.Name .. " untuk mempercepat fishing.")
+        break
+    end
+end
+
+if not endRemote then
+    -- Cari remote apa saja yang mungkin menjadi pengganti
+    send("⚠️ Tidak ada remote End. Mencoba remote lain yang mungkin (Start/Cast/Toggle)...")
+    for _, r in ipairs(targets) do
+        send("-> " .. r.Name)
+    end
+    -- Mungkin pet fishing dimulai/diakhiri via server otomatis tanpa remote khusus.
+    -- Kita bisa coba kirim sinyal dengan nama pet ke remote yang ada, atau kita perlu melihat lebih dalam modul.
+    return
+end
+
+-- Eksekusi exploit
+local petNames = {"Axolotl", "ArcticFox", "Penguin", "Capybara", "Otter"} -- semua pet yang mungkin
 spawn(function()
     while true do
-        for _, pet in ipairs(fills) do
+        for _, petName in ipairs(petNames) do
             pcall(function()
-                if pet.Fill and pet.Fill.Parent then
-                    -- Set Fill ke 100% (scale X = 1)
-                    pet.Fill.Size = UDim2.new(1, 0, 1, 0)
-                    -- Trigger sinyal Changed untuk memastikan game mendeteksi
-                    local changed = pet.Fill.Changed
-                    changed:Fire(pet.Fill, "Size")
+                if endRemote:IsA("RemoteEvent") then
+                    endRemote:FireServer(petName)
+                elseif endRemote:IsA("RemoteFunction") then
+                    endRemote:InvokeServer(petName)
                 end
+                send("📤 Mengirim End untuk " .. petName)
             end)
         end
-        task.wait(0.3)
+        task.wait(0.5)
     end
 end)
 
-send("✅ Exploit berjalan. Amati apakah ikan bertambah drastis. Jika tidak efektif, kita cari metode lain.")
+send("✅ Exploit aktif. Periksa apakah ikan dari pet bertambah cepat.")
