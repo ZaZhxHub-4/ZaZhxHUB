@@ -1,123 +1,161 @@
--- // DEEP GUI & MODEL INSPECTOR + AGGRESSIVE POLLING
--- // Fokus: Isi GUI Fishing, properti model pet, dan deteksi perubahan teks cooldown
+-- // FINAL DIAGNOSTIC & EXPLOIT TRIGGER
+-- // Fokus: Monitor PetFishingStatus BillboardGui + Cari tombol Auto-Fish
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
-local Players = game:GetService("Players")
 local WS = game:GetService("Workspace")
-local LP = Players.LocalPlayer
+local LP = game:GetService("Players").LocalPlayer
+local UIS = game:GetService("UserInputService")
 
 local function send(msg)
     pcall(function()
-        local body = HS:JSONEncode({content = tostring(msg)})
+        local body = HS:JSONEncode({content = "`" .. os.date("%H:%M:%S") .. "` " .. msg})
         if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
         elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
         else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body}) end
     end)
 end
 
-send("=== INSPEKSI GUI FISHING & MODEL PET ===")
+send("🔬 Memulai monitoring PetFishingStatus + pencarian tombol Auto...")
 
--- 1. Dump seluruh isi GUI Fishing (nama, kelas, properti penting)
-local fishingGUI = LP.PlayerGui:FindFirstChild("Fishing")
-if fishingGUI then
-    send("📦 GUI Fishing ditemukan. Mengurai struktur...")
-    local dump = ""
-    for _, child in pairs(fishingGUI:GetDescendants()) do
-        local info = child.Name .. " [" .. child.ClassName .. "] "
-        if child:IsA("TextLabel") then
-            info = info .. "Text='" .. child.Text .. "' "
-        elseif child:IsA("Frame") then
-            info = info .. "Size=" .. tostring(child.Size) .. " "
-        elseif child:IsA("ImageLabel") or child:IsA("ImageButton") then
-            info = info .. "Image=" .. tostring(child.Image) .. " "
-        elseif child:IsA("LocalScript") or child:IsA("ModuleScript") then
-            info = info .. "ScriptSourceAvailable=" .. (pcall(function() return child.Source end) and "yes" or "no") .. " "
-        end
-        if child:GetAttribute("Cooldown") then
-            info = info .. "CooldownAttr=" .. tostring(child:GetAttribute("Cooldown")) .. " "
-        end
-        if child:GetAttribute("PetName") then
-            info = info .. "PetNameAttr=" .. tostring(child:GetAttribute("PetName")) .. " "
-        end
-        if #dump + #info + 2 > 1900 then
-            send("```\n" .. dump .. "\n```")
-            dump = ""
-        end
-        dump = dump .. info .. "\n"
-    end
-    if #dump > 0 then send("```\n" .. dump .. "\n```") end
-else
-    send("❌ GUI Fishing tidak ada.")
-end
-
--- 2. Inspeksi model pet Otter dan Axolotl (cari script, humanoid, animasi)
-local petNames = {"Otter", "Axolotl"}
-for _, name in ipairs(petNames) do
-    local pet = WS:FindFirstChild(name)
-    if pet then
-        send("🐾 Inspeksi " .. name .. ":")
-        local details = ""
-        for _, child in pairs(pet:GetDescendants()) do
-            details = details .. child.Name .. " [" .. child.ClassName .. "]\n"
-            if child:IsA("LocalScript") or child:IsA("ModuleScript") then
-                -- coba ambil source
-                local ok, src = pcall(function() return child.Source end)
-                if ok and src then
-                    send("📜 Source " .. child.Name .. ":\n```lua\n" .. src:sub(1, 1500) .. "\n```")
-                end
-            end
-            if child:IsA("Animation") then
-                details = details .. "  AnimationId: " .. tostring(child.AnimationId) .. "\n"
-            end
-        end
-        if #details > 0 then send("```\n" .. details .. "\n```") end
+-- 1. Kumpulkan semua pet dengan PetFishingStatus BillboardGui
+local pets = {}
+for _, model in pairs(WS:GetChildren()) do
+    if model:IsA("Model") and model:FindFirstChild("PetFishingStatus") then
+        local gui = model.PetFishingStatus
+        local fill = gui.Frame.Fill
+        local label = gui.Frame.Label
+        table.insert(pets, {
+            Name = model.Name,
+            Model = model,
+            Gui = gui,
+            Fill = fill,
+            Label = label,
+            LastFillSize = fill.Size,
+            LastText = label.Text,
+            StartTime = nil
+        })
+        send("🐾 Pet terdaftar: " .. model.Name .. " - Fill size: " .. tostring(fill.Size))
     end
 end
 
--- 3. Polling agresif pada label yang mengandung teks cooldown (22s, 35s, dll.)
-send("🔍 Memulai polling teks cooldown...")
-local cooldownLabels = {}
-if fishingGUI then
-    for _, obj in pairs(fishingGUI:GetDescendants()) do
-        if obj:IsA("TextLabel") then
-            if obj.Text:match("%d+s") then
-                table.insert(cooldownLabels, obj)
-                send("Target label: " .. obj.Name .. " Text: " .. obj.Text)
+if #pets == 0 then
+    send("❌ Tidak ada pet dengan PetFishingStatus.")
+    return
+end
+
+-- 2. Cari semua tombol yang mungkin Auto-Fish di PlayerGui
+local autoBtn = nil
+for _, gui in pairs(LP.PlayerGui:GetChildren()) do
+    for _, obj in pairs(gui:GetDescendants()) do
+        if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+            local text = obj:IsA("TextButton") and obj.Text or ""
+            if text:lower():find("auto") or text:lower():find("fish") then
+                autoBtn = obj
+                send("🎯 Tombol Auto-Fish diduga: " .. obj.Name .. " (" .. obj.ClassName .. ") Text: " .. text)
             end
         end
     end
 end
 
-if #cooldownLabels == 0 then
-    send("❌ Tidak ada label cooldown ditemukan. Mencari alternatif...")
-    -- Cari semua label teks
-    if fishingGUI then
-        for _, obj in pairs(fishingGUI:GetDescendants()) do
-            if obj:IsA("TextLabel") then
-                table.insert(cooldownLabels, obj)
+if not autoBtn then
+    send("⚠️ Tombol Auto-Fish tidak ditemukan. Mencoba dari icon...")
+    -- coba cari berdasarkan posisi yang biasa (misal dekat Exit STOP)
+    local stopBtn = LP.PlayerGui.Fishing.Main.Exit
+    if stopBtn then
+        send("Tombol STOP ditemukan, mencari tombol lain di sekitar...")
+        -- mungkin ada di parent yang sama
+        local parent = stopBtn.Parent
+        for _, obj in pairs(parent:GetChildren()) do
+            if obj:IsA("ImageButton") and obj ~= stopBtn then
+                autoBtn = obj
+                send("🎯 Kemungkinan tombol lain: " .. obj.Name)
             end
         end
     end
 end
 
--- Polling setiap 0.2 detik, catat perubahan
-local lastTexts = {}
-for _, label in pairs(cooldownLabels) do
-    lastTexts[label] = label.Text
+-- 3. Fungsi untuk klik tombol
+local function clickButton(btn)
+    if not btn then return end
+    pcall(function()
+        local pos = btn.AbsolutePosition + btn.AbsoluteSize/2
+        -- Simulasi klik kiri
+        firesignal(UIS.InputBegan, {
+            UserInputType = Enum.UserInputType.MouseButton1,
+            Position = pos,
+            Delta = Vector2.new(0, 0)
+        })
+        task.wait(0.05)
+        firesignal(UIS.InputEnded, {
+            UserInputType = Enum.UserInputType.MouseButton1,
+            Position = pos,
+            Delta = Vector2.new(0, 0)
+        })
+    end)
 end
 
+-- 4. Loop monitoring dan trigger
 spawn(function()
     while true do
-        for _, label in pairs(cooldownLabels) do
-            if label.Parent then
-                if label.Text ~= lastTexts[label] then
-                    send("⏱️ " .. label.Name .. ": \"" .. lastTexts[label] .. "\" -> \"" .. label.Text .. "\"")
-                    lastTexts[label] = label.Text
+        local now = tick()
+        for _, pet in ipairs(pets) do
+            if pet.Fill.Parent then
+                local newSize = pet.Fill.Size
+                local newText = pet.Label.Text
+
+                -- Deteksi jika fill berubah (progress)
+                if newSize ~= pet.LastFillSize then
+                    local info = string.format("📊 %s Fill: %s -> %s (Text: %s)", pet.Name, tostring(pet.LastFillSize), tostring(newSize), newText)
+                    send(info)
+
+                    -- Jika fill mulai dari 0 (mulai fishing)
+                    if newSize.X.Scale < 0.05 and (pet.StartTime == nil or (now - pet.StartTime) > 1) then
+                        pet.StartTime = now
+                        send("⏱️ " .. pet.Name .. " mulai memancing.")
+                    end
+
+                    -- Jika fill penuh (selesai)
+                    if newSize.X.Scale > 0.95 and pet.StartTime then
+                        local duration = now - pet.StartTime
+                        local expected = 22 -- default, bisa disesuaikan
+                        if pet.Name == "Penguin" then expected = 35
+                        elseif pet.Name == "Capybara" then expected = 65
+                        end
+                        send("✅ " .. pet.Name .. " selesai dalam " .. string.format("%.2f", duration) .. "s (expected " .. expected .. "s)")
+                        if duration < expected * 0.8 then
+                            send("🚨 BUG SKIP TERJADI! " .. pet.Name .. " terlalu cepat!")
+                        end
+                        pet.StartTime = nil
+                    end
+
+                    pet.LastFillSize = newSize
+                end
+
+                if newText ~= pet.LastText then
+                    send("💬 " .. pet.Name .. " Label: \"" .. pet.LastText .. "\" -> \"" .. newText .. "\"")
+                    pet.LastText = newText
                 end
             end
         end
-        task.wait(0.2)
+        task.wait(0.1)
     end
 end)
 
-send("✅ Inspeksi selesai, polling berjalan. Lakukan mancing + pemicu bug.")
+-- 5. Auto-trigger bug dengan toggle Auto-Fish cepat
+if autoBtn then
+    send("🔁 Memulai auto-trigger bug setiap 5 detik...")
+    spawn(function()
+        while true do
+            task.wait(5)
+            send("🔄 Trigger bug: klik tombol cepat")
+            for i=1, 3 do
+                clickButton(autoBtn)
+                task.wait(0.1)
+            end
+        end
+    end)
+else
+    send("❌ Tidak bisa auto-trigger karena tombol tidak ditemukan. Silakan lakukan manual.")
+end
+
+send("✅ Monitoring penuh berjalan. Lakukan mancing dengan pet.")
