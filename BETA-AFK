@@ -1,98 +1,134 @@
--- // DEEP INSPECT: Bongkar ModuleScript kunci
+-- // RUNTIME MONITOR: Tangkap semua aktivitas komunikasi & GUI saat mancing
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
-local function sendLong(msg, title)
-    local maxLen = 1900
-    local chunk = ""
-    local function flush()
-        if chunk ~= "" then
-            pcall(function()
-                local body = game:GetService("HttpService"):JSONEncode({content = chunk})
-                if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-                elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-                else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+-- Fungsi kirim ke Discord (ringan, tanpa buffer)
+local function log(msg)
+    pcall(function()
+        local body = game:GetService("HttpService"):JSONEncode({
+            content = "`" .. os.date("%H:%M:%S") .. "` " .. tostring(msg)
+        })
+        if http_request then
+            http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        elseif syn and syn.request then
+            syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        else
+            request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        end
+    end)
+end
+
+log("🚀 Runtime monitor aktif. Mulai mancing dan pemicu bug...")
+
+-- 1. Hook Instance.new untuk menangkap objek baru
+local oldNew = Instance.new
+local function hookNew(className, parent)
+    local obj = oldNew(className, parent)
+    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("BindableEvent") or obj:IsA("BindableFunction") then
+        log("🆕 Instance baru: " .. className .. " - " .. tostring(obj.Name) .. " di " .. tostring(parent))
+        -- Hook fungsi komunikasi pada objek baru
+        if obj:IsA("RemoteEvent") then
+            local oldFire = obj.FireServer
+            obj.FireServer = function(self, ...)
+                log("📤 [RemoteEvent:FireServer] " .. self.Name .. " args: " .. table.concat({...}, ", "))
+                return oldFire(self, ...)
+            end
+        elseif obj:IsA("RemoteFunction") then
+            local oldInvoke = obj.InvokeServer
+            obj.InvokeServer = function(self, ...)
+                log("📤 [RemoteFunction:InvokeServer] " .. self.Name .. " args: " .. table.concat({...}, ", "))
+                return oldInvoke(self, ...)
+            end
+        elseif obj:IsA("BindableEvent") then
+            local oldFire = obj.Fire
+            obj.Fire = function(self, ...)
+                log("🔗 [BindableEvent:Fire] " .. self.Name .. " args: " .. table.concat({...}, ", "))
+                return oldFire(self, ...)
+            end
+        elseif obj:IsA("BindableFunction") then
+            local oldInvoke = obj.Invoke
+            obj.Invoke = function(self, ...)
+                log("🔗 [BindableFunction:Invoke] " .. self.Name .. " args: " .. table.concat({...}, ", "))
+                return oldInvoke(self, ...)
+            end
+        end
+    end
+    return obj
+end
+Instance.new = hookNew
+
+-- 2. Hook semua objek komunikasi yang sudah ada
+for _, obj in pairs(game:GetDescendants()) do
+    if obj:IsA("RemoteEvent") then
+        pcall(function()
+            local oldFire = obj.FireServer
+            obj.FireServer = function(self, ...)
+                log("📤 [Existing Remote:FireServer] " .. obj:GetFullName() .. " args: " .. table.concat({...}, ", "))
+                return oldFire(self, ...)
+            end
+        end)
+    elseif obj:IsA("RemoteFunction") then
+        pcall(function()
+            local oldInvoke = obj.InvokeServer
+            obj.InvokeServer = function(self, ...)
+                log("📤 [Existing Remote:InvokeServer] " .. obj:GetFullName() .. " args: " .. table.concat({...}, ", "))
+                return oldInvoke(self, ...)
+            end
+        end)
+    elseif obj:IsA("BindableEvent") then
+        pcall(function()
+            local oldFire = obj.Fire
+            obj.Fire = function(self, ...)
+                log("🔗 [Existing Bindable:Fire] " .. obj:GetFullName() .. " args: " .. table.concat({...}, ", "))
+                return oldFire(self, ...)
+            end
+        end)
+    elseif obj:IsA("BindableFunction") then
+        pcall(function()
+            local oldInvoke = obj.Invoke
+            obj.Invoke = function(self, ...)
+                log("🔗 [Existing Bindable:Invoke] " .. obj:GetFullName() .. " args: " .. table.concat({...}, ", "))
+                return oldInvoke(self, ...)
+            end
+        end)
+    end
+end
+
+-- 3. Hook require untuk melihat modul yang dipanggil
+local oldRequire = require
+local function hookedRequire(module)
+    log("📚 require: " .. tostring(module))
+    local result = oldRequire(module)
+    -- Jika result adalah table, kita bisa hook fungsi-fungsi di dalamnya (nanti kita kembangkan)
+    return result
+end
+require = hookedRequire
+
+-- 4. Monitor GUI Fishing (ProgressBar cooldown pet)
+local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+local fishingGUI = playerGui:FindFirstChild("Fishing")
+if fishingGUI then
+    log("🎣 Memonitor GUI Fishing...")
+    -- Cari semua Frame/ProgressBar dan kaitkan perubahan
+    for _, obj in pairs(fishingGUI:GetDescendants()) do
+        if obj:IsA("Frame") and (obj.Name:lower():find("pet") or obj.Name:lower():find("cooldown")) then
+            log("🔍 Mencurigai frame pet: " .. obj:GetFullName())
+            -- Monitor perubahan ukuran/posisi (cooldown bar)
+            local conn = obj.Changed:Connect(function(prop)
+                if prop == "Size" or prop == "Position" or prop == "BackgroundColor3" then
+                    log("🖼️ GUI Change: " .. obj:GetFullName() .. " prop: " .. prop)
                 end
             end)
-            chunk = ""
+        end
+        if obj:IsA("TextLabel") and (obj.Name:lower():find("pet") or obj.Text:lower():find("cooldown") or obj.Text:lower():find("22s") or obj.Text:lower():find("35s")) then
+            local conn = obj.Changed:Connect(function(prop)
+                if prop == "Text" then
+                    log("📝 Text Change: " .. obj:GetFullName() .. " -> \"" .. obj.Text .. "\"")
+                end
+            end)
         end
     end
-    if title then
-        sendLong("**" .. title .. "**")
-    end
-    for line in msg:gmatch("[^\r\n]+") do
-        if #chunk + #line + 5 > maxLen then
-            flush()
-        end
-        chunk = chunk .. line .. "\n"
-    end
-    flush()
-end
-
-local RS = game:GetService("ReplicatedStorage")
-local function getSource(module)
-    -- ModuleScript source via getsenv atau debug.getinfo (executor harus support)
-    local success, source = pcall(function()
-        return getsenv(module).script.Source -- alternatif
-    end)
-    if not success or not source then
-        -- fallback: coba loadstring
-        success, source = pcall(function()
-            return module.Source
-        end)
-    end
-    if not success then
-        -- coba debug.getconstant
-        pcall(function()
-            local constants = debug.getconstants(module)
-            source = table.concat(constants, "\n")
-        end)
-    end
-    return tostring(source)
-end
-
--- Modul yang ingin diperiksa
-local modules = {"Pets", "CmdrClient", "FishingRodModifiers", "FishWeightChances"}
-for _, name in ipairs(modules) do
-    local mod = RS:FindFirstChild(name)
-    if mod and mod:IsA("ModuleScript") then
-        local src = getSource(mod)
-        if src and #src > 10 then
-            sendLong(src, "📄 " .. name .. " source")
-        else
-            sendLong("Tidak bisa membaca source " .. name .. " (mungkin dikaburkan).", "⚠️ " .. name)
-        end
-    end
-end
-
--- Periksa juga PlayerGui > Fishing untuk LocalScript
-local PG = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-local fishingGUI = PG:FindFirstChild("Fishing")
-if fishingGUI then
-    for _, obj in pairs(fishingGUI:GetDescendants()) do
-        if obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
-            sendLong(getSource(obj), "🎣 Fishing GUI Script: " .. obj.Name)
-        end
-    end
-end
-
--- Periksa PlayerScripts untuk script loader
-local PS = game:GetService("Players").LocalPlayer:WaitForChild("PlayerScripts")
-local loader = PS:FindFirstChild("PlayerScriptsLoader")
-if loader and loader:IsA("LocalScript") then
-    sendLong(getSource(loader), "📜 PlayerScriptsLoader")
-end
-
--- Cari BindableEvent/Func di seluruh game
-local bindables = {}
-for _, obj in pairs(game:GetDescendants()) do
-    if obj:IsA("BindableEvent") or obj:IsA("BindableFunction") then
-        table.insert(bindables, obj.Name .. " (" .. obj.ClassName .. ") - Parent: " .. obj.Parent:GetFullName())
-    end
-end
-if #bindables > 0 then
-    sendLong(table.concat(bindables, "\n"), "🔗 Bindable Events/Functions")
 else
-    sendLong("Tidak ada BindableEvent/Function ditemukan.")
+    log("⚠️ GUI Fishing tidak ditemukan!")
 end
 
-print("Deep inspect dikirim ke Discord.")
+log("✅ Monitoring siap. Silakan pancing dengan pet dan trigger bug.")
