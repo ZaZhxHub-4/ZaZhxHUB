@@ -1,12 +1,10 @@
--- // PET BUG MAINTAINER v3: Direct Remote Toggle + Fill Monitor
--- // Menggunakan RF/UpdateAutoFishingState untuk memicu race condition
--- // Memonitor Fill bar untuk deteksi bug
+-- // DEEP MONITOR: Hook semua fungsi internal & remote untuk menangkap bug race condition
+-- // Tidak mengirim data palsu, hanya logging pasif. Aman dari anti-cheat.
+
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
-local WS = game:GetService("Workspace")
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
+local LP = game:GetService("Players").LocalPlayer
 
 local function send(msg)
     pcall(function()
@@ -17,119 +15,133 @@ local function send(msg)
     end)
 end
 
-send("🔄 PET BUG MAINTAINER v3 dimulai...")
+send("🔬 DEEP MONITOR: Memasang hook pasif pada semua fungsi terkait Pet & Fish...")
 
--- Dapatkan remote UpdateAutoFishingState
+-- ------------------------------------------------------------
+-- 1. Hook fungsi di dalam modul Pets (getsenv)
+-- ------------------------------------------------------------
+local function hookModule(name)
+    local found = false
+    for _, mod in ipairs(getloadedmodules()) do
+        if mod.Name == name and mod:IsA("ModuleScript") then
+            local env = getsenv(mod)
+            if not env then
+                send("⚠️ getsenv " .. name .. " gagal.")
+                break
+            end
+            for k, v in pairs(env) do
+                if type(v) == "function" then
+                    local fname = tostring(k)
+                    pcall(function()
+                        local old = v
+                        env[k] = function(...)
+                            local args = {...}
+                            local argsStr = ""
+                            for i, a in ipairs(args) do
+                                argsStr = argsStr .. tostring(a):sub(1, 30) .. (i == #args and "" or ", ")
+                            end
+                            send("⚙️ [Internal:" .. name .. "] " .. fname .. "(" .. argsStr .. ")")
+                            return old(...)
+                        end
+                    end)
+                end
+            end
+            send("✅ Hook dipasang pada semua fungsi di " .. name)
+            found = true
+            break
+        end
+    end
+    if not found then
+        send("❌ Modul " .. name .. " tidak ditemukan di memori.")
+    end
+end
+
+hookModule("Pets")
+hookModule("CmdrClient")
+
+-- ------------------------------------------------------------
+-- 2. Hook RemoteEvent/Fungsi di sleitnick_net yang relevan (hanya log)
+-- ------------------------------------------------------------
 local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
-local autoRF = netFolder:FindFirstChild("RF/UpdateAutoFishingState")
-local markRF = netFolder:FindFirstChild("RF/MarkAutoFishingUsed")
+local keywords = {"Fish", "Pet", "Auto", "Fishing", "Catch", "Bait", "Minigame"}
 
-if autoRF then
-    send("✅ Remote UpdateAutoFishingState ditemukan. Menggunakan direct toggle.")
-else
-    send("⚠️ Remote tidak ditemukan. Fallback ke UI click.")
-end
-
--- Fungsi toggle auto menggunakan remote (jika ada) atau UI
-local function toggleAuto()
-    if autoRF then
-        pcall(function() autoRF:InvokeServer(true) end)
-        task.wait(0.05)
-        pcall(function() autoRF:InvokeServer(false) end)
-        return true
-    end
-    -- Fallback ke tombol UI
-    local btn = LP.PlayerGui.Backpack:FindFirstChild("AutoFishingButton")
-    if btn then
+local function hookRemote(obj, label)
+    if obj:IsA("RemoteEvent") then
         pcall(function()
-            local pos = btn.AbsolutePosition + btn.AbsoluteSize/2
-            firesignal(game:GetService("UserInputService").InputBegan, {UserInputType=Enum.UserInputType.MouseButton1, Position=pos})
-            task.wait(0.05)
-            firesignal(game:GetService("UserInputService").InputEnded, {UserInputType=Enum.UserInputType.MouseButton1, Position=pos})
+            local oldFire = obj.FireServer
+            obj.FireServer = function(self, ...)
+                local args = {...}
+                local argsStr = ""
+                for i, a in ipairs(args) do
+                    argsStr = argsStr .. tostring(a):sub(1, 30) .. (i == #args and "" or ", ")
+                end
+                send("📤 [Server:" .. label .. "] FireServer(" .. argsStr .. ")")
+                return oldFire(self, ...)
+            end
         end)
-        return true
+    elseif obj:IsA("RemoteFunction") then
+        pcall(function()
+            local oldInvoke = obj.InvokeServer
+            obj.InvokeServer = function(self, ...)
+                local args = {...}
+                local argsStr = ""
+                for i, a in ipairs(args) do
+                    argsStr = argsStr .. tostring(a):sub(1, 30) .. (i == #args and "" or ", ")
+                end
+                send("📤 [Server:" .. label .. "] InvokeServer(" .. argsStr .. ")")
+                return oldInvoke(self, ...)
+            end
+        end)
     end
-    return false
 end
 
--- Periodik trigger: setiap 50 detik, lakukan toggle cepat 5x, akhiri dengan auto ON
-spawn(function()
-    while true do
-        task.wait(50)
-        send("🔄 Memicu race condition (5x toggle)...")
-        -- Lakukan 5x toggle (ganjil agar state akhir berlawanan dengan awal, kita ingin ON)
-        -- Asumsikan state awal mungkin OFF, setelah 5x akan ON
-        for i = 1, 5 do
-            toggleAuto()
-            task.wait(0.1)
+for _, obj in ipairs(netFolder:GetChildren()) do
+    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+        local name = obj.Name
+        for _, kw in ipairs(keywords) do
+            if name:lower():find(kw:lower()) then
+                hookRemote(obj, name)
+                send("🪝 Hook " .. name)
+                break
+            end
         end
-        -- Setelah itu, pastikan auto ON dengan memanggil autoRF(true) jika ada
-        if autoRF then
-            pcall(function() autoRF:InvokeServer(true) end)
-        else
-            -- klik lagi sekali jika ingin memastikan ON (ini mungkin tidak akurat)
-            toggleAuto()
-        end
-        send("✅ Trigger selesai. Auto seharusnya ON.")
     end
-end)
+end
 
--- Monitoring Fill bar (dengan pencarian ulang berkala)
-local fills = {}
-local function findFills()
-    fills = {}
-    for _, obj in pairs(WS:GetDescendants()) do
+-- ------------------------------------------------------------
+-- 3. Monitor Fill bar untuk deteksi visual (sekadar informasi)
+-- ------------------------------------------------------------
+task.spawn(function()
+    task.wait(3)
+    local fills = {}
+    for _, obj in ipairs(game:GetService("Workspace"):GetDescendants()) do
         if obj:IsA("BillboardGui") and obj.Name == "PetFishingStatus" then
-            local fill = obj:FindFirstChild("Frame") and obj.Frame:FindFirstChild("Fill")
+            local fill = obj.Frame and obj.Frame.Fill
             if fill then
-                local petModel = obj.Parent
-                local name = petModel and petModel.Name or "Unknown"
-                fills[#fills + 1] = {Name = name, Fill = fill, LastScale = fill.Size.X.Scale, StartTime = nil}
+                fills[#fills + 1] = fill
             end
         end
     end
     if #fills > 0 then
-        send("🐾 Ditemukan " .. #fills .. " pet Fill bar untuk monitoring.")
-    end
-end
-
--- Cari fill setiap 5 detik sampai ketemu
-spawn(function()
-    while #fills == 0 do
-        findFills()
-        task.wait(5)
-    end
-    -- Mulai monitoring
-    while true do
-        local now = tick()
-        for _, pet in pairs(fills) do
-            if pet.Fill and pet.Fill.Parent then
-                local scale = pet.Fill.Size.X.Scale
-                local last = pet.LastScale
-                if math.abs(scale - last) > 0.001 then
-                    local delta = scale - last
-                    if delta > 0.2 and last > 0.1 then
-                        send("🚨 LOMPAT " .. pet.Name .. ": " .. string.format("%.2f", last) .. " -> " .. string.format("%.2f", scale))
-                        if pet.StartTime then
-                            local elapsed = now - pet.StartTime
-                            send("⏱️ " .. pet.Name .. " selesai dalam " .. string.format("%.2f", elapsed) .. "s (seharusnya 22s)")
-                            pet.StartTime = nil
-                        end
+        send("👁️ Monitoring visual " .. #fills .. " pet Fill bar...")
+        local lastScales = {}
+        for _, f in ipairs(fills) do lastScales[f] = f.Size.X.Scale end
+        while true do
+            for _, f in ipairs(fills) do
+                if f.Parent then
+                    local scale = f.Size.X.Scale
+                    local last = lastScales[f]
+                    if math.abs(scale - last) > 0.25 and last > 0.1 then
+                        send("📊 Visual jump: " .. string.format("%.2f -> %.2f", last, scale))
                     end
-                    if pet.StartTime == nil and scale < 0.05 and last == 0 then
-                        pet.StartTime = now
-                    end
-                    if scale > 0.99 and pet.StartTime then
-                        local elapsed = now - pet.StartTime
-                        send("✅ " .. pet.Name .. " selesai normal " .. string.format("%.2f", elapsed) .. "s")
-                        pet.StartTime = nil
-                    end
-                    pet.LastScale = scale
+                    lastScales[f] = scale
                 end
             end
+            task.wait(0.3)
         end
-        task.wait(0.2)
+    else
+        send("⚠️ Tidak ada Fill bar ditemukan.")
     end
 end)
 
-send("✅ Script siap. Race condition akan dipicu setiap 50 detik. Pantau Discord untuk lompatan cooldown.")
+send("✅ Deep monitor aktif. Silakan pancing seperti biasa, trigger bug secara manual (tanpa script). Amati Discord.")
