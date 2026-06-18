@@ -1,14 +1,13 @@
--- // ZHX Fast Reel + Pet Bug v3.1 (FIX: Pet Bug ends with Auto OFF)
--- // Remote hash method, no hook, minimal UI
--- // Fast Reel: charge -> minigame -> catch (no cancel, no auto)
--- // Pet Bug: toggle auto 5x -> ends OFF, so it won't interfere with Fast Reel
+-- // ZHX Fast Reel + Pet Bug v3.2 (Final Fix)
+-- // - Fast Reel: auto-equip rod, no cancel, stable cycle
+-- // - Pet Bug Trigger: force OFF, then 2x quick ON-OFF, ends OFF
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 
--- ========== REMOTE HASH FINDER (from Auto Booth) ==========
+-- ========== REMOTE HASH FINDER ==========
 local function findRemoteByLabel(label)
     local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
     local children = net:GetChildren()
@@ -33,11 +32,12 @@ end
 local chargeRF    = findRemoteByLabel("RF/ChargeFishingRod")
 local minigameRF  = findRemoteByLabel("RF/RequestFishingMinigameStarted")
 local catchRE     = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLabel("RE/FishCaught")
+local equipRE     = findRemoteByLabel("RE/EquipToolFromHotbar")  -- equip rod
 local autoStateRF = findRemoteByLabel("RF/UpdateAutoFishingState")
 local markAutoRF  = findRemoteByLabel("RF/MarkAutoFishingUsed")
 
 if not chargeRF or not minigameRF or not catchRE then
-    error("Remote inti tidak ditemukan. Pastikan di dalam game.")
+    error("Remote inti tidak ditemukan.")
 end
 
 -- ========== KONFIGURASI ==========
@@ -55,7 +55,28 @@ local config = {
 local fastReelThread = nil
 local petBugThread   = nil
 
--- ========== FAST REEL (TANPA CANCEL, TANPA AUTO) ==========
+-- ========== EQUIP ROD ==========
+local function equipRod()
+    if equipRE then
+        pcall(function() equipRE:FireServer(1) end)  -- hotbar slot 1
+    else
+        -- Fallback: klik tombol hotbar 1 (jika UI ada)
+        local hotbar = LP.PlayerGui:FindFirstChild("Backpack")
+        if hotbar then
+            local slot1 = hotbar:FindFirstChild("1") or hotbar:FindFirstChild("Slot1")
+            if slot1 and slot1:IsA("ImageButton") then
+                pcall(function()
+                    local pos = slot1.AbsolutePosition + slot1.AbsoluteSize/2
+                    firesignal(UIS.InputBegan, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                    task.wait(0.03)
+                    firesignal(UIS.InputEnded, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                end)
+            end
+        end
+    end
+end
+
+-- ========== FAST REEL (NO CANCEL) ==========
 local function fastReelCycle()
     pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
     task.wait(0.01)
@@ -69,6 +90,8 @@ end
 
 local function startFastReel()
     if config.fastReelActive then return end
+    equipRod()
+    task.wait(0.1)
     config.fastReelActive = true
     fastReelThread = task.spawn(function()
         while config.fastReelActive do
@@ -83,23 +106,23 @@ local function stopFastReel()
     if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
 end
 
--- ========== PET BUG TRIGGER (AKHIR OFF) ==========
+-- ========== PET BUG TRIGGER (FORCE OFF, 2x ON-OFF, ENDS OFF) ==========
 local function triggerPetBug()
     if not autoStateRF then return end
-    -- Toggle ganjil: mulai dari state saat ini (misal OFF), setelah 5x tetap OFF?
-    -- Kita pastikan: matikan dulu, lalu toggle 4x, akhiri dengan OFF
+    -- Paksa OFF dulu
     pcall(function() autoStateRF:InvokeServer(false) end)
-    task.wait(0.05)
-    for i = 1, 4 do
+    task.wait(0.03)
+    -- 2x siklus ON-OFF cepat
+    for _ = 1, 2 do
         pcall(function() autoStateRF:InvokeServer(true) end)
-        task.wait(0.05)
+        task.wait(0.03)
         pcall(function() autoStateRF:InvokeServer(false) end)
-        task.wait(0.05)
+        task.wait(0.03)
     end
-    -- Akhiri OFF
+    -- Pastikan berakhir OFF
     pcall(function() autoStateRF:InvokeServer(false) end)
     if markAutoRF then
-        task.wait(0.1)
+        task.wait(0.05)
         pcall(function() markAutoRF:InvokeServer() end)
     end
 end
@@ -123,14 +146,14 @@ end
 -- ========== UI MINIMALIS ==========
 local pg = LP:WaitForChild("PlayerGui")
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_FastReel_v3.1"
+sg.Name = "ZHX_FastReel_v3.2"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 250, 0, 220)
-frame.Position = UDim2.new(1, -260, 1, -230)
+frame.Size = UDim2.new(0, 250, 0, 230)
+frame.Position = UDim2.new(1, -260, 1, -240)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
@@ -142,7 +165,7 @@ Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "⚡ Fast Reel + Pet Bug v3.1"
+title.Text = "⚡ Fast Reel + Pet Bug v3.2"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -269,4 +292,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("ZHX Fast Reel + Pet Bug v3.1 loaded (Auto OFF fix).")
+print("ZHX Fast Reel + Pet Bug v3.2 loaded. Equip otomatis, pet trigger OFF.")
