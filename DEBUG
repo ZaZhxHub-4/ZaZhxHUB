@@ -1,6 +1,7 @@
--- // ZHX Fishing Exploit v5.1 - Integrated Smart Pet Bug
--- // Pet Bug Trigger terjadi tepat setelah catch, tanpa ganggu Fast Reel
--- // Remote hash method, UI minimalis
+-- // ZHX Smart Fishing v5.5 — Timing Trigger for Pet Bug
+-- // Remote hash finder, UI minimalis, adjustable timing setelah charge
+-- // Pet Bug trigger dijalankan tepat setelah 'Timing Trigger' detik dari charge
+-- // Tanpa ganggu Fast Reel
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -49,7 +50,11 @@ local config = {
 
     petBugActive   = false,
     petBugInterval = 55,      -- detik antar trigger
-    lastPetBugTime = 0,       -- internal
+    timingTrigger  = 2.5,     -- detik setelah charge untuk menjalankan trigger
+
+    -- Internal
+    lastPetBugTime = 0,
+    chargeStartTime = 0,
 }
 
 local fastReelThread = nil
@@ -73,12 +78,13 @@ local function equipRod()
     end
 end
 
--- ========== FAST REEL + INTEGRATED PET BUG ==========
+-- ========== PET BUG TRIGGER (2x ON-OFF, ringan) ==========
 local function triggerPetBug()
     if not autoStateRF then return end
-    -- 3x ON-OFF cepat
+    -- Paksa OFF dulu
     pcall(function() autoStateRF:InvokeServer(false) end)
-    for _ = 1, 3 do
+    -- 2x siklus ON-OFF cepat
+    for _ = 1, 2 do
         pcall(function() autoStateRF:InvokeServer(true) end)
         task.wait(0.02)
         pcall(function() autoStateRF:InvokeServer(false) end)
@@ -88,21 +94,43 @@ local function triggerPetBug()
     if cancelRF then pcall(function() cancelRF:InvokeServer() end) end
 end
 
+-- ========== FAST REEL CYCLE (dengan timing trigger) ==========
 local function fastReelCycle()
     -- Charge
     pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
-    -- Minigame start
+    config.chargeStartTime = tick()
+
+    -- Minigame
     pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
-    -- Tunggu reel delay
-    task.wait(config.reelDelay)
+
+    -- Spawn tugas untuk trigger pet bug setelah timingTrigger detik
+    if config.petBugActive then
+        local now = tick()
+        if now - config.lastPetBugTime >= config.petBugInterval then
+            task.spawn(function()
+                local elapsed = tick() - config.chargeStartTime
+                local waitTime = math.max(0, config.timingTrigger - elapsed)
+                if waitTime > 0 then
+                    task.wait(waitTime)
+                end
+                -- Pastikan masih dalam fastReelActive agar tidak trigger setelah stop
+                if config.fastReelActive and config.petBugActive then
+                    triggerPetBug()
+                    config.lastPetBugTime = tick()
+                end
+            end)
+        end
+    end
+
+    -- Tunggu reel delay (total waktu dari charge sampai catch)
+    local elapsed = tick() - config.chargeStartTime
+    local remaining = math.max(0, config.reelDelay - elapsed)
+    if remaining > 0 then
+        task.wait(remaining)
+    end
+
     -- Catch
     pcall(function() catchRE:FireServer() end)
-
-    -- Integrated Pet Bug: jalankan jika waktunya dan tidak bentrok
-    if config.petBugActive and (tick() - config.lastPetBugTime >= config.petBugInterval) then
-        triggerPetBug()
-        config.lastPetBugTime = tick()
-    end
 end
 
 local function mainLoop()
@@ -127,17 +155,10 @@ local function stopFastReel()
     if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
 end
 
-local function setPetBugActive(active)
-    config.petBugActive = active
-    if active then
-        config.lastPetBugTime = 0  -- reset, langsung trigger di cycle berikutnya
-    end
-end
-
 -- ========== UI ==========
 local pg = LP:WaitForChild("PlayerGui")
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_FishingExploit_v5.1"
+sg.Name = "ZHX_SmartFishing_v5.5"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
@@ -156,7 +177,7 @@ Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "⚡ Smart Fishing v5.1"
+title.Text = "⚡ Smart Fishing v5.5"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -228,6 +249,8 @@ local y = 35
 makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end)
 y = y + 25
 makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end)
+y = y + 25
+makeInput(y, "Timing Trigger", config.timingTrigger, function(v) config.timingTrigger = v end)
 
 y = y + 30
 makeToggleButton(y, "Fast Reel", startFastReel, stopFastReel, function() return config.fastReelActive end)
@@ -237,8 +260,8 @@ makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBu
 
 y = y + 30
 makeToggleButton(y, "Pet Bug (Smart)", 
-    function() setPetBugActive(true) end,
-    function() setPetBugActive(false) end,
+    function() config.petBugActive = true; config.lastPetBugTime = 0 end,
+    function() config.petBugActive = false end,
     function() return config.petBugActive end
 )
 
@@ -263,4 +286,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("ZHX Smart Fishing v5.1: Pet Bug trigger after catch, no interference.")
+print("ZHX Smart Fishing v5.5 siap. Timing Trigger adjustable.")
