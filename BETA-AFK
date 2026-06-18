@@ -1,34 +1,23 @@
--- // Instant Fast Reel + Pet Bug Trigger
--- // Meniru metode Lynx: spam cancel -> charge -> minigame -> catch
--- // Menggunakan akses remote hash (seperti Auto Booth script)
--- // Tidak ada hook, hanya memanggil remote.
+-- // INSTANT FAST REEL + PET BUG TRIGGER v2.0 (dengan UI Pengatur Delay)
+-- // Menggunakan remote hash yang sudah terbukti berfungsi
+-- // UI Rayfield untuk menyesuaikan delay sesuai jenis rod
 
-local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-local HS = game:GetService("HttpService")
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local RS = game:GetService("ReplicatedStorage")
+local HS = game:GetService("HttpService")
+local UIS = game:GetService("UserInputService")
 
-local function send(msg)
-    pcall(function()
-        local body = HS:JSONEncode({content = "`" .. os.date("%H:%M:%S") .. "` " .. msg})
-        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body}) end
-    end)
-end
-
--- Fungsi mencari remote berdasarkan label folder (seperti di Auto Booth)
+-- Fungsi mencari remote hash berdasarkan label folder
 local function findRemoteByLabel(label)
     local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
     local children = net:GetChildren()
     for i, child in ipairs(children) do
         if child.Name == label then
-            -- cari di dalam folder label dulu
             local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
             if inside then
                 local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
                 if h and #h == 64 then return inside end
             end
-            -- cari di indeks berikutnya
             local nxt = children[i+1]
             if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
                 local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
@@ -40,52 +29,111 @@ local function findRemoteByLabel(label)
     return nil
 end
 
-send("🔍 Mencari remote untuk Fast Reel...")
-
 local cancelRF = findRemoteByLabel("RF/CancelFishingInputs")
 local chargeRF = findRemoteByLabel("RF/ChargeFishingRod")
 local minigameRF = findRemoteByLabel("RF/RequestFishingMinigameStarted")
 local catchRE = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLabel("RE/FishCaught")
 
 if not cancelRF or not chargeRF or not minigameRF or not catchRE then
-    send("❌ Remote tidak lengkap: Cancel="..tostring(cancelRF).." Charge="..tostring(chargeRF).." Minigame="..tostring(minigameRF).." Catch="..tostring(catchRE))
-    return
+    error("Remote tidak ditemukan! Pastikan kamu berada di dalam game.")
 end
 
-send("✅ Remote ditemukan. Memulai Instant Fast Reel...")
+-- Variabel delay (default stabil)
+local config = {
+    cancelDelay = 0.01,
+    minigameDelay = 0.05, -- waktu tunggu setelah minigame sebelum catch
+    catchDelay = 0.01,    -- jeda antar catch spam
+    catchCount = 3,       -- jumlah spam catch
+    loopInterval = 0.3    -- jeda antar siklus
+}
 
--- Parameter dari Auto Fish V4
-local chargeParam = 1755848498.4834
-local minigameParam1 = 1.2854545116425
-local minigameParam2 = 1
+local fastReelActive = false
+local loopCoroutine = nil
 
 -- Fungsi satu siklus fast reel
 local function fastReelCycle()
-    -- Cancel dulu untuk reset
     pcall(function() cancelRF:InvokeServer() end)
+    task.wait(config.cancelDelay)
+    pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
     task.wait(0.01)
-
-    -- Charge rod
-    pcall(function() chargeRF:InvokeServer(chargeParam) end)
-    task.wait(0.01)
-
-    -- Mulai minigame
-    pcall(function() minigameRF:InvokeServer(minigameParam1, minigameParam2) end)
-    task.wait(0.05) -- beri waktu sedikit sebelum catch
-
-    -- Tangkap ikan langsung (beberapa kali untuk memastikan)
-    for i = 1, 3 do
+    pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
+    task.wait(config.minigameDelay)
+    for i = 1, config.catchCount do
         pcall(function() catchRE:FireServer() end)
-        task.wait(0.01)
+        task.wait(config.catchDelay)
     end
 end
 
--- Loop fast reel agresif (setiap 0.3 detik)
-spawn(function()
-    while true do
-        fastReelCycle()
-        task.wait(0.3)
-    end
-end)
+-- Loop fast reel
+local function startFastReel()
+    if fastReelActive then return end
+    fastReelActive = true
+    loopCoroutine = task.spawn(function()
+        while fastReelActive do
+            fastReelCycle()
+            task.wait(config.loopInterval)
+        end
+    end)
+end
 
-send("⚡ Fast Reel aktif. Amati pet, seharusnya ikut terpancing bug.")
+local function stopFastReel()
+    fastReelActive = false
+end
+
+-- UI Rayfield
+local Window = Rayfield:CreateWindow({
+    Name = "⚡ Fast Reel + Pet Bug",
+    LoadingTitle = "Instant Fast Reel v2.0",
+    LoadingSubtitle = "Pengatur delay untuk stabilitas",
+    ConfigurationSaving = {Enabled = false}
+})
+
+local MainTab = Window:CreateTab("Pengaturan", 4483362458)
+
+MainTab:CreateToggle({
+    Name = "Aktifkan Fast Reel",
+    CurrentValue = false,
+    Callback = function(value)
+        if value then startFastReel() else stopFastReel() end
+    end
+})
+
+MainTab:CreateSlider({
+    Name = "Minigame Delay (detik)",
+    Range = {0, 1},
+    Increment = 0.01,
+    CurrentValue = config.minigameDelay,
+    Callback = function(value) config.minigameDelay = value end
+})
+
+MainTab:CreateSlider({
+    Name = "Catch Delay (detik)",
+    Range = {0, 0.5},
+    Increment = 0.01,
+    CurrentValue = config.catchDelay,
+    Callback = function(value) config.catchDelay = value end
+})
+
+MainTab:CreateSlider({
+    Name = "Jumlah Catch Spam",
+    Range = {1, 10},
+    Increment = 1,
+    CurrentValue = config.catchCount,
+    Callback = function(value) config.catchCount = value end
+})
+
+MainTab:CreateSlider({
+    Name = "Loop Interval (detik)",
+    Range = {0, 1},
+    Increment = 0.01,
+    CurrentValue = config.loopInterval,
+    Callback = function(value) config.loopInterval = value end
+})
+
+MainTab:CreateParagraph({
+    Title = "Tips",
+    Content = "Atur Minigame Delay lebih besar jika sering miss.\nLoop Interval terlalu kecil bisa bikin lag/terdeteksi."
+})
+
+Rayfield:Notify({Title = "Fast Reel v2.0", Content = "UI siap. Atur delay, lalu nyalakan toggle.", Duration = 5})
+print("Fast Reel v2.0 loaded.")
