@@ -44,7 +44,7 @@ end
 local config = {
     fastReelActive = false,
     reelDelay      = 2.6,
-    loopInterval   = 0.13,
+    loopInterval   = 0.15,
 
     petBugActive   = false,
     petBugInterval = 150,      -- detik antar trigger
