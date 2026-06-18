@@ -1,8 +1,10 @@
--- // PET REMOTE EXPLORER: Mencari semua remote terkait pet (label mengandung "Pet")
--- // Menggunakan hash finder method
-local RS = game:GetService("ReplicatedStorage")
-local HS = game:GetService("HttpService")
+-- // DEEP PET MODULE EXPLORER: Require & Eksplorasi Fungsi Internal
+-- // Mencari fungsi Start/End Fishing, Cooldown, dll di dalam modul Pets
+-- // Kirim hasil ke Discord
+
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+local HS = game:GetService("HttpService")
+local RS = game:GetService("ReplicatedStorage")
 
 local function send(msg)
     pcall(function()
@@ -13,61 +15,106 @@ local function send(msg)
     end)
 end
 
-local function findRemoteByLabel(label)
-    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
-    local children = net:GetChildren()
-    for i, child in ipairs(children) do
-        if child.Name == label then
-            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
-            if inside then
-                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
-                if h and #h == 64 then return inside end
+send("🔍 Memulai eksplorasi mendalam modul Pets...")
+
+-- Cari modul Pets (ModuleScript) di ReplicatedStorage
+local petsModule = RS:FindFirstChild("Pets")
+if not petsModule then
+    send("❌ ModuleScript 'Pets' tidak ditemukan di ReplicatedStorage.")
+    return
+end
+
+send("📦 ModuleScript Pets ditemukan. Mencoba require...")
+
+local petsEnv, requireSuccess
+requireSuccess = pcall(function()
+    petsEnv = require(petsModule)
+end)
+
+if not requireSuccess or not petsEnv then
+    send("⚠️ Gagal require modul Pets. Mencoba metode alternatif...")
+    -- Coba ambil environment dari module yang sudah di-load
+    for _, mod in ipairs(getloadedmodules()) do
+        if mod.Name == "Pets" then
+            petsEnv = getsenv(mod)
+            if petsEnv then
+                send("✅ getsenv berhasil setelah mencari di loaded modules.")
+                break
             end
-            local nxt = children[i+1]
-            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
-                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
-                if h and #h == 64 then return nxt end
+        end
+    end
+    if not petsEnv then
+        send("❌ Tidak bisa mendapatkan environment Pets.")
+        return
+    end
+end
+
+send("📋 Mengeksplorasi isi modul Pets...")
+local keys = {}
+local functionTypes = {}
+for k, v in pairs(petsEnv) do
+    local t = type(v)
+    table.insert(keys, tostring(k) .. ":" .. t)
+    if t == "function" then
+        table.insert(functionTypes, k)
+    end
+end
+
+-- Kirim daftar semua key (dibatasi panjang)
+local allKeys = table.concat(keys, ", ")
+if #allKeys > 1800 then
+    send("Keys (parsial): " .. allKeys:sub(1, 1800))
+else
+    send("Keys: " .. allKeys)
+end
+
+-- Fokus pada fungsi-fungsi
+send("Fungsi ditemukan (" .. #functionTypes .. "): " .. table.concat(functionTypes, ", "))
+
+-- Cari fungsi yang mencurigakan
+local suspicious = {}
+for _, fname in ipairs(functionTypes) do
+    local lower = fname:lower()
+    if lower:find("fish") or lower:find("start") or lower:find("end") or lower:find("finish") or
+       lower:find("catch") or lower:find("cooldown") or lower:find("reel") or lower:find("cast") or
+       lower:find("complete") or lower:find("update") or lower:find("timer") then
+        table.insert(suspicious, fname)
+    end
+end
+
+if #suspicious > 0 then
+    send("🎯 Fungsi mencurigakan: " .. table.concat(suspicious, ", "))
+    -- Coba lihat upvalues dari fungsi mencurigakan pertama
+    for _, fname in ipairs(suspicious) do
+        local func = petsEnv[fname]
+        if type(func) == "function" then
+            local upvalues = {}
+            pcall(function()
+                local i = 1
+                while true do
+                    local name, val = debug.getupvalue(func, i)
+                    if not name then break end
+                    upvalues[#upvalues+1] = name .. "=" .. tostring(val):sub(1, 50)
+                    i = i + 1
+                end
+            end)
+            if #upvalues > 0 then
+                send("📎 Upvalues " .. fname .. ": " .. table.concat(upvalues, "; "))
             end
-            break
-        end
-    end
-    return nil
-end
-
-send("🔍 Mencari semua remote label mengandung 'Pet'...")
-
-local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
-local petLabels = {}
-for _, child in ipairs(net:GetChildren()) do
-    if child:IsA("Folder") and child.Name:lower():find("pet") then
-        table.insert(petLabels, child.Name)
-    end
-end
-
-if #petLabels == 0 then
-    send("❌ Tidak ada folder label mengandung 'Pet'.")
-else
-    for _, label in ipairs(petLabels) do
-        local remote = findRemoteByLabel(label)
-        if remote then
-            send("🎯 Label: " .. label .. " -> Remote: " .. remote.Name .. " (" .. remote.ClassName .. ")")
-        else
-            send("⚠️ Label: " .. label .. " -> Remote tidak ditemukan (mungkin tidak ada hash di dekatnya).")
-        end
-    end
-end
-
--- Coba cari remote di folder Pets yang mungkin tidak terlabel
-send("🔍 Mencari remote di dalam folder 'Pets'...")
-local petsFolder = net:FindFirstChild("Pets")
-if petsFolder then
-    for _, obj in ipairs(petsFolder:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            send("📁 Di dalam Pets: " .. obj:GetFullName() .. " (" .. obj.ClassName .. ")")
         end
     end
 else
-    send("❌ Folder 'Pets' tidak ditemukan di net.")
+    send("⚠️ Tidak ada fungsi mencurigakan. Coba cari table yang mungkin berisi fungsi...")
+    -- Cari table
+    for k, v in pairs(petsEnv) do
+        if type(v) == "table" then
+            local subKeys = {}
+            for sk, sv in pairs(v) do
+                subKeys[#subKeys+1] = tostring(sk) .. ":" .. type(sv)
+            end
+            send("📁 Table " .. tostring(k) .. ": " .. table.concat(subKeys, ", "):sub(1, 1800))
+        end
+    end
 end
 
 send("✅ Eksplorasi selesai.")
