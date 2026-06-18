@@ -43,12 +43,12 @@ end
 -- ========== KONFIGURASI ==========
 local config = {
     fastReelActive = false,
-    reelDelay      = 0.19,
-    loopInterval   = 0.05,
+    reelDelay      = 2.6,
+    loopInterval   = 0.13,
 
     petBugActive   = false,
-    petBugInterval = 55,      -- detik antar trigger
-    timingTrigger  = 2.5,     -- detik setelah charge untuk menjalankan trigger
+    petBugInterval = 150,      -- detik antar trigger
+    timingTrigger  = 2.6,     -- detik setelah charge untuk menjalankan trigger
 
     -- Internal
     lastPetBugTime = 0,
