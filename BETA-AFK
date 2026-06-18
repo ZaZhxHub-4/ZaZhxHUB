@@ -1,8 +1,11 @@
--- // FULL MONITOR: Hook semua RemoteEvent & RemoteFunction di seluruh game
--- // Tidak ada filter, catat SEMUA panggilan ke Discord.
--- // Gunakan hookfunction jika assignment gagal.
+-- // Instant Fast Reel + Pet Bug Trigger
+-- // Meniru metode Lynx: spam cancel -> charge -> minigame -> catch
+-- // Menggunakan akses remote hash (seperti Auto Booth script)
+-- // Tidak ada hook, hanya memanggil remote.
+
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
+local RS = game:GetService("ReplicatedStorage")
 
 local function send(msg)
     pcall(function()
@@ -13,71 +16,76 @@ local function send(msg)
     end)
 end
 
-send("🔍 Full Monitor dimulai. Mencari semua remote dan memasang hook...")
+-- Fungsi mencari remote berdasarkan label folder (seperti di Auto Booth)
+local function findRemoteByLabel(label)
+    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
+        if child.Name == label then
+            -- cari di dalam folder label dulu
+            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
+            if inside then
+                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return inside end
+            end
+            -- cari di indeks berikutnya
+            local nxt = children[i+1]
+            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
+                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return nxt end
+            end
+            break
+        end
+    end
+    return nil
+end
 
--- Kumpulkan semua RemoteEvent dan RemoteFunction
-local allRemotes = {}
-for _, obj in pairs(game:GetDescendants()) do
-    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-        table.insert(allRemotes, obj)
+send("🔍 Mencari remote untuk Fast Reel...")
+
+local cancelRF = findRemoteByLabel("RF/CancelFishingInputs")
+local chargeRF = findRemoteByLabel("RF/ChargeFishingRod")
+local minigameRF = findRemoteByLabel("RF/RequestFishingMinigameStarted")
+local catchRE = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLabel("RE/FishCaught")
+
+if not cancelRF or not chargeRF or not minigameRF or not catchRE then
+    send("❌ Remote tidak lengkap: Cancel="..tostring(cancelRF).." Charge="..tostring(chargeRF).." Minigame="..tostring(minigameRF).." Catch="..tostring(catchRE))
+    return
+end
+
+send("✅ Remote ditemukan. Memulai Instant Fast Reel...")
+
+-- Parameter dari Auto Fish V4
+local chargeParam = 1755848498.4834
+local minigameParam1 = 1.2854545116425
+local minigameParam2 = 1
+
+-- Fungsi satu siklus fast reel
+local function fastReelCycle()
+    -- Cancel dulu untuk reset
+    pcall(function() cancelRF:InvokeServer() end)
+    task.wait(0.01)
+
+    -- Charge rod
+    pcall(function() chargeRF:InvokeServer(chargeParam) end)
+    task.wait(0.01)
+
+    -- Mulai minigame
+    pcall(function() minigameRF:InvokeServer(minigameParam1, minigameParam2) end)
+    task.wait(0.05) -- beri waktu sedikit sebelum catch
+
+    -- Tangkap ikan langsung (beberapa kali untuk memastikan)
+    for i = 1, 3 do
+        pcall(function() catchRE:FireServer() end)
+        task.wait(0.01)
     end
 end
 
-send("📋 Ditemukan " .. #allRemotes .. " remote. Memasang hook...")
-
--- Coba hook dengan assignment langsung, jika gagal gunakan hookfunction
-local hooked = 0
-for _, remote in ipairs(allRemotes) do
-    local isEvent = remote:IsA("RemoteEvent")
-    local success = false
-    
-    -- Metode 1: assignment langsung
-    if isEvent then
-        local ok, err = pcall(function()
-            local old = remote.FireServer
-            remote.FireServer = function(self, ...)
-                local a = ""
-                for i, v in ipairs({...}) do a = a .. tostring(v):sub(1,30) .. (i==#args and "" or ",") end
-                send("📤 " .. remote:GetFullName() .. " FireServer(" .. a .. ")")
-                return old(self, ...)
-            end
-        end)
-        success = ok
-    else
-        local ok, err = pcall(function()
-            local old = remote.InvokeServer
-            remote.InvokeServer = function(self, ...)
-                local a = ""
-                for i, v in ipairs({...}) do a = a .. tostring(v):sub(1,30) .. (i==#args and "" or ",") end
-                send("📤 " .. remote:GetFullName() .. " InvokeServer(" .. a .. ")")
-                return old(self, ...)
-            end
-        end)
-        success = ok
+-- Loop fast reel agresif (setiap 0.3 detik)
+spawn(function()
+    while true do
+        fastReelCycle()
+        task.wait(0.3)
     end
-    
-    -- Metode 2: jika gagal, coba hookfunction
-    if not success and hookfunction then
-        pcall(function()
-            if isEvent then
-                hookfunction(remote.FireServer, function(...)
-                    local a = ""
-                    for i, v in ipairs({...}) do a = a .. tostring(v):sub(1,30) .. (i==#args and "" or ",") end
-                    send("📤 " .. remote:GetFullName() .. " FireServer(" .. a .. ")")
-                    return hookfunction.old(...)
-                end)
-            else
-                hookfunction(remote.InvokeServer, function(...)
-                    local a = ""
-                    for i, v in ipairs({...}) do a = a .. tostring(v):sub(1,30) .. (i==#args and "" or ",") end
-                    send("📤 " .. remote:GetFullName() .. " InvokeServer(" .. a .. ")")
-                    return hookfunction.old(...)
-                end)
-            end
-        end)
-    end
-    
-    hooked = hooked + 1
-end
+end)
 
-send("✅ Hook terpasang pada " .. hooked .. " remote. Sekarang jalankan LYNX dan lakukan triknya. Semua panggilan akan terekam.")
+send("⚡ Fast Reel aktif. Amati pet, seharusnya ikut terpancing bug.")
