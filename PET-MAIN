@@ -1,5 +1,5 @@
--- // ZHX Smart Fishing v5.6 — Fixed: Tidak ada Cancel di Pet Bug
--- // Remote hash finder, UI minimalis, adjustable timing setelah charge
+-- // ZHX Smart Fishing v5.7 — Floating Button + Toggle Panel
+-- // Remote hash finder, UI minimalis, adjustable timing
 -- // Pet Bug trigger tanpa mengganggu Fast Reel
 
 local RS = game:GetService("ReplicatedStorage")
@@ -47,10 +47,9 @@ local config = {
     loopInterval   = 0.15,
 
     petBugActive   = false,
-    petBugInterval = 150,      -- detik antar trigger
-    timingTrigger  = 2.6,     -- detik setelah charge untuk menjalankan trigger
+    petBugInterval = 150,
+    timingTrigger  = 2.6,
 
-    -- Internal
     lastPetBugTime = 0,
     chargeStartTime = 0,
 }
@@ -76,42 +75,32 @@ local function equipRod()
     end
 end
 
--- ========== PET BUG TRIGGER (TANPA CANCEL, AGAR TIDAK MISS) ==========
+-- ========== PET BUG TRIGGER ==========
 local function triggerPetBug()
     if not autoStateRF then return end
-    -- Paksa OFF dulu
     pcall(function() autoStateRF:InvokeServer(false) end)
-    -- 2x siklus ON-OFF cepat
-    for _ = 1, 2 do
+    for _ = 1, 3 do
         pcall(function() autoStateRF:InvokeServer(true) end)
         task.wait(0.02)
         pcall(function() autoStateRF:InvokeServer(false) end)
         task.wait(0.02)
     end
-    -- Mark auto saja, tanpa cancel
     if markAutoRF then pcall(function() markAutoRF:InvokeServer() end) end
 end
 
 -- ========== FAST REEL CYCLE ==========
 local function fastReelCycle()
-    -- Charge
     pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
     config.chargeStartTime = tick()
-
-    -- Minigame
     pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
 
-    -- Pet Bug Trigger: hanya jika aktif, jadwalkan setelah timingTrigger
     if config.petBugActive then
         local now = tick()
         if now - config.lastPetBugTime >= config.petBugInterval then
             task.spawn(function()
                 local elapsed = tick() - config.chargeStartTime
                 local waitTime = math.max(0, config.timingTrigger - elapsed)
-                if waitTime > 0 then
-                    task.wait(waitTime)
-                end
-                -- Pastikan masih aktif
+                if waitTime > 0 then task.wait(waitTime) end
                 if config.fastReelActive and config.petBugActive then
                     triggerPetBug()
                     config.lastPetBugTime = tick()
@@ -120,23 +109,17 @@ local function fastReelCycle()
         end
     end
 
-    -- Tunggu reel delay (total dari charge hingga catch)
     local elapsed = tick() - config.chargeStartTime
     local remaining = math.max(0, config.reelDelay - elapsed)
-    if remaining > 0 then
-        task.wait(remaining)
-    end
+    if remaining > 0 then task.wait(remaining) end
 
-    -- Catch (selalu berhasil karena tidak ada cancel)
     pcall(function() catchRE:FireServer() end)
 end
 
 local function mainLoop()
     while config.fastReelActive do
         fastReelCycle()
-        if config.loopInterval > 0 then
-            task.wait(config.loopInterval)
-        end
+        if config.loopInterval > 0 then task.wait(config.loopInterval) end
     end
 end
 
@@ -156,11 +139,33 @@ end
 -- ========== UI ==========
 local pg = LP:WaitForChild("PlayerGui")
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_SmartFishing_v5.6"
+sg.Name = "ZHX_SmartFishing_v5.7"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
 
+-- === FLOATING BUTTON ===
+local floatingGui = Instance.new("ScreenGui")
+floatingGui.Name = "ZHX_FloatingBtn"
+floatingGui.ResetOnSpawn = false
+floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+floatingGui.Parent = pg
+
+local floatBtn = Instance.new("ImageButton")
+floatBtn.Size = UDim2.new(0, 46, 0, 46)
+floatBtn.Position = UDim2.new(0, 12, 0, 100)  -- posisi seperti Auto Booth
+floatBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
+floatBtn.BorderSizePixel = 0
+floatBtn.Image = "rbxassetid://78392602281326"  -- ZHX_FLOAT
+floatBtn.ScaleType = Enum.ScaleType.Fit
+floatBtn.ZIndex = 9999
+floatBtn.Parent = floatingGui
+Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
+local stroke = Instance.new("UIStroke", floatBtn)
+stroke.Color = Color3.fromRGB(72, 210, 130)
+stroke.Thickness = 1.5
+
+-- === MAIN PANEL (awalnya tersembunyi) ===
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0, 260, 0, 250)
 frame.Position = UDim2.new(1, -270, 1, -260)
@@ -168,14 +173,20 @@ frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
 frame.ZIndex = 100
+frame.Visible = false  -- panel tertutup saat start
 frame.Parent = sg
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
 
+-- Toggle panel via float button
+floatBtn.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
+end)
+
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "⚡ Smart Fishing v5.6"
+title.Text = "⚡ Smart Fishing v5.7"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -263,7 +274,7 @@ makeToggleButton(y, "Pet Bug (Smart)",
     function() return config.petBugActive end
 )
 
--- Drag
+-- Drag untuk panel utama
 local dragging, dragStart, startPos = false, nil, nil
 frame.InputBegan:Connect(function(inp)
     if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
@@ -284,4 +295,28 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("v5.6: Tanpa cancel, trigger aman. Reel Delay & Timing Trigger adjustable.")
+-- Drag untuk floating button
+local floatDragging, floatDragStart, floatStartPos = false, nil, nil
+floatBtn.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = true
+        floatDragStart = inp.Position
+        floatStartPos = floatBtn.Position
+    end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if floatDragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - floatDragStart
+        local viewport = workspace.CurrentCamera.ViewportSize
+        local newX = math.clamp(floatStartPos.X.Offset + delta.X, 0, viewport.X - 46)
+        local newY = math.clamp(floatStartPos.Y.Offset + delta.Y, 0, viewport.Y - 46)
+        floatBtn.Position = UDim2.new(0, newX, 0, newY)
+    end
+end)
+UIS.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = false
+    end
+end)
+
+print("v5.7: Floating button + toggle panel. Klik logo ZHX untuk buka/tutup.")
