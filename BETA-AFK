@@ -45,12 +45,12 @@ end
 -- ========== KONFIGURASI ==========
 local config = {
     fastReelActive = false,
-    reelDelay      = 0.19,    -- waktu tunggu setelah minigame sebelum catch
-    loopInterval   = 0.05,    -- jeda antar siklus (setelah catch sebelum charge lagi)
+    reelDelay      = 0.165,    -- waktu tunggu setelah minigame sebelum catch
+    loopInterval   = 0.01,    -- jeda antar siklus (setelah catch sebelum charge lagi)
     pauseFastReel  = false,   -- internal
 
     petBugActive   = false,
-    petBugInterval = 55,      -- detik
+    petBugInterval = 300,      -- detik
 }
 
 local fastReelThread = nil
