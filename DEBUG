@@ -1,120 +1,323 @@
--- // DEEP PET MODULE EXPLORER: Require & Eksplorasi Fungsi Internal
--- // Mencari fungsi Start/End Fishing, Cooldown, dll di dalam modul Pets
--- // Kirim hasil ke Discord
+-- // ZHX Ultimate Fishing Exploit v5.0
+-- // Fitur: Fast Reel, Pet Bug Trigger, Pet Cast Stacker
+-- // Semua remote hash method, UI minimalis
 
-local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-local HS = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
 
-local function send(msg)
-    pcall(function()
-        local body = HS:JSONEncode({content = "`" .. os.date("%H:%M:%S") .. "` " .. msg:sub(1, 1900)})
-        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body}) end
+-- ========== REMOTE HASH FINDER ==========
+local function findRemoteByLabel(label)
+    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
+        if child.Name == label then
+            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
+            if inside then
+                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return inside end
+            end
+            local nxt = children[i+1]
+            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
+                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return nxt end
+            end
+            break
+        end
+    end
+    return nil
+end
+
+local chargeRF    = findRemoteByLabel("RF/ChargeFishingRod")
+local minigameRF  = findRemoteByLabel("RF/RequestFishingMinigameStarted")
+local catchRE     = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLabel("RE/FishCaught")
+local equipRE     = findRemoteByLabel("RE/EquipToolFromHotbar")
+local autoStateRF = findRemoteByLabel("RF/UpdateAutoFishingState")
+local markAutoRF  = findRemoteByLabel("RF/MarkAutoFishingUsed")
+local cancelRF    = findRemoteByLabel("RF/CancelFishingInputs")
+
+if not chargeRF or not minigameRF or not catchRE then
+    error("Remote inti tidak ditemukan.")
+end
+
+-- ========== KONFIGURASI ==========
+local config = {
+    fastReelActive = false,
+    reelDelay      = 0.19,
+    loopInterval   = 0.05,
+    pauseFastReel  = false,
+
+    petBugActive   = false,
+    petBugInterval = 55,
+
+    stackerActive  = false,
+    stackCount     = 5,
+    stackInterval  = 0.05,
+    pauseForStack  = false,
+}
+
+local fastReelThread = nil
+local petBugThread   = nil
+local stackerThread  = nil
+
+-- ========== EQUIP ROD ==========
+local function equipRod()
+    if equipRE then
+        pcall(function() equipRE:FireServer(1) end)
+    else
+        local hotbar = LP.PlayerGui:FindFirstChild("Backpack")
+        if hotbar then
+            local slot1 = hotbar:FindFirstChild("1") or hotbar:FindFirstChild("Slot1")
+            if slot1 and slot1:IsA("ImageButton") then
+                pcall(function()
+                    local pos = slot1.AbsolutePosition + slot1.AbsoluteSize/2
+                    firesignal(UIS.InputBegan, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                    task.wait(0.03)
+                    firesignal(UIS.InputEnded, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                end)
+            end
+        end
+    end
+end
+
+-- ========== FAST REEL ==========
+local function fastReelCycle()
+    pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
+    pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
+    task.wait(config.reelDelay)
+    pcall(function() catchRE:FireServer() end)
+end
+
+local function fastReelLoop()
+    while config.fastReelActive do
+        if config.pauseFastReel then
+            task.wait(0.01)
+            continue
+        end
+        fastReelCycle()
+        if config.loopInterval > 0 then
+            task.wait(config.loopInterval)
+        end
+    end
+end
+
+local function startFastReel()
+    if config.fastReelActive then return end
+    equipRod()
+    task.wait(0.1)
+    config.fastReelActive = true
+    config.pauseFastReel = false
+    fastReelThread = task.spawn(fastReelLoop)
+end
+
+local function stopFastReel()
+    config.fastReelActive = false
+    config.pauseFastReel = false
+    if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
+end
+
+-- ========== PET BUG TRIGGER (3x ON-OFF) ==========
+local function triggerPetBug()
+    if not autoStateRF then return end
+    config.pauseFastReel = true
+    pcall(function() autoStateRF:InvokeServer(false) end)
+    task.wait(0.02)
+    for _ = 1, 3 do
+        pcall(function() autoStateRF:InvokeServer(true) end)
+        task.wait(0.02)
+        pcall(function() autoStateRF:InvokeServer(false) end)
+        task.wait(0.02)
+    end
+    if cancelRF then pcall(function() cancelRF:InvokeServer() end) end
+    if markAutoRF then pcall(function() markAutoRF:InvokeServer() end) end
+    config.pauseFastReel = false
+end
+
+local function startPetBug()
+    if config.petBugActive then return end
+    config.petBugActive = true
+    petBugThread = task.spawn(function()
+        while config.petBugActive do
+            triggerPetBug()
+            task.wait(config.petBugInterval)
+        end
     end)
 end
 
-send("🔍 Memulai eksplorasi mendalam modul Pets...")
-
--- Cari modul Pets (ModuleScript) di ReplicatedStorage
-local petsModule = RS:FindFirstChild("Pets")
-if not petsModule then
-    send("❌ ModuleScript 'Pets' tidak ditemukan di ReplicatedStorage.")
-    return
+local function stopPetBug()
+    config.petBugActive = false
+    if petBugThread then task.cancel(petBugThread); petBugThread = nil end
 end
 
-send("📦 ModuleScript Pets ditemukan. Mencoba require...")
+-- ========== PET CAST STACKER ==========
+local function runStacker()
+    config.pauseFastReel = true
+    for i = 1, config.stackCount do
+        pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
+        task.wait(0.01)
+        if cancelRF then pcall(function() cancelRF:InvokeServer() end) end
+        task.wait(config.stackInterval)
+    end
+    config.pauseFastReel = false
+end
 
-local petsEnv, requireSuccess
-requireSuccess = pcall(function()
-    petsEnv = require(petsModule)
+local function startStacker()
+    if config.stackerActive then return end
+    config.stackerActive = true
+    stackerThread = task.spawn(function()
+        while config.stackerActive do
+            runStacker()
+            task.wait(0.5) -- sedikit jeda sebelum ulang (bisa diatur)
+        end
+    end)
+end
+
+local function stopStacker()
+    config.stackerActive = false
+    if stackerThread then task.cancel(stackerThread); stackerThread = nil end
+end
+
+-- ========== UI ==========
+local pg = LP:WaitForChild("PlayerGui")
+local sg = Instance.new("ScreenGui")
+sg.Name = "ZHX_FishingExploit_v5"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent = pg
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 270, 0, 280)
+frame.Position = UDim2.new(1, -280, 1, -290)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+frame.BackgroundTransparency = 0.1
+frame.BorderSizePixel = 0
+frame.ZIndex = 100
+frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "⚡ Fishing Exploit v5.0"
+title.TextColor3 = Color3.fromRGB(72, 210, 130)
+title.TextSize = 13
+title.Font = Enum.Font.GothamBold
+title.ZIndex = 101
+title.Parent = frame
+
+local function makeInput(y, label, default, callback)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0, 105, 0, 20)
+    lbl.Position = UDim2.new(0, 10, 0, y)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.TextColor3 = Color3.fromRGB(200,200,200)
+    lbl.TextSize = 11
+    lbl.Font = Enum.Font.Gotham
+    lbl.ZIndex = 101
+    lbl.Parent = frame
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, 60, 0, 20)
+    box.Position = UDim2.new(0, 120, 0, y)
+    box.BackgroundColor3 = Color3.fromRGB(30,30,40)
+    box.BorderSizePixel = 0
+    box.Text = tostring(default)
+    box.TextColor3 = Color3.fromRGB(255,255,255)
+    box.TextSize = 11
+    box.Font = Enum.Font.Gotham
+    box.ZIndex = 101
+    box.Parent = frame
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,4)
+
+    box.FocusLost:Connect(function()
+        local num = tonumber(box.Text)
+        if num then callback(num) end
+    end)
+    return box
+end
+
+local function makeButton(y, text, activeCallback, inactiveCallback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -20, 0, 30)
+    btn.Position = UDim2.new(0, 10, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+    btn.BorderSizePixel = 0
+    btn.Text = "▶ " .. text
+    btn.TextColor3 = Color3.fromRGB(72, 210, 130)
+    btn.TextSize = 12
+    btn.Font = Enum.Font.GothamBold
+    btn.ZIndex = 101
+    btn.AutoButtonColor = false
+    btn.Parent = frame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+
+    local active = false
+    btn.MouseButton1Click:Connect(function()
+        if not active then
+            active = true
+            btn.Text = "⏹ " .. text
+            btn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+            if activeCallback then activeCallback() end
+        else
+            active = false
+            btn.Text = "▶ " .. text
+            btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+            if inactiveCallback then inactiveCallback() end
+        end
+    end)
+    return btn
+end
+
+-- Input Fast Reel
+local y = 35
+makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end)
+y = y + 25
+makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end)
+
+-- Tombol Fast Reel
+y = y + 30
+makeButton(y, "Fast Reel", startFastReel, stopFastReel)
+
+-- Input Pet Bug
+y = y + 35
+makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end)
+
+-- Tombol Pet Bug
+y = y + 30
+makeButton(y, "Pet Bug Trigger", startPetBug, stopPetBug)
+
+-- Input Stacker
+y = y + 35
+makeInput(y, "Stack Count", config.stackCount, function(v) config.stackCount = math.floor(v) end)
+y = y + 25
+makeInput(y, "Stack Interval", config.stackInterval, function(v) config.stackInterval = v end)
+
+-- Tombol Stacker
+y = y + 30
+makeButton(y, "Pet Cast Stacker", startStacker, stopStacker)
+
+-- Drag
+local dragging, dragStart, startPos = false, nil, nil
+frame.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = inp.Position
+        startPos = frame.Position
+    end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
 end)
 
-if not requireSuccess or not petsEnv then
-    send("⚠️ Gagal require modul Pets. Mencoba metode alternatif...")
-    -- Coba ambil environment dari module yang sudah di-load
-    for _, mod in ipairs(getloadedmodules()) do
-        if mod.Name == "Pets" then
-            petsEnv = getsenv(mod)
-            if petsEnv then
-                send("✅ getsenv berhasil setelah mencari di loaded modules.")
-                break
-            end
-        end
-    end
-    if not petsEnv then
-        send("❌ Tidak bisa mendapatkan environment Pets.")
-        return
-    end
-end
-
-send("📋 Mengeksplorasi isi modul Pets...")
-local keys = {}
-local functionTypes = {}
-for k, v in pairs(petsEnv) do
-    local t = type(v)
-    table.insert(keys, tostring(k) .. ":" .. t)
-    if t == "function" then
-        table.insert(functionTypes, k)
-    end
-end
-
--- Kirim daftar semua key (dibatasi panjang)
-local allKeys = table.concat(keys, ", ")
-if #allKeys > 1800 then
-    send("Keys (parsial): " .. allKeys:sub(1, 1800))
-else
-    send("Keys: " .. allKeys)
-end
-
--- Fokus pada fungsi-fungsi
-send("Fungsi ditemukan (" .. #functionTypes .. "): " .. table.concat(functionTypes, ", "))
-
--- Cari fungsi yang mencurigakan
-local suspicious = {}
-for _, fname in ipairs(functionTypes) do
-    local lower = fname:lower()
-    if lower:find("fish") or lower:find("start") or lower:find("end") or lower:find("finish") or
-       lower:find("catch") or lower:find("cooldown") or lower:find("reel") or lower:find("cast") or
-       lower:find("complete") or lower:find("update") or lower:find("timer") then
-        table.insert(suspicious, fname)
-    end
-end
-
-if #suspicious > 0 then
-    send("🎯 Fungsi mencurigakan: " .. table.concat(suspicious, ", "))
-    -- Coba lihat upvalues dari fungsi mencurigakan pertama
-    for _, fname in ipairs(suspicious) do
-        local func = petsEnv[fname]
-        if type(func) == "function" then
-            local upvalues = {}
-            pcall(function()
-                local i = 1
-                while true do
-                    local name, val = debug.getupvalue(func, i)
-                    if not name then break end
-                    upvalues[#upvalues+1] = name .. "=" .. tostring(val):sub(1, 50)
-                    i = i + 1
-                end
-            end)
-            if #upvalues > 0 then
-                send("📎 Upvalues " .. fname .. ": " .. table.concat(upvalues, "; "))
-            end
-        end
-    end
-else
-    send("⚠️ Tidak ada fungsi mencurigakan. Coba cari table yang mungkin berisi fungsi...")
-    -- Cari table
-    for k, v in pairs(petsEnv) do
-        if type(v) == "table" then
-            local subKeys = {}
-            for sk, sv in pairs(v) do
-                subKeys[#subKeys+1] = tostring(sk) .. ":" .. type(sv)
-            end
-            send("📁 Table " .. tostring(k) .. ": " .. table.concat(subKeys, ", "):sub(1, 1800))
-        end
-    end
-end
-
-send("✅ Eksplorasi selesai.")
+print("ZHX Fishing Exploit v5.0 loaded: Fast Reel + Pet Bug + Pet Stacker.")
