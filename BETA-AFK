@@ -1,11 +1,8 @@
--- // MONITORING INSTANT FAST REEL DARI LYNX
--- // Jalankan script ini SEBELUM kamu menghidupkan LYNX.
--- // Script akan mencatat semua panggilan remote fishing yang dilakukan LYNX.
--- // Lakukan urutan: cast manual -> nyalakan Instant Fast Reel -> lihat Discord.
-
+-- // FULL MONITOR: Hook semua RemoteEvent & RemoteFunction di seluruh game
+-- // Tidak ada filter, catat SEMUA panggilan ke Discord.
+-- // Gunakan hookfunction jika assignment gagal.
 local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 local HS = game:GetService("HttpService")
-local RS = game:GetService("ReplicatedStorage")
 
 local function send(msg)
     pcall(function()
@@ -16,67 +13,71 @@ local function send(msg)
     end)
 end
 
-send("🔍 Monitoring LYNX Instant Fast Reel dimulai. Jalankan LYNX sekarang, lalu lakukan triknya.")
+send("🔍 Full Monitor dimulai. Mencari semua remote dan memasang hook...")
 
-local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
-local targets = {}
-
--- Daftar remote yang pasti terlibat dalam fast reel
-local important = {
-    "RF/ChargeFishingRod",
-    "RF/RequestFishingMinigameStarted",
-    "RF/CancelFishingInputs",
-    "RE/FishingMinigameChanged",
-    "RE/CatchFishCompleted",
-    "RE/FishCaught",
-    "RE/CaughtFishVisual",
-    "RF/UpdateAutoFishingState",
-    "RF/MarkAutoFishingUsed",
-    "RF/CancelFishingInputs"
-}
-
-for _, name in ipairs(important) do
-    local remote = netFolder:FindFirstChild(name)
-    if remote then
-        table.insert(targets, remote)
-    end
-end
-
--- Jika ada remote lain yang mengandung "Fast" atau "Instant", tangkap juga
-for _, obj in pairs(netFolder:GetDescendants()) do
+-- Kumpulkan semua RemoteEvent dan RemoteFunction
+local allRemotes = {}
+for _, obj in pairs(game:GetDescendants()) do
     if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-        local n = obj.Name:lower()
-        if n:find("fast") or n:find("instant") then
-            table.insert(targets, obj)
-        end
+        table.insert(allRemotes, obj)
     end
 end
 
--- Hook semua
-for _, remote in pairs(targets) do
-    if remote:IsA("RemoteEvent") then
-        pcall(function()
+send("📋 Ditemukan " .. #allRemotes .. " remote. Memasang hook...")
+
+-- Coba hook dengan assignment langsung, jika gagal gunakan hookfunction
+local hooked = 0
+for _, remote in ipairs(allRemotes) do
+    local isEvent = remote:IsA("RemoteEvent")
+    local success = false
+    
+    -- Metode 1: assignment langsung
+    if isEvent then
+        local ok, err = pcall(function()
             local old = remote.FireServer
             remote.FireServer = function(self, ...)
-                local args = {...}
                 local a = ""
-                for i, v in ipairs(args) do a = a .. tostring(v):sub(1,20) .. (i==#args and "" or ",") end
-                send("📤 " .. remote.Name .. "(" .. a .. ")")
+                for i, v in ipairs({...}) do a = a .. tostring(v):sub(1,30) .. (i==#args and "" or ",") end
+                send("📤 " .. remote:GetFullName() .. " FireServer(" .. a .. ")")
                 return old(self, ...)
             end
         end)
-    elseif remote:IsA("RemoteFunction") then
-        pcall(function()
+        success = ok
+    else
+        local ok, err = pcall(function()
             local old = remote.InvokeServer
             remote.InvokeServer = function(self, ...)
-                local args = {...}
                 local a = ""
-                for i, v in ipairs(args) do a = a .. tostring(v):sub(1,20) .. (i==#args and "" or ",") end
-                send("📤 " .. remote.Name .. "(" .. a .. ")")
+                for i, v in ipairs({...}) do a = a .. tostring(v):sub(1,30) .. (i==#args and "" or ",") end
+                send("📤 " .. remote:GetFullName() .. " InvokeServer(" .. a .. ")")
                 return old(self, ...)
+            end
+        end)
+        success = ok
+    end
+    
+    -- Metode 2: jika gagal, coba hookfunction
+    if not success and hookfunction then
+        pcall(function()
+            if isEvent then
+                hookfunction(remote.FireServer, function(...)
+                    local a = ""
+                    for i, v in ipairs({...}) do a = a .. tostring(v):sub(1,30) .. (i==#args and "" or ",") end
+                    send("📤 " .. remote:GetFullName() .. " FireServer(" .. a .. ")")
+                    return hookfunction.old(...)
+                end)
+            else
+                hookfunction(remote.InvokeServer, function(...)
+                    local a = ""
+                    for i, v in ipairs({...}) do a = a .. tostring(v):sub(1,30) .. (i==#args and "" or ",") end
+                    send("📤 " .. remote:GetFullName() .. " InvokeServer(" .. a .. ")")
+                    return hookfunction.old(...)
+                end)
             end
         end)
     end
+    
+    hooked = hooked + 1
 end
 
-send("✅ Siap. Sekarang buka LYNX, jangan nyalakan Instant Fast Reel dulu. Lempar pancing manual, lalu nyalakan Instant Fast Reel sebelum reel. Amati Discord.")
+send("✅ Hook terpasang pada " .. hooked .. " remote. Sekarang jalankan LYNX dan lakukan triknya. Semua panggilan akan terekam.")
