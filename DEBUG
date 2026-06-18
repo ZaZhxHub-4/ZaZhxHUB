@@ -1,26 +1,266 @@
--- // DEEP EXPLOIT: Ubah Cooldown & Reel Duration di memori
--- // Target: semua pet yang PetFishing.Enabled = true
--- // Set CastCooldownSeconds & ReelDurationSeconds ke 0.1
+-- // ZHX Fishing Exploit v5.1 - Integrated Smart Pet Bug
+-- // Pet Bug Trigger terjadi tepat setelah catch, tanpa ganggu Fast Reel
+-- // Remote hash method, UI minimalis
+
 local RS = game:GetService("ReplicatedStorage")
-local petsModule = RS:FindFirstChild("Pets")
-if not petsModule then return end
+local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
 
-local env = getsenv(petsModule) or require(petsModule)
-if not env then return end
+-- ========== REMOTE HASH FINDER ==========
+local function findRemoteByLabel(label)
+    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
+        if child.Name == label then
+            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
+            if inside then
+                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return inside end
+            end
+            local nxt = children[i+1]
+            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
+                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return nxt end
+            end
+            break
+        end
+    end
+    return nil
+end
 
-local modified = {}
-for petName, petData in pairs(env) do
-    if type(petData) == "table" and petData.PetFishing and petData.PetFishing.Enabled then
-        local pf = petData.PetFishing
-        pf.CastCooldownSeconds = 0.1
-        pf.ReelDurationSeconds = 0.1
-        table.insert(modified, petName)
+local chargeRF    = findRemoteByLabel("RF/ChargeFishingRod")
+local minigameRF  = findRemoteByLabel("RF/RequestFishingMinigameStarted")
+local catchRE     = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLabel("RE/FishCaught")
+local equipRE     = findRemoteByLabel("RE/EquipToolFromHotbar")
+local autoStateRF = findRemoteByLabel("RF/UpdateAutoFishingState")
+local markAutoRF  = findRemoteByLabel("RF/MarkAutoFishingUsed")
+local cancelRF    = findRemoteByLabel("RF/CancelFishingInputs")
+
+if not chargeRF or not minigameRF or not catchRE then
+    error("Remote inti tidak ditemukan.")
+end
+
+-- ========== KONFIGURASI ==========
+local config = {
+    fastReelActive = false,
+    reelDelay      = 0.19,
+    loopInterval   = 0.05,
+
+    petBugActive   = false,
+    petBugInterval = 55,      -- detik antar trigger
+    lastPetBugTime = 0,       -- internal
+}
+
+local fastReelThread = nil
+
+-- ========== EQUIP ROD ==========
+local function equipRod()
+    if equipRE then
+        pcall(function() equipRE:FireServer(1) end)
+    else
+        local hotbar = LP.PlayerGui:FindFirstChild("Backpack")
+        if hotbar then
+            local slot1 = hotbar:FindFirstChild("1") or hotbar:FindFirstChild("Slot1")
+            if slot1 and slot1:IsA("ImageButton") then
+                pcall(function()
+                    local pos = slot1.AbsolutePosition + slot1.AbsoluteSize/2
+                    firesignal(UIS.InputBegan, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                    firesignal(UIS.InputEnded, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                end)
+            end
+        end
     end
 end
 
-if #modified > 0 then
-    print("Modified PetFishing for: " .. table.concat(modified, ", "))
-    print("Cooldown & Reel set to 0.1s. Amati pet sekarang.")
-else
-    print("No active fishing pet found.")
+-- ========== FAST REEL + INTEGRATED PET BUG ==========
+local function triggerPetBug()
+    if not autoStateRF then return end
+    -- 3x ON-OFF cepat
+    pcall(function() autoStateRF:InvokeServer(false) end)
+    for _ = 1, 3 do
+        pcall(function() autoStateRF:InvokeServer(true) end)
+        task.wait(0.02)
+        pcall(function() autoStateRF:InvokeServer(false) end)
+        task.wait(0.02)
+    end
+    if markAutoRF then pcall(function() markAutoRF:InvokeServer() end) end
+    if cancelRF then pcall(function() cancelRF:InvokeServer() end) end
 end
+
+local function fastReelCycle()
+    -- Charge
+    pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
+    -- Minigame start
+    pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
+    -- Tunggu reel delay
+    task.wait(config.reelDelay)
+    -- Catch
+    pcall(function() catchRE:FireServer() end)
+
+    -- Integrated Pet Bug: jalankan jika waktunya dan tidak bentrok
+    if config.petBugActive and (tick() - config.lastPetBugTime >= config.petBugInterval) then
+        triggerPetBug()
+        config.lastPetBugTime = tick()
+    end
+end
+
+local function mainLoop()
+    while config.fastReelActive do
+        fastReelCycle()
+        if config.loopInterval > 0 then
+            task.wait(config.loopInterval)
+        end
+    end
+end
+
+local function startFastReel()
+    if config.fastReelActive then return end
+    equipRod()
+    task.wait(0.1)
+    config.fastReelActive = true
+    fastReelThread = task.spawn(mainLoop)
+end
+
+local function stopFastReel()
+    config.fastReelActive = false
+    if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
+end
+
+local function setPetBugActive(active)
+    config.petBugActive = active
+    if active then
+        config.lastPetBugTime = 0  -- reset, langsung trigger di cycle berikutnya
+    end
+end
+
+-- ========== UI ==========
+local pg = LP:WaitForChild("PlayerGui")
+local sg = Instance.new("ScreenGui")
+sg.Name = "ZHX_FishingExploit_v5.1"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent = pg
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 260, 0, 250)
+frame.Position = UDim2.new(1, -270, 1, -260)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+frame.BackgroundTransparency = 0.1
+frame.BorderSizePixel = 0
+frame.ZIndex = 100
+frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "⚡ Smart Fishing v5.1"
+title.TextColor3 = Color3.fromRGB(72, 210, 130)
+title.TextSize = 13
+title.Font = Enum.Font.GothamBold
+title.ZIndex = 101
+title.Parent = frame
+
+local function makeInput(y, label, default, callback)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0, 105, 0, 20)
+    lbl.Position = UDim2.new(0, 10, 0, y)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.TextColor3 = Color3.fromRGB(200,200,200)
+    lbl.TextSize = 11
+    lbl.Font = Enum.Font.Gotham
+    lbl.ZIndex = 101
+    lbl.Parent = frame
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, 60, 0, 20)
+    box.Position = UDim2.new(0, 120, 0, y)
+    box.BackgroundColor3 = Color3.fromRGB(30,30,40)
+    box.BorderSizePixel = 0
+    box.Text = tostring(default)
+    box.TextColor3 = Color3.fromRGB(255,255,255)
+    box.TextSize = 11
+    box.Font = Enum.Font.Gotham
+    box.ZIndex = 101
+    box.Parent = frame
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,4)
+
+    box.FocusLost:Connect(function()
+        local num = tonumber(box.Text)
+        if num then callback(num) end
+    end)
+    return box
+end
+
+local function makeToggleButton(y, text, startFn, stopFn, getActiveFn)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -20, 0, 30)
+    btn.Position = UDim2.new(0, 10, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+    btn.BorderSizePixel = 0
+    btn.Text = "▶ " .. text
+    btn.TextColor3 = Color3.fromRGB(72, 210, 130)
+    btn.TextSize = 12
+    btn.Font = Enum.Font.GothamBold
+    btn.ZIndex = 101
+    btn.AutoButtonColor = false
+    btn.Parent = frame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+
+    btn.MouseButton1Click:Connect(function()
+        if getActiveFn() then
+            stopFn()
+            btn.Text = "▶ " .. text
+            btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+        else
+            startFn()
+            btn.Text = "⏹ " .. text
+            btn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+        end
+    end)
+    return btn
+end
+
+local y = 35
+makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end)
+y = y + 25
+makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end)
+
+y = y + 30
+makeToggleButton(y, "Fast Reel", startFastReel, stopFastReel, function() return config.fastReelActive end)
+
+y = y + 35
+makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end)
+
+y = y + 30
+makeToggleButton(y, "Pet Bug (Smart)", 
+    function() setPetBugActive(true) end,
+    function() setPetBugActive(false) end,
+    function() return config.petBugActive end
+)
+
+-- Drag
+local dragging, dragStart, startPos = false, nil, nil
+frame.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = inp.Position
+        startPos = frame.Position
+    end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+print("ZHX Smart Fishing v5.1: Pet Bug trigger after catch, no interference.")
