@@ -1,74 +1,26 @@
--- // DEEP INSPECT: Isi PetFishing table & cari fungsi terkait dengan getgc
-local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
-local HS = game:GetService("HttpService")
+-- // DEEP EXPLOIT: Ubah Cooldown & Reel Duration di memori
+-- // Target: semua pet yang PetFishing.Enabled = true
+-- // Set CastCooldownSeconds & ReelDurationSeconds ke 0.1
 local RS = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
+local petsModule = RS:FindFirstChild("Pets")
+if not petsModule then return end
 
-local function send(msg)
-    pcall(function()
-        local body = HS:JSONEncode({content = "`" .. os.date("%H:%M:%S") .. "` " .. msg:sub(1, 1900)})
-        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body}) end
-    end)
-end
+local env = getsenv(petsModule) or require(petsModule)
+if not env then return end
 
-send("🔬 Memulai deep inspect: PetFishing tables + getgc scan...")
-
--- 1. Dapatkan isi PetFishing dari setiap pet
-local petsModule = require(RS.Pets)
-for petName, petData in pairs(petsModule) do
-    if type(petData) == "table" and petData.PetFishing then
+local modified = {}
+for petName, petData in pairs(env) do
+    if type(petData) == "table" and petData.PetFishing and petData.PetFishing.Enabled then
         local pf = petData.PetFishing
-        local keys = {}
-        for k, v in pairs(pf) do
-            local vstr = tostring(v)
-            if type(v) == "table" then
-                vstr = "{"
-                for sk, sv in pairs(v) do vstr = vstr .. tostring(sk) .. "=" .. tostring(sv) .. ", " end
-                vstr = vstr .. "}"
-            end
-            keys[#keys+1] = tostring(k) .. ":" .. type(v) .. "=" .. vstr:sub(1, 60)
-        end
-        send("🐾 " .. petName .. " PetFishing: " .. table.concat(keys, ", "):sub(1, 1800))
+        pf.CastCooldownSeconds = 0.1
+        pf.ReelDurationSeconds = 0.1
+        table.insert(modified, petName)
     end
 end
 
--- 2. Cari di getgc: fungsi yang mengandung string "PetFishing" atau "pet"
-if getgc then
-    send("🔎 Memindai getgc untuk fungsi terkait pet...")
-    local found = {}
-    for _, obj in ipairs(getgc()) do
-        if type(obj) == "function" then
-            -- Coba lihat konstanta
-            local constants
-            pcall(function()
-                constants = debug.getconstants(obj)
-            end)
-            if constants then
-                for _, c in ipairs(constants) do
-                    if type(c) == "string" and (c:lower():find("pet") or c:lower():find("fish")) then
-                        table.insert(found, {func = obj, const = c})
-                        break
-                    end
-                end
-            end
-        end
-    end
-    if #found > 0 then
-        send("🎯 Ditemukan " .. #found .. " fungsi dengan string pet/fish:")
-        for i, f in ipairs(found) do
-            if i <= 10 then
-                local info = debug.getinfo(f.func, "n")
-                send("  - " .. (info.name or "anonymous") .. " const: " .. f.const)
-            end
-        end
-    else
-        send("⚠️ Tidak ditemukan fungsi dengan konstanta pet/fish.")
-    end
+if #modified > 0 then
+    print("Modified PetFishing for: " .. table.concat(modified, ", "))
+    print("Cooldown & Reel set to 0.1s. Amati pet sekarang.")
 else
-    send("❌ getgc tidak tersedia.")
+    print("No active fishing pet found.")
 end
-
-send("✅ Deep inspect selesai.")
