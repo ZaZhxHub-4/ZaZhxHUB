@@ -1,0 +1,315 @@
+-- // ZHX Instant Fast Reel + Pet Bug Final v4.5
+-- // - Fast Reel: Reel Delay & Loop Interval adjustable, tanpa catch delay/count
+-- // - Pet Bug Trigger: 3x ON-OFF super cepat, pause Fast Reel sejenak
+-- // - Equip rod otomatis, tanpa cancel, stabil & ultra cepat
+
+local RS = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+
+-- ========== REMOTE HASH FINDER ==========
+local function findRemoteByLabel(label)
+    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
+        if child.Name == label then
+            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
+            if inside then
+                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return inside end
+            end
+            local nxt = children[i+1]
+            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
+                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return nxt end
+            end
+            break
+        end
+    end
+    return nil
+end
+
+local chargeRF    = findRemoteByLabel("RF/ChargeFishingRod")
+local minigameRF  = findRemoteByLabel("RF/RequestFishingMinigameStarted")
+local catchRE     = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLabel("RE/FishCaught")
+local equipRE     = findRemoteByLabel("RE/EquipToolFromHotbar")
+local autoStateRF = findRemoteByLabel("RF/UpdateAutoFishingState")
+local markAutoRF  = findRemoteByLabel("RF/MarkAutoFishingUsed")
+local cancelRF    = findRemoteByLabel("RF/CancelFishingInputs")  -- untuk membersihkan
+
+if not chargeRF or not minigameRF or not catchRE then
+    error("Remote inti tidak ditemukan.")
+end
+
+-- ========== KONFIGURASI ==========
+local config = {
+    fastReelActive = false,
+    reelDelay      = 0.165,    -- waktu tunggu setelah minigame sebelum catch
+    loopInterval   = 0.1,    -- jeda antar siklus (setelah catch sebelum charge lagi)
+    pauseFastReel  = false,   -- internal
+
+    petBugActive   = false,
+    petBugInterval = 300,      -- detik
+}
+
+local fastReelThread = nil
+local petBugThread   = nil
+
+-- ========== EQUIP ROD ==========
+local function equipRod()
+    if equipRE then
+        pcall(function() equipRE:FireServer(1) end)
+    else
+        local hotbar = LP.PlayerGui:FindFirstChild("Backpack")
+        if hotbar then
+            local slot1 = hotbar:FindFirstChild("1") or hotbar:FindFirstChild("Slot1")
+            if slot1 and slot1:IsA("ImageButton") then
+                pcall(function()
+                    local pos = slot1.AbsolutePosition + slot1.AbsoluteSize/2
+                    firesignal(UIS.InputBegan, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                    task.wait(0.03)
+                    firesignal(UIS.InputEnded, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                end)
+            end
+        end
+    end
+end
+
+-- ========== FAST REEL CYCLE ==========
+local function fastReelCycle()
+    -- Charge (tanpa cancel)
+    pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
+    -- Minigame
+    pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
+    -- Tunggu reel delay (waktu minigame)
+    task.wait(config.reelDelay)
+    -- Catch (1 kali saja, langsung)
+    pcall(function() catchRE:FireServer() end)
+end
+
+local function fastReelLoop()
+    while config.fastReelActive do
+        -- Jika sedang pause, tunggu sebentar
+        if config.pauseFastReel then
+            task.wait(0.01)
+            continue
+        end
+        fastReelCycle()
+        -- Loop interval setelah catch sebelum charge berikutnya
+        if config.loopInterval > 0 then
+            task.wait(config.loopInterval)
+        end
+    end
+end
+
+local function startFastReel()
+    if config.fastReelActive then return end
+    equipRod()
+    task.wait(0.1)
+    config.fastReelActive = true
+    config.pauseFastReel = false
+    fastReelThread = task.spawn(fastReelLoop)
+end
+
+local function stopFastReel()
+    config.fastReelActive = false
+    config.pauseFastReel = false
+    if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
+end
+
+-- ========== PET BUG TRIGGER (3x ON-OFF, pause Fast Reel sebentar) ==========
+local function triggerPetBug()
+    if not autoStateRF then return end
+
+    -- Pause fast reel
+    config.pauseFastReel = true
+
+    -- Paksa OFF dulu
+    pcall(function() autoStateRF:InvokeServer(false) end)
+    task.wait(0.02)
+
+    -- 3x siklus ON-OFF sangat cepat
+    for _ = 1, 3 do
+        pcall(function() autoStateRF:InvokeServer(true) end)
+        task.wait(0.02)
+        pcall(function() autoStateRF:InvokeServer(false) end)
+        task.wait(0.02)
+    end
+
+    -- Bersihkan sisa auto fishing dengan CancelFishingInputs (jika ada)
+    if cancelRF then
+        pcall(function() cancelRF:InvokeServer() end)
+    end
+
+    -- MarkAuto untuk menambah chaos
+    if markAutoRF then
+        pcall(function() markAutoRF:InvokeServer() end)
+    end
+
+    -- Lepas pause
+    config.pauseFastReel = false
+end
+
+local function startPetBug()
+    if config.petBugActive then return end
+    config.petBugActive = true
+    petBugThread = task.spawn(function()
+        while config.petBugActive do
+            triggerPetBug()
+            task.wait(config.petBugInterval)
+        end
+    end)
+end
+
+local function stopPetBug()
+    config.petBugActive = false
+    if petBugThread then task.cancel(petBugThread); petBugThread = nil end
+end
+
+-- ========== UI ==========
+local pg = LP:WaitForChild("PlayerGui")
+local sg = Instance.new("ScreenGui")
+sg.Name = "ZHX_FastReel_v4.5"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent = pg
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 250, 0, 200)
+frame.Position = UDim2.new(1, -260, 1, -210)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+frame.BackgroundTransparency = 0.1
+frame.BorderSizePixel = 0
+frame.ZIndex = 100
+frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "⚡ Fast Reel v4.5 (Stabil)"
+title.TextColor3 = Color3.fromRGB(72, 210, 130)
+title.TextSize = 13
+title.Font = Enum.Font.GothamBold
+title.ZIndex = 101
+title.Parent = frame
+
+local function makeInput(y, label, default, callback)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0, 100, 0, 20)
+    lbl.Position = UDim2.new(0, 10, 0, y)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.TextColor3 = Color3.fromRGB(200,200,200)
+    lbl.TextSize = 11
+    lbl.Font = Enum.Font.Gotham
+    lbl.ZIndex = 101
+    lbl.Parent = frame
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, 60, 0, 20)
+    box.Position = UDim2.new(0, 115, 0, y)
+    box.BackgroundColor3 = Color3.fromRGB(30,30,40)
+    box.BorderSizePixel = 0
+    box.Text = tostring(default)
+    box.TextColor3 = Color3.fromRGB(255,255,255)
+    box.TextSize = 11
+    box.Font = Enum.Font.Gotham
+    box.ZIndex = 101
+    box.Parent = frame
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,4)
+
+    box.FocusLost:Connect(function()
+        local num = tonumber(box.Text)
+        if num then callback(num) end
+    end)
+    return box
+end
+
+local y = 35
+makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end)
+y = y + 25
+makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end)
+y = y + 25
+makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end)
+
+-- Toggle Fast Reel
+y = y + 30
+local fastBtn = Instance.new("TextButton")
+fastBtn.Size = UDim2.new(1, -20, 0, 35)
+fastBtn.Position = UDim2.new(0, 10, 0, y)
+fastBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+fastBtn.BorderSizePixel = 0
+fastBtn.Text = "▶ Fast Reel"
+fastBtn.TextColor3 = Color3.fromRGB(72, 210, 130)
+fastBtn.TextSize = 13
+fastBtn.Font = Enum.Font.GothamBold
+fastBtn.ZIndex = 101
+fastBtn.AutoButtonColor = false
+fastBtn.Parent = frame
+Instance.new("UICorner", fastBtn).CornerRadius = UDim.new(0,6)
+
+fastBtn.MouseButton1Click:Connect(function()
+    if config.fastReelActive then
+        stopFastReel()
+        fastBtn.Text = "▶ Fast Reel"
+        fastBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+    else
+        startFastReel()
+        fastBtn.Text = "⏹ Fast Reel"
+        fastBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    end
+end)
+
+-- Toggle Pet Bug
+y = y + 40
+local petBtn = Instance.new("TextButton")
+petBtn.Size = UDim2.new(1, -20, 0, 35)
+petBtn.Position = UDim2.new(0, 10, 0, y)
+petBtn.BackgroundColor3 = Color3.fromRGB(20, 30, 60)
+petBtn.BorderSizePixel = 0
+petBtn.Text = "▶ Pet Bug Trigger"
+petBtn.TextColor3 = Color3.fromRGB(130, 180, 255)
+petBtn.TextSize = 13
+petBtn.Font = Enum.Font.GothamBold
+petBtn.ZIndex = 101
+petBtn.AutoButtonColor = false
+petBtn.Parent = frame
+Instance.new("UICorner", petBtn).CornerRadius = UDim.new(0,6)
+
+petBtn.MouseButton1Click:Connect(function()
+    if config.petBugActive then
+        stopPetBug()
+        petBtn.Text = "▶ Pet Bug Trigger"
+        petBtn.BackgroundColor3 = Color3.fromRGB(20, 30, 60)
+    else
+        startPetBug()
+        petBtn.Text = "⏹ Pet Bug Trigger"
+        petBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    end
+end)
+
+-- Drag functionality (sama seperti sebelum)
+local dragging, dragStart, startPos = false, nil, nil
+frame.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = inp.Position
+        startPos = frame.Position
+    end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+print("ZHX Fast Reel v4.5 siap. Reel Delay & Loop Interval adjustable.")
