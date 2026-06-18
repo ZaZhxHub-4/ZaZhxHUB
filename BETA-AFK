@@ -1,6 +1,6 @@
--- // ZHX Fast Reel + Pet Bug Trigger v2.5
--- // UI Minimalis: Input delay, Toggle ON/OFF
--- // Remote hash method (proven working)
+-- // ZHX Fast Reel + Pet Bug v3.0
+-- // Mode terpisah: Fast Reel (no cancel) + Pet Race Condition Trigger
+-- // UI Minimalis dengan 2 Toggle
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -29,30 +29,41 @@ local function findRemoteByLabel(label)
     return nil
 end
 
-local cancelRF = findRemoteByLabel("RF/CancelFishingInputs")
-local chargeRF = findRemoteByLabel("RF/ChargeFishingRod")
-local minigameRF = findRemoteByLabel("RF/RequestFishingMinigameStarted")
-local catchRE = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLabel("RE/FishCaught")
+local cancelRF    = findRemoteByLabel("RF/CancelFishingInputs")
+local chargeRF    = findRemoteByLabel("RF/ChargeFishingRod")
+local minigameRF  = findRemoteByLabel("RF/RequestFishingMinigameStarted")
+local catchRE     = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLabel("RE/FishCaught")
+local autoStateRF = findRemoteByLabel("RF/UpdateAutoFishingState")
+local markAutoRF  = findRemoteByLabel("RF/MarkAutoFishingUsed")
 
-if not cancelRF or not chargeRF or not minigameRF or not catchRE then
-    error("Remote tidak ditemukan. Pastikan sudah di dalam game.")
+if not chargeRF or not minigameRF or not catchRE then
+    error("Remote tidak ditemukan.")
 end
 
--- ========== KONFIGURASI DEFAULT ==========
+-- ========== KONFIGURASI ==========
 local config = {
-    minigameDelay = 0.05,   -- jeda setelah minigame sebelum catch
-    catchDelay = 0.01,      -- jeda antar catch spam
-    catchCount = 3,         -- jumlah spam catch
-    loopInterval = 0.3,     -- jeda antar siklus
-    active = false
+    -- Fast Reel
+    fastReelActive = false,
+    minigameDelay = 0.19,
+    catchDelay = 0,
+    catchCount = 1,
+    loopInterval = 0.1,
+    useCancel = false, -- false agar tidak mengganggu pet
+
+    -- Pet Bug Trigger
+    petBugActive = false,
+    petBugInterval = 45, -- detik antar trigger
 }
 
 local fastReelThread = nil
+local petBugThread = nil
 
--- ========== FUNGSI FAST REEL ==========
+-- ========== FUNGSI FAST REEL (TANPA CANCEL) ==========
 local function fastReelCycle()
-    pcall(function() cancelRF:InvokeServer() end)
-    task.wait(0.01)
+    if config.useCancel and cancelRF then
+        pcall(function() cancelRF:InvokeServer() end)
+        task.wait(0.01)
+    end
     pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
     task.wait(0.01)
     pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
@@ -64,10 +75,10 @@ local function fastReelCycle()
 end
 
 local function startFastReel()
-    if config.active then return end
-    config.active = true
+    if config.fastReelActive then return end
+    config.fastReelActive = true
     fastReelThread = task.spawn(function()
-        while config.active do
+        while config.fastReelActive do
             fastReelCycle()
             task.wait(config.loopInterval)
         end
@@ -75,24 +86,54 @@ local function startFastReel()
 end
 
 local function stopFastReel()
-    config.active = false
-    if fastReelThread then
-        task.cancel(fastReelThread)
-        fastReelThread = nil
+    config.fastReelActive = false
+    if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
+end
+
+-- ========== FUNGSI PET BUG TRIGGER (Race Condition) ==========
+local function triggerPetBug()
+    if not autoStateRF then return end
+    -- Toggle auto fishing 5x cepat lalu akhiri dengan ON
+    for i = 1, 5 do
+        pcall(function() autoStateRF:InvokeServer(true) end)
+        task.wait(0.05)
+        pcall(function() autoStateRF:InvokeServer(false) end)
+        task.wait(0.05)
+    end
+    pcall(function() autoStateRF:InvokeServer(true) end)
+    if markAutoRF then
+        task.wait(0.1)
+        pcall(function() markAutoRF:InvokeServer() end)
     end
 end
 
--- ========== UI MINIMALIS ==========
+local function startPetBug()
+    if config.petBugActive then return end
+    config.petBugActive = true
+    petBugThread = task.spawn(function()
+        while config.petBugActive do
+            triggerPetBug()
+            task.wait(config.petBugInterval)
+        end
+    end)
+end
+
+local function stopPetBug()
+    config.petBugActive = false
+    if petBugThread then task.cancel(petBugThread); petBugThread = nil end
+end
+
+-- ========== UI ==========
 local pg = LP:WaitForChild("PlayerGui")
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_FastReel"
+sg.Name = "ZHX_FastReel_v3"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 180)
-frame.Position = UDim2.new(1, -230, 1, -190)
+frame.Size = UDim2.new(0, 250, 0, 220)
+frame.Position = UDim2.new(1, -260, 1, -230)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
@@ -101,25 +142,25 @@ frame.Parent = sg
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
 
--- Title bar
+-- Title
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "⚡ Fast Reel v2.5"
+title.Text = "⚡ Fast Reel + Pet Bug v3"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
-title.TextSize = 14
+title.TextSize = 13
 title.Font = Enum.Font.GothamBold
 title.ZIndex = 101
 title.Parent = frame
 
--- Row 1: Minigame Delay
-local function makeInput(y, labelText, default, callback)
+-- Fungsi buat input
+local function makeInput(y, label, default, callback)
     local lbl = Instance.new("TextLabel")
     lbl.Size = UDim2.new(0, 100, 0, 20)
     lbl.Position = UDim2.new(0, 10, 0, y)
     lbl.BackgroundTransparency = 1
-    lbl.Text = labelText
-    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.Text = label
+    lbl.TextColor3 = Color3.fromRGB(200,200,200)
     lbl.TextSize = 11
     lbl.Font = Enum.Font.Gotham
     lbl.ZIndex = 101
@@ -127,16 +168,16 @@ local function makeInput(y, labelText, default, callback)
 
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(0, 60, 0, 20)
-    box.Position = UDim2.new(0, 110, 0, y)
-    box.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    box.Position = UDim2.new(0, 115, 0, y)
+    box.BackgroundColor3 = Color3.fromRGB(30,30,40)
     box.BorderSizePixel = 0
     box.Text = tostring(default)
-    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.TextColor3 = Color3.fromRGB(255,255,255)
     box.TextSize = 11
     box.Font = Enum.Font.Gotham
     box.ZIndex = 101
     box.Parent = frame
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,4)
 
     box.FocusLost:Connect(function()
         local num = tonumber(box.Text)
@@ -145,35 +186,70 @@ local function makeInput(y, labelText, default, callback)
     return box
 end
 
-local minigameBox = makeInput(35, "Minigame Delay", config.minigameDelay, function(v) config.minigameDelay = v end)
-local catchBox    = makeInput(60, "Catch Delay", config.catchDelay, function(v) config.catchDelay = v end)
-local countBox    = makeInput(85, "Catch Count", config.catchCount, function(v) config.catchCount = math.floor(v) end)
-local loopBox     = makeInput(110, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end)
+local y = 35
+local minigameBox = makeInput(y, "Minigame Delay", config.minigameDelay, function(v) config.minigameDelay = v end)
+y = y + 25
+local catchBox = makeInput(y, "Catch Delay", config.catchDelay, function(v) config.catchDelay = v end)
+y = y + 25
+local countBox = makeInput(y, "Catch Count", config.catchCount, function(v) config.catchCount = math.floor(v) end)
+y = y + 25
+local loopBox = makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end)
+y = y + 25
+local petIntervalBox = makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end)
 
--- Toggle button
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(1, -20, 0, 35)
-toggleBtn.Position = UDim2.new(0, 10, 0, 140)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
-toggleBtn.BorderSizePixel = 0
-toggleBtn.Text = "▶ START"
-toggleBtn.TextColor3 = Color3.fromRGB(72, 210, 130)
-toggleBtn.TextSize = 13
-toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.ZIndex = 101
-toggleBtn.AutoButtonColor = false
-toggleBtn.Parent = frame
-Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
+-- Toggle Fast Reel
+y = y + 30
+local fastToggleBtn = Instance.new("TextButton")
+fastToggleBtn.Size = UDim2.new(1, -20, 0, 35)
+fastToggleBtn.Position = UDim2.new(0, 10, 0, y)
+fastToggleBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+fastToggleBtn.BorderSizePixel = 0
+fastToggleBtn.Text = "▶ Fast Reel"
+fastToggleBtn.TextColor3 = Color3.fromRGB(72, 210, 130)
+fastToggleBtn.TextSize = 13
+fastToggleBtn.Font = Enum.Font.GothamBold
+fastToggleBtn.ZIndex = 101
+fastToggleBtn.AutoButtonColor = false
+fastToggleBtn.Parent = frame
+Instance.new("UICorner", fastToggleBtn).CornerRadius = UDim.new(0,6)
 
-toggleBtn.MouseButton1Click:Connect(function()
-    if config.active then
+fastToggleBtn.MouseButton1Click:Connect(function()
+    if config.fastReelActive then
         stopFastReel()
-        toggleBtn.Text = "▶ START"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+        fastToggleBtn.Text = "▶ Fast Reel"
+        fastToggleBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
     else
         startFastReel()
-        toggleBtn.Text = "⏹ STOP"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+        fastToggleBtn.Text = "⏹ Fast Reel"
+        fastToggleBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    end
+end)
+
+-- Toggle Pet Bug
+y = y + 40
+local petToggleBtn = Instance.new("TextButton")
+petToggleBtn.Size = UDim2.new(1, -20, 0, 35)
+petToggleBtn.Position = UDim2.new(0, 10, 0, y)
+petToggleBtn.BackgroundColor3 = Color3.fromRGB(20, 30, 60)
+petToggleBtn.BorderSizePixel = 0
+petToggleBtn.Text = "▶ Pet Bug Trigger"
+petToggleBtn.TextColor3 = Color3.fromRGB(130, 180, 255)
+petToggleBtn.TextSize = 13
+petToggleBtn.Font = Enum.Font.GothamBold
+petToggleBtn.ZIndex = 101
+petToggleBtn.AutoButtonColor = false
+petToggleBtn.Parent = frame
+Instance.new("UICorner", petToggleBtn).CornerRadius = UDim.new(0,6)
+
+petToggleBtn.MouseButton1Click:Connect(function()
+    if config.petBugActive then
+        stopPetBug()
+        petToggleBtn.Text = "▶ Pet Bug Trigger"
+        petToggleBtn.BackgroundColor3 = Color3.fromRGB(20, 30, 60)
+    else
+        startPetBug()
+        petToggleBtn.Text = "⏹ Pet Bug Trigger"
+        petToggleBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
     end
 end)
 
@@ -198,4 +274,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("ZHX Fast Reel v2.5 loaded. Panel di kanan bawah.")
+print("ZHX Fast Reel + Pet Bug v3 loaded.")
