@@ -1,6 +1,7 @@
--- // ZHX Instant Fast Reel + Pet Bug Final v4.0
--- // Optimasi: tidak ada jeda bengong, charge ultra cepat, toggle tanpa ganggu fast reel
--- // Pakai remote hash — Auto Booth method
+-- // ZHX Instant Fast Reel + Pet Bug Final v4.5
+-- // - Fast Reel: Reel Delay & Loop Interval adjustable, tanpa catch delay/count
+-- // - Pet Bug Trigger: 3x ON-OFF super cepat, pause Fast Reel sejenak
+-- // - Equip rod otomatis, tanpa cancel, stabil & ultra cepat
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -35,6 +36,7 @@ local catchRE     = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLa
 local equipRE     = findRemoteByLabel("RE/EquipToolFromHotbar")
 local autoStateRF = findRemoteByLabel("RF/UpdateAutoFishingState")
 local markAutoRF  = findRemoteByLabel("RF/MarkAutoFishingUsed")
+local cancelRF    = findRemoteByLabel("RF/CancelFishingInputs")  -- untuk membersihkan
 
 if not chargeRF or not minigameRF or not catchRE then
     error("Remote inti tidak ditemukan.")
@@ -43,13 +45,12 @@ end
 -- ========== KONFIGURASI ==========
 local config = {
     fastReelActive = false,
-    minigameDelay  = 0.14,   -- lebih rendah dari sebelumnya, bisa diatur
-    catchDelay     = 0,
-    catchCount     = 1,
-    loopInterval   = 0,      -- tanpa jeda antar siklus, langsung lanjut
+    reelDelay      = 0.19,    -- waktu tunggu setelah minigame sebelum catch
+    loopInterval   = 0.05,    -- jeda antar siklus (setelah catch sebelum charge lagi)
+    pauseFastReel  = false,   -- internal
 
     petBugActive   = false,
-    petBugInterval = 55,     -- lebih jarang agar tidak sering bertabrakan
+    petBugInterval = 55,      -- detik
 }
 
 local fastReelThread = nil
@@ -75,19 +76,30 @@ local function equipRod()
     end
 end
 
--- ========== FAST REEL CYCLE (ULTRA CEPAT) ==========
--- Charge > minigame > catch tanpa cancel, tanpa delay antar siklus
+-- ========== FAST REEL CYCLE ==========
 local function fastReelCycle()
-    -- Charge rod (langsung, tanpa delay)
+    -- Charge (tanpa cancel)
     pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
-    -- Minigame start (hampir bersamaan)
+    -- Minigame
     pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
-    -- Tunggu waktu minimum agar ikan tergigit (bisa diadjust)
-    task.wait(config.minigameDelay)
-    -- Catch ikan
-    for i = 1, config.catchCount do
-        pcall(function() catchRE:FireServer() end)
-        -- tanpa delay catch jika count = 1
+    -- Tunggu reel delay (waktu minigame)
+    task.wait(config.reelDelay)
+    -- Catch (1 kali saja, langsung)
+    pcall(function() catchRE:FireServer() end)
+end
+
+local function fastReelLoop()
+    while config.fastReelActive do
+        -- Jika sedang pause, tunggu sebentar
+        if config.pauseFastReel then
+            task.wait(0.01)
+            continue
+        end
+        fastReelCycle()
+        -- Loop interval setelah catch sebelum charge berikutnya
+        if config.loopInterval > 0 then
+            task.wait(config.loopInterval)
+        end
     end
 end
 
@@ -96,43 +108,47 @@ local function startFastReel()
     equipRod()
     task.wait(0.1)
     config.fastReelActive = true
-    fastReelThread = task.spawn(function()
-        while config.fastReelActive do
-            fastReelCycle()
-            -- langsung looping tanpa jeda (loopInterval 0)
-            -- tapi beri sedikit napas agar tidak overload
-            if config.loopInterval > 0 then
-                task.wait(config.loopInterval)
-            end
-        end
-    end)
+    config.pauseFastReel = false
+    fastReelThread = task.spawn(fastReelLoop)
 end
 
 local function stopFastReel()
     config.fastReelActive = false
+    config.pauseFastReel = false
     if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
 end
 
--- ========== PET BUG TRIGGER (TIDAK MENGGANGGU FAST REEL) ==========
--- Kirim toggle auto TAPI kita hentikan dulu fast reel sejenak? Tidak.
--- Solusi: gunakan markAuto saja (reset cooldown internal) tanpa toggle state.
--- Jika markAuto tidak cukup, kita toggle dengan jeda yang sangat pendek.
+-- ========== PET BUG TRIGGER (3x ON-OFF, pause Fast Reel sebentar) ==========
 local function triggerPetBug()
-    -- Coba dulu hanya mark auto (jika ada)
+    if not autoStateRF then return end
+
+    -- Pause fast reel
+    config.pauseFastReel = true
+
+    -- Paksa OFF dulu
+    pcall(function() autoStateRF:InvokeServer(false) end)
+    task.wait(0.02)
+
+    -- 3x siklus ON-OFF sangat cepat
+    for _ = 1, 3 do
+        pcall(function() autoStateRF:InvokeServer(true) end)
+        task.wait(0.02)
+        pcall(function() autoStateRF:InvokeServer(false) end)
+        task.wait(0.02)
+    end
+
+    -- Bersihkan sisa auto fishing dengan CancelFishingInputs (jika ada)
+    if cancelRF then
+        pcall(function() cancelRF:InvokeServer() end)
+    end
+
+    -- MarkAuto untuk menambah chaos
     if markAutoRF then
         pcall(function() markAutoRF:InvokeServer() end)
     end
-    -- Jika autoStateRF tersedia, kita toggle dengan cepat tapi hanya 1x ON-OFF
-    if autoStateRF then
-        -- Pastikan state OFF dulu
-        pcall(function() autoStateRF:InvokeServer(false) end)
-        task.wait(0.02)
-        -- ON sekejap
-        pcall(function() autoStateRF:InvokeServer(true) end)
-        task.wait(0.02)
-        -- OFF lagi
-        pcall(function() autoStateRF:InvokeServer(false) end)
-    end
+
+    -- Lepas pause
+    config.pauseFastReel = false
 end
 
 local function startPetBug()
@@ -154,14 +170,14 @@ end
 -- ========== UI ==========
 local pg = LP:WaitForChild("PlayerGui")
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_FastReel_v4"
+sg.Name = "ZHX_FastReel_v4.5"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 250, 0, 230)
-frame.Position = UDim2.new(1, -260, 1, -240)
+frame.Size = UDim2.new(0, 250, 0, 200)
+frame.Position = UDim2.new(1, -260, 1, -210)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
@@ -173,7 +189,7 @@ Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "⚡ Fast Reel v4 (Ultra Cepat)"
+title.Text = "⚡ Fast Reel v4.5 (Stabil)"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -213,11 +229,7 @@ local function makeInput(y, label, default, callback)
 end
 
 local y = 35
-makeInput(y, "Minigame Delay", config.minigameDelay, function(v) config.minigameDelay = v end)
-y = y + 25
-makeInput(y, "Catch Delay", config.catchDelay, function(v) config.catchDelay = v end)
-y = y + 25
-makeInput(y, "Catch Count", config.catchCount, function(v) config.catchCount = math.floor(v) end)
+makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end)
 y = y + 25
 makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end)
 y = y + 25
@@ -279,7 +291,7 @@ petBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Drag
+-- Drag functionality (sama seperti sebelum)
 local dragging, dragStart, startPos = false, nil, nil
 frame.InputBegan:Connect(function(inp)
     if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
@@ -300,4 +312,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("ZHX Fast Reel v4 loaded. Ultra cepat, pet trigger ringan.")
+print("ZHX Fast Reel v4.5 siap. Reel Delay & Loop Interval adjustable.")
