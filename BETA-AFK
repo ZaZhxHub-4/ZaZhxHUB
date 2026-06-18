@@ -1,46 +1,82 @@
--- // CUTSCENE SPAMMER untuk memicu Race Condition pada Pet Fishing
--- // Mencari dan memanggil remote/event terkait cutscene/efek tangkapan ikan langka
+-- // MONITORING INSTANT FAST REEL DARI LYNX
+-- // Jalankan script ini SEBELUM kamu menghidupkan LYNX.
+-- // Script akan mencatat semua panggilan remote fishing yang dilakukan LYNX.
+-- // Lakukan urutan: cast manual -> nyalakan Instant Fast Reel -> lihat Discord.
 
+local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+local HS = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
-local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
 
--- Cari remote yang berpotensi memicu cutscene
-local cutsceneRemotes = {}
-for _, obj in pairs(net:GetDescendants()) do
+local function send(msg)
+    pcall(function()
+        local body = HS:JSONEncode({content = "`" .. os.date("%H:%M:%S") .. "` " .. msg})
+        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body}) end
+    end)
+end
+
+send("🔍 Monitoring LYNX Instant Fast Reel dimulai. Jalankan LYNX sekarang, lalu lakukan triknya.")
+
+local netFolder = RS.Packages._Index["sleitnick_net@0.2.0"].net
+local targets = {}
+
+-- Daftar remote yang pasti terlibat dalam fast reel
+local important = {
+    "RF/ChargeFishingRod",
+    "RF/RequestFishingMinigameStarted",
+    "RF/CancelFishingInputs",
+    "RE/FishingMinigameChanged",
+    "RE/CatchFishCompleted",
+    "RE/FishCaught",
+    "RE/CaughtFishVisual",
+    "RF/UpdateAutoFishingState",
+    "RF/MarkAutoFishingUsed",
+    "RF/CancelFishingInputs"
+}
+
+for _, name in ipairs(important) do
+    local remote = netFolder:FindFirstChild(name)
+    if remote then
+        table.insert(targets, remote)
+    end
+end
+
+-- Jika ada remote lain yang mengandung "Fast" atau "Instant", tangkap juga
+for _, obj in pairs(netFolder:GetDescendants()) do
     if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
         local n = obj.Name:lower()
-        if n:find("cutscene") or n:find("effect") or n:find("visual") or n:find("caught") or n:find("notification") or n:find("complete") then
-            table.insert(cutsceneRemotes, obj)
+        if n:find("fast") or n:find("instant") then
+            table.insert(targets, obj)
         end
     end
 end
 
-if #cutsceneRemotes == 0 then
-    -- Fallback: gunakan remote yang kita tahu bisa dipakai
-    cutsceneRemotes = {
-        net:FindFirstChild("RE/PlayFishingEffect"),
-        net:FindFirstChild("RE/CaughtFishVisual"),
-        net:FindFirstChild("RE/CatchFishCompleted")
-    }
-end
-
--- Fungsi spam cutscene
-local function spamCutscene()
-    for _, remote in ipairs(cutsceneRemotes) do
-        if remote then
-            pcall(function()
-                if remote:IsA("RemoteEvent") then
-                    remote:FireServer()
-                else
-                    remote:InvokeServer()
-                end
-            end)
-        end
+-- Hook semua
+for _, remote in pairs(targets) do
+    if remote:IsA("RemoteEvent") then
+        pcall(function()
+            local old = remote.FireServer
+            remote.FireServer = function(self, ...)
+                local args = {...}
+                local a = ""
+                for i, v in ipairs(args) do a = a .. tostring(v):sub(1,20) .. (i==#args and "" or ",") end
+                send("📤 " .. remote.Name .. "(" .. a .. ")")
+                return old(self, ...)
+            end
+        end)
+    elseif remote:IsA("RemoteFunction") then
+        pcall(function()
+            local old = remote.InvokeServer
+            remote.InvokeServer = function(self, ...)
+                local args = {...}
+                local a = ""
+                for i, v in ipairs(args) do a = a .. tostring(v):sub(1,20) .. (i==#args and "" or ",") end
+                send("📤 " .. remote.Name .. "(" .. a .. ")")
+                return old(self, ...)
+            end
+        end)
     end
 end
 
--- Lakukan spam setiap 0.5 detik
-while true do
-    spamCutscene()
-    task.wait(5.0)
-end
+send("✅ Siap. Sekarang buka LYNX, jangan nyalakan Instant Fast Reel dulu. Lempar pancing manual, lalu nyalakan Instant Fast Reel sebelum reel. Amati Discord.")
