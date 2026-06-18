@@ -1,1 +1,73 @@
+-- // PET REMOTE EXPLORER: Mencari semua remote terkait pet (label mengandung "Pet")
+-- // Menggunakan hash finder method
+local RS = game:GetService("ReplicatedStorage")
+local HS = game:GetService("HttpService")
+local webhook = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
+local function send(msg)
+    pcall(function()
+        local body = HS:JSONEncode({content = "`" .. os.date("%H:%M:%S") .. "` " .. msg:sub(1, 1900)})
+        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body}) end
+    end)
+end
+
+local function findRemoteByLabel(label)
+    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
+        if child.Name == label then
+            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
+            if inside then
+                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return inside end
+            end
+            local nxt = children[i+1]
+            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
+                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return nxt end
+            end
+            break
+        end
+    end
+    return nil
+end
+
+send("🔍 Mencari semua remote label mengandung 'Pet'...")
+
+local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+local petLabels = {}
+for _, child in ipairs(net:GetChildren()) do
+    if child:IsA("Folder") and child.Name:lower():find("pet") then
+        table.insert(petLabels, child.Name)
+    end
+end
+
+if #petLabels == 0 then
+    send("❌ Tidak ada folder label mengandung 'Pet'.")
+else
+    for _, label in ipairs(petLabels) do
+        local remote = findRemoteByLabel(label)
+        if remote then
+            send("🎯 Label: " .. label .. " -> Remote: " .. remote.Name .. " (" .. remote.ClassName .. ")")
+        else
+            send("⚠️ Label: " .. label .. " -> Remote tidak ditemukan (mungkin tidak ada hash di dekatnya).")
+        end
+    end
+end
+
+-- Coba cari remote di folder Pets yang mungkin tidak terlabel
+send("🔍 Mencari remote di dalam folder 'Pets'...")
+local petsFolder = net:FindFirstChild("Pets")
+if petsFolder then
+    for _, obj in ipairs(petsFolder:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            send("📁 Di dalam Pets: " .. obj:GetFullName() .. " (" .. obj.ClassName .. ")")
+        end
+    end
+else
+    send("❌ Folder 'Pets' tidak ditemukan di net.")
+end
+
+send("✅ Eksplorasi selesai.")
