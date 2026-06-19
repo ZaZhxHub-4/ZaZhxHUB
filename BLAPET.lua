@@ -1,5 +1,6 @@
--- // ZHX Smart Fishing v6.3 — Two-Column UI + Save/Load Config
--- // Blapet Method (Final Fix) dengan konfigurasi persisten
+-- // ZHX Smart Fishing v6.4 — Rapi UI + Save/Load Config
+-- // Dua kolom presisi, tidak ada elemen terpotong, tombol Save di bawah
+-- // Blapet Method dengan logika yang sudah matang
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -39,7 +40,7 @@ if not chargeRF or not minigameRF or not catchRE then
     error("Remote inti tidak ditemukan.")
 end
 
--- ========== KONFIGURASI DEFAULT ==========
+-- ========== KONFIGURASI ==========
 local config = {
     reelDelay      = 4,
     loopInterval   = 0.15,
@@ -62,10 +63,10 @@ local chargeStartTime = 0
 local fastReelThread = nil
 local blapetThread   = nil
 
--- ========== SAVE / LOAD CONFIG ==========
+-- ========== SAVE / LOAD ==========
 local CONFIG_FOLDER = "ZHX_Configs"
 local CONFIG_FILE   = CONFIG_FOLDER .. "/FastReelConfig.json"
-local inputBoxes = {}  -- [key] = TextBox
+local inputBoxes = {}
 
 local function ensureFolder()
     if not isfolder or not makefolder then return false end
@@ -76,34 +77,24 @@ local function ensureFolder()
 end
 
 local function saveConfig()
-    if not writefile or not ensureFolder() then
-        print("Save gagal: executor tidak support writefile.")
-        return
-    end
+    if not writefile or not ensureFolder() then return end
     pcall(function()
         writefile(CONFIG_FILE, game:GetService("HttpService"):JSONEncode(config))
-        print("✅ Config disimpan.")
     end)
 end
 
 local function loadConfig()
-    if not readfile or not isfile or not isfile(CONFIG_FILE) then
-        return
-    end
+    if not readfile or not isfile or not isfile(CONFIG_FILE) then return end
     pcall(function()
         local data = game:GetService("HttpService"):JSONDecode(readfile(CONFIG_FILE))
         for k, v in pairs(data) do
-            if config[k] ~= nil then
-                config[k] = v
-            end
+            if config[k] ~= nil then config[k] = v end
         end
-        -- Update UI input boxes
         for k, box in pairs(inputBoxes) do
             if config[k] ~= nil then
                 box.Text = tostring(config[k])
             end
         end
-        print("✅ Config dimuat otomatis.")
     end)
 end
 
@@ -195,15 +186,12 @@ end
 local function runBlapetCycle(isLastCycle)
     fastReelPaused = true
     task.wait(0.3)
-
     petBugActive = false
     task.wait(0.1)
     petBugActive = true
     task.spawn(function() triggerPetBug() end)
-
     local stuckDuration = isLastCycle and config.blapetFinalStuck or config.blapetStuckTime
     task.wait(stuckDuration)
-
     petBugActive = false
     fastReelPaused = false
 end
@@ -251,7 +239,7 @@ end
 local pg = LP:WaitForChild("PlayerGui")
 
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_SmartFishing_v6.3"
+sg.Name = "ZHX_SmartFishing_v6.4"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
@@ -264,6 +252,7 @@ floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 floatingGui.Parent = pg
 pcall(function() floatingGui.DisplayOrder = 99998 end)
 
+-- Floating button
 local floatBtn = Instance.new("ImageButton")
 floatBtn.Size = UDim2.new(0, 46, 0, 46)
 floatBtn.Position = UDim2.new(0, 12, 0, 100)
@@ -276,10 +265,10 @@ floatBtn.Parent = floatingGui
 Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
 Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(72, 210, 130)
 
--- ========== MAIN PANEL (Two-Column) ==========
+-- Main panel (380x260)
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 370, 0, 230)  -- lebih lebar, lebih pendek
-frame.Position = UDim2.new(1, -380, 1, -240)
+frame.Size = UDim2.new(0, 380, 0, 260)
+frame.Position = UDim2.new(1, -390, 1, -270)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
@@ -295,19 +284,20 @@ end)
 
 -- Title
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 26)
+title.Size = UDim2.new(1, -20, 0, 24)
+title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "⚡ Smart Fishing v6.3"
+title.Text = "⚡ Smart Fishing v6.4"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 12
 title.Font = Enum.Font.GothamBold
 title.ZIndex = 101
 title.Parent = frame
 
--- Helper functions
+-- Helper: input baris (label + textbox) di posisi (x, y)
 local function makeInput(x, y, label, default, callback, configKey)
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 80, 0, 20)
+    lbl.Size = UDim2.new(0, 82, 0, 20)
     lbl.Position = UDim2.new(0, x, 0, y)
     lbl.BackgroundTransparency = 1
     lbl.Text = label
@@ -318,8 +308,8 @@ local function makeInput(x, y, label, default, callback, configKey)
     lbl.Parent = frame
 
     local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0, 55, 0, 20)
-    box.Position = UDim2.new(0, x+85, 0, y)
+    box.Size = UDim2.new(0, 60, 0, 20)
+    box.Position = UDim2.new(0, x + 90, 0, y)
     box.BackgroundColor3 = Color3.fromRGB(30,30,40)
     box.BorderSizePixel = 0
     box.Text = tostring(default)
@@ -330,19 +320,16 @@ local function makeInput(x, y, label, default, callback, configKey)
     box.Parent = frame
     Instance.new("UICorner", box).CornerRadius = UDim.new(0,4)
 
-    if configKey then
-        inputBoxes[configKey] = box
-    end
+    if configKey then inputBoxes[configKey] = box end
 
     box.FocusLost:Connect(function()
         local num = tonumber(box.Text)
-        if num then
-            callback(num)
-        end
+        if num then callback(num) end
     end)
     return box
 end
 
+-- Helper: toggle button
 local function makeToggleButton(x, y, w, text, startFn, stopFn, getActiveFn)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, w, 0, 26)
@@ -372,54 +359,36 @@ local function makeToggleButton(x, y, w, text, startFn, stopFn, getActiveFn)
             if startFn then startFn() end
         end
     end)
-    -- sinkronisasi state dari luar
-    task.spawn(function()
-        while true do
-            task.wait(0.5)
-            local should = getActiveFn and getActiveFn()
-            if should ~= active then
-                active = should
-                if active then
-                    btn.Text = "⏹ " .. text
-                    btn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
-                else
-                    btn.Text = "▶ " .. text
-                    btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
-                end
-            end
-        end
-    end)
+    -- Update dari state jika diperlukan (opsional, tidak wajib)
     return btn
 end
 
--- ========== LAYOUT ==========
+-- Layout presisi: kolom kiri (x=10), kolom kanan (x=195)
 local leftX = 10
 local rightX = 195
-local yStart = 32
-local rowH = 24
+local yBase = 32  -- setelah title
+local rowH = 24   -- jarak vertikal
 
 -- Kolom Kiri: Fast Reel
-makeInput(leftX, yStart, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end, "reelDelay")
-makeInput(leftX, yStart+rowH, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end, "loopInterval")
-makeInput(leftX, yStart+rowH*2, "Timing Trigger", config.timingTrigger, function(v) config.timingTrigger = v end, "timingTrigger")
-
-makeToggleButton(leftX, yStart+rowH*3+2, 160, "Fast Reel",
+makeInput(leftX, yBase, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end, "reelDelay")
+makeInput(leftX, yBase + rowH, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end, "loopInterval")
+makeInput(leftX, yBase + rowH*2, "Timing Trigger", config.timingTrigger, function(v) config.timingTrigger = v end, "timingTrigger")
+makeToggleButton(leftX, yBase + rowH*3 + 4, 175, "Fast Reel",
     startFastReel, stopFastReel,
     function() return fastReelActive end
 )
 
 -- Kolom Kanan: Pet Bug + Blapet
-local ry = yStart
+local ry = yBase
 makeInput(rightX, ry, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end, "petBugInterval")
 ry = ry + rowH
 makeInput(rightX, ry, "Toggle Count", config.toggleCount, function(v) config.toggleCount = math.max(1, math.floor(v)) end, "toggleCount")
 ry = ry + rowH
-makeToggleButton(rightX, ry+2, 160, "Pet Bug (Smart)",
+makeToggleButton(rightX, ry + 2, 175, "Pet Bug (Smart)",
     function() petBugActive = true; lastPetBugTime = 0 end,
     function() petBugActive = false end,
     function() return petBugActive end
 )
-
 ry = ry + rowH + 8
 makeInput(rightX, ry, "Blapet Cycles", config.blapetCycles, function(v) config.blapetCycles = math.max(1, math.floor(v)) end, "blapetCycles")
 ry = ry + rowH
@@ -429,20 +398,20 @@ makeInput(rightX, ry, "Final Stuck (s)", config.blapetFinalStuck, function(v) co
 ry = ry + rowH
 makeInput(rightX, ry, "Interval (jam)", config.blapetIntervalHours, function(v) config.blapetIntervalHours = math.max(0.5, v) end, "blapetIntervalHours")
 ry = ry + rowH
-makeToggleButton(rightX, ry+2, 160, "Blapet (Auto)",
+makeToggleButton(rightX, ry + 2, 175, "Blapet (Auto)",
     startBlapet, stopBlapet,
     function() return blapetActive end
 )
 
--- Tombol Save Config (di bawah panel, full width)
+-- Tombol Save Config (full width di bagian bawah)
 local saveBtn = Instance.new("TextButton")
-saveBtn.Size = UDim2.new(1, -20, 0, 28)
-saveBtn.Position = UDim2.new(0, 10, 1, -32)
+saveBtn.Size = UDim2.new(1, -20, 0, 30)
+saveBtn.Position = UDim2.new(0.5, -170, 1, -36)  -- tengah bawah
 saveBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 80)
 saveBtn.BorderSizePixel = 0
 saveBtn.Text = "💾 Save Config"
 saveBtn.TextColor3 = Color3.fromRGB(130, 180, 255)
-saveBtn.TextSize = 11
+saveBtn.TextSize = 12
 saveBtn.Font = Enum.Font.GothamBold
 saveBtn.ZIndex = 101
 saveBtn.AutoButtonColor = false
@@ -451,16 +420,15 @@ Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0,5)
 
 saveBtn.MouseButton1Click:Connect(function()
     saveConfig()
-    -- Notifikasi kecil: ubah teks sementara
     saveBtn.Text = "✅ Tersimpan!"
     task.wait(2)
     saveBtn.Text = "💾 Save Config"
 end)
 
--- ========== LOAD CONFIG SAAT STARTUP ==========
+-- ========== LOAD CONFIG ==========
 loadConfig()
 
--- ========== DRAG FUNCTIONS ==========
+-- ========== DRAG ==========
 local dragging, dragStart, startPos = false, nil, nil
 frame.InputBegan:Connect(function(inp)
     if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
@@ -504,4 +472,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("v6.3: ZHX BEKASI PRIDE.")
+print("v6.4: UI rapi, Save/Load siap. Klik logo ZHX untuk buka panel.")
