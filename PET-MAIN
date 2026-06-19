@@ -1,5 +1,6 @@
--- // ZHX Smart Fishing v6.1 — Blapet Method (sesuai manual)
--- // Perubahan: Stuck lebih lama, restart Bug Pet setiap siklus, dan wait di akhir
+-- // ZHX Smart Fishing v6.2 — Blapet Method (Final Fix)
+-- // Setiap siklus: stuck setelah charge, lalu resume, tunggu charge lagi, pause.
+-- // Siklus terakhir: stuck lebih lama (Final Stuck Time) untuk menunggu toggle selesai.
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -42,18 +43,19 @@ end
 -- ========== KONFIGURASI ==========
 local config = {
     fastReelActive = false,
-    reelDelay      = 4,       -- Reel Delay (detik)
-    loopInterval   = 0.15,    -- Loop Interval (detik)
-    timingTrigger  = 4,       -- Timing Trigger (detik setelah charge)
+    reelDelay      = 4,
+    loopInterval   = 0.15,
+    timingTrigger  = 4,
 
     petBugActive   = false,
     petBugInterval = 70,
-    toggleCount    = 700,     -- jumlah ON-OFF
+    toggleCount    = 700,
 
     -- Blapet
     blapetActive     = false,
-    blapetCycles     = 4,                -- berapa kali stuck-charge per sesi
-    blapetStuckTime  = 15,              -- detik stuck per siklus (posisi setelah charge)
+    blapetCycles     = 4,
+    blapetStuckTime  = 15,         -- durasi stuck per siklus (detik)
+    blapetFinalStuck = 60,         -- durasi stuck setelah siklus terakhir untuk menunggu toggle selesai
     blapetIntervalHours = 5,
     blapetNextRun    = 0,
 
@@ -97,7 +99,7 @@ local function triggerPetBug()
     if markAutoRF then pcall(function() markAutoRF:InvokeServer() end) end
 end
 
--- ========== FAST REEL CYCLE (dengan pause) ==========
+-- ========== FAST REEL CYCLE ==========
 local function fastReelCycle()
     if config.fastReelPaused then return end
 
@@ -105,7 +107,6 @@ local function fastReelCycle()
     config.chargeStartTime = tick()
     pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
 
-    -- Pet Bug normal (hanya jika tidak Blapet)
     if config.petBugActive and not config.blapetActive then
         local now = tick()
         if now - config.lastPetBugTime >= config.petBugInterval then
@@ -113,7 +114,7 @@ local function fastReelCycle()
                 local elapsed = tick() - config.chargeStartTime
                 local waitTime = math.max(0, config.timingTrigger - elapsed)
                 if waitTime > 0 then task.wait(waitTime) end
-                if config.fastReelActive and config.petBugActive and not config.blapetActive then
+                if config.fastReelActive and config.petBugActive then
                     triggerPetBug()
                     config.lastPetBugTime = tick()
                 end
@@ -154,59 +155,45 @@ local function stopFastReel()
     if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
 end
 
--- ========== BLAPET METHOD (Sesuai Manual) ==========
-local function runBlapetCycle()
-    -- 1. Pastikan user sudah di posisi setelah charge (pause Fast Reel)
+-- ========== BLAPET METHOD (FIXED) ==========
+local function runBlapetCycle(isLastCycle)
+    -- 1. Pause Fast Reel (user stuck setelah charge)
     config.fastReelPaused = true
-    -- Beri sedikit waktu agar benar-benar stuck
     task.wait(0.3)
 
-    -- 2. Aktifkan Pet Bug (kalau belum) atau restart: OFF dulu, lalu ON
+    -- 2. Mulai ulang Pet Bug (OFF dulu, ON, trigger)
     config.petBugActive = false
     task.wait(0.1)
     config.petBugActive = true
-    -- Trigger langsung (mulai toggle count besar)
-    task.spawn(function()
-        triggerPetBug()
-    end)
+    task.spawn(function() triggerPetBug() end)
 
-    -- 3. Biarkan stuck selama blapetStuckTime (detik) agar pet spam mancing
-    task.wait(config.blapetStuckTime)
+    -- 3. Stuck selama durasi yang sesuai
+    local stuckDuration = isLastCycle and config.blapetFinalStuck or config.blapetStuckTime
+    task.wait(stuckDuration)
 
-    -- 4. Setelah durasi stuck, matikan Pet Bug, lalu resume Fast Reel
+    -- 4. Matikan Pet Bug
     config.petBugActive = false
-    config.fastReelPaused = false  -- user akan lanjut reel/catch
+    config.fastReelPaused = false  -- resume Fast Reel (user akan reel, catch, charge lagi)
 end
 
 local function blapetSession()
     for i = 1, config.blapetCycles do
         if not config.blapetActive then break end
-        runBlapetCycle()
+        local isLast = (i == config.blapetCycles)
+        runBlapetCycle(isLast)
 
-        -- Tunggu sampai user selesai reel, catch, lalu charge lagi (kita deteksi charge berikutnya)
-        -- Kita perlu menunggu chargeStartTime baru setelah resume
-        local lastCharge = config.chargeStartTime
-        local waited = 0
-        while config.blapetActive and waited < 10 do
-            if config.chargeStartTime > lastCharge then
-                -- sudah charge baru, kita pause lagi untuk siklus berikutnya
-                break
+        -- Jika bukan siklus terakhir, tunggu sampai user charge lagi sebelum pause berikutnya
+        if not isLast then
+            local lastCharge = config.chargeStartTime
+            local waited = 0
+            while config.blapetActive and waited < 10 do
+                if config.chargeStartTime > lastCharge then break end
+                task.wait(0.1)
+                waited = waited + 0.1
             end
-            task.wait(0.1)
-            waited = waited + 0.1
+            -- Sekarang user sudah charge lagi, siklus berikutnya akan pause di awal.
         end
-        -- Sekarang user mungkin sudah charge lagi atau masih dalam proses.
-        -- Kita akan pause di awal siklus berikutnya.
     end
-
-    -- Setelah semua siklus: matikan Fast Reel, matikan Pet Bug, tunggu hingga toggle selesai
-    config.fastReelPaused = true   -- pause dulu
-    config.petBugActive = false
-    -- Tunggu beberapa saat sampai tidak ada ON-OFF (kita kasih waktu 30 detik)
-    task.wait(30)
-    -- Lalu resume Fast Reel
-    config.fastReelPaused = false
-    -- Pet Bug tetap OFF
 end
 
 local function startBlapet()
@@ -215,7 +202,7 @@ local function startBlapet()
     blapetThread = task.spawn(function()
         while config.blapetActive do
             blapetSession()
-            -- Jadwalkan ulang setelah interval jam
+            -- Jadwalkan ulang
             local waitTime = config.blapetIntervalHours * 3600
             config.blapetNextRun = tick() + waitTime
             while config.blapetActive and tick() < config.blapetNextRun do
@@ -232,17 +219,16 @@ local function stopBlapet()
     if blapetThread then task.cancel(blapetThread); blapetThread = nil end
 end
 
--- ========== UI (sama seperti v5.8, ditambah blapetStuckTime) ==========
+-- ========== UI ==========
 local pg = LP:WaitForChild("PlayerGui")
 
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_SmartFishing_v6.1"
+sg.Name = "ZHX_SmartFishing_v6.2"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
 pcall(function() sg.DisplayOrder = 99999 end)
 
--- Floating Button
 local floatingGui = Instance.new("ScreenGui")
 floatingGui.Name = "ZHX_FloatingBtn"
 floatingGui.ResetOnSpawn = false
@@ -264,10 +250,9 @@ local stroke = Instance.new("UIStroke", floatBtn)
 stroke.Color = Color3.fromRGB(72, 210, 130)
 stroke.Thickness = 1.5
 
--- Main Panel
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 380)
-frame.Position = UDim2.new(1, -230, 1, -390)
+frame.Size = UDim2.new(0, 220, 0, 400)
+frame.Position = UDim2.new(1, -230, 1, -410)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
@@ -284,7 +269,7 @@ end)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "⚡ Smart Fishing v6.1"
+title.Text = "⚡ Smart Fishing v6.2"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 12
 title.Font = Enum.Font.GothamBold
@@ -293,7 +278,7 @@ title.Parent = frame
 
 local function makeInput(y, label, default, callback)
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 90, 0, 20)
+    lbl.Size = UDim2.new(0, 95, 0, 20)
     lbl.Position = UDim2.new(0, 8, 0, y)
     lbl.BackgroundTransparency = 1
     lbl.Text = label
@@ -305,7 +290,7 @@ local function makeInput(y, label, default, callback)
 
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(0, 55, 0, 20)
-    box.Position = UDim2.new(0, 105, 0, y)
+    box.Position = UDim2.new(0, 108, 0, y)
     box.BackgroundColor3 = Color3.fromRGB(30,30,40)
     box.BorderSizePixel = 0
     box.Text = tostring(default)
@@ -374,11 +359,12 @@ makeToggleButton(y, "Pet Bug (Smart)",
     function() return config.petBugActive end
 )
 
--- Blapet settings
 y = y + 35
 makeInput(y, "Blapet Cycles", config.blapetCycles, function(v) config.blapetCycles = math.max(1, math.floor(v)) end)
 y = y + 24
 makeInput(y, "Stuck Time (s)", config.blapetStuckTime, function(v) config.blapetStuckTime = math.max(5, v) end)
+y = y + 24
+makeInput(y, "Final Stuck (s)", config.blapetFinalStuck, function(v) config.blapetFinalStuck = math.max(30, v) end)
 y = y + 24
 makeInput(y, "Interval (jam)", config.blapetIntervalHours, function(v) config.blapetIntervalHours = math.max(0.5, v) end)
 
@@ -433,4 +419,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("v6.1 Blapet: Sesuai manual, stuck time adjustable.")
+print("v6.2 Blapet: Final Stuck Time untuk menunggu toggle selesai. Panduan di komentar.")
