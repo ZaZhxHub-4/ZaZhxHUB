@@ -1,7 +1,6 @@
--- // ZHX Instant Fast Reel + Pet Bug Final v4.5
--- // - Fast Reel: Reel Delay & Loop Interval adjustable, tanpa catch delay/count
--- // - Pet Bug Trigger: 3x ON-OFF super cepat, pause Fast Reel sejenak
--- // - Equip rod otomatis, tanpa cancel, stabil & ultra cepat
+-- // ZHX Smart Fishing v6.2 — Blapet Method (Final Fix)
+-- // Setiap siklus: stuck setelah charge, lalu resume, tunggu charge lagi, pause.
+-- // Siklus terakhir: stuck lebih lama (Final Stuck Time) untuk menunggu toggle selesai.
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -36,7 +35,6 @@ local catchRE     = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLa
 local equipRE     = findRemoteByLabel("RE/EquipToolFromHotbar")
 local autoStateRF = findRemoteByLabel("RF/UpdateAutoFishingState")
 local markAutoRF  = findRemoteByLabel("RF/MarkAutoFishingUsed")
-local cancelRF    = findRemoteByLabel("RF/CancelFishingInputs")  -- untuk membersihkan
 
 if not chargeRF or not minigameRF or not catchRE then
     error("Remote inti tidak ditemukan.")
@@ -45,16 +43,29 @@ end
 -- ========== KONFIGURASI ==========
 local config = {
     fastReelActive = false,
-    reelDelay      = 0.165,    -- waktu tunggu setelah minigame sebelum catch
-    loopInterval   = 0.1,    -- jeda antar siklus (setelah catch sebelum charge lagi)
-    pauseFastReel  = false,   -- internal
+    reelDelay      = 4,
+    loopInterval   = 0.15,
+    timingTrigger  = 4,
 
     petBugActive   = false,
-    petBugInterval = 300,      -- detik
-}
+    petBugInterval = 70,
+    toggleCount    = 700,
 
-local fastReelThread = nil
-local petBugThread   = nil
+    -- Blapet
+    blapetActive     = false,
+    blapetCycles     = 4,
+    blapetStuckTime  = 15,         -- durasi stuck per siklus (detik)
+    blapetFinalStuck = 60,         -- durasi stuck setelah siklus terakhir untuk menunggu toggle selesai
+    blapetIntervalHours = 5,
+    blapetNextRun    = 0,
+
+    -- Internal
+    lastPetBugTime = 0,
+    chargeStartTime = 0,
+    fastReelPaused = false,
+    blapetThread = nil,
+    fastReelThread = nil,
+}
 
 -- ========== EQUIP ROD ==========
 local function equipRod()
@@ -68,7 +79,6 @@ local function equipRod()
                 pcall(function()
                     local pos = slot1.AbsolutePosition + slot1.AbsoluteSize/2
                     firesignal(UIS.InputBegan, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
-                    task.wait(0.03)
                     firesignal(UIS.InputEnded, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
                 end)
             end
@@ -76,30 +86,57 @@ local function equipRod()
     end
 end
 
--- ========== FAST REEL CYCLE ==========
-local function fastReelCycle()
-    -- Charge (tanpa cancel)
-    pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
-    -- Minigame
-    pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
-    -- Tunggu reel delay (waktu minigame)
-    task.wait(config.reelDelay)
-    -- Catch (1 kali saja, langsung)
-    pcall(function() catchRE:FireServer() end)
+-- ========== PET BUG TRIGGER ==========
+local function triggerPetBug()
+    if not autoStateRF then return end
+    pcall(function() autoStateRF:InvokeServer(false) end)
+    for _ = 1, config.toggleCount do
+        pcall(function() autoStateRF:InvokeServer(true) end)
+        task.wait(0.02)
+        pcall(function() autoStateRF:InvokeServer(false) end)
+        task.wait(0.02)
+    end
+    if markAutoRF then pcall(function() markAutoRF:InvokeServer() end) end
 end
 
-local function fastReelLoop()
+-- ========== FAST REEL CYCLE ==========
+local function fastReelCycle()
+    if config.fastReelPaused then return end
+
+    pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
+    config.chargeStartTime = tick()
+    pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
+
+    if config.petBugActive and not config.blapetActive then
+        local now = tick()
+        if now - config.lastPetBugTime >= config.petBugInterval then
+            task.spawn(function()
+                local elapsed = tick() - config.chargeStartTime
+                local waitTime = math.max(0, config.timingTrigger - elapsed)
+                if waitTime > 0 then task.wait(waitTime) end
+                if config.fastReelActive and config.petBugActive then
+                    triggerPetBug()
+                    config.lastPetBugTime = tick()
+                end
+            end)
+        end
+    end
+
+    local elapsed = tick() - config.chargeStartTime
+    local remaining = math.max(0, config.reelDelay - elapsed)
+    if remaining > 0 then task.wait(remaining) end
+
+    if not config.fastReelPaused then
+        pcall(function() catchRE:FireServer() end)
+    end
+end
+
+local function mainLoop()
     while config.fastReelActive do
-        -- Jika sedang pause, tunggu sebentar
-        if config.pauseFastReel then
-            task.wait(0.01)
-            continue
+        if not config.fastReelPaused then
+            fastReelCycle()
         end
-        fastReelCycle()
-        -- Loop interval setelah catch sebelum charge berikutnya
-        if config.loopInterval > 0 then
-            task.wait(config.loopInterval)
-        end
+        task.wait(0.01)
     end
 end
 
@@ -108,114 +145,157 @@ local function startFastReel()
     equipRod()
     task.wait(0.1)
     config.fastReelActive = true
-    config.pauseFastReel = false
-    fastReelThread = task.spawn(fastReelLoop)
+    config.fastReelPaused = false
+    fastReelThread = task.spawn(mainLoop)
 end
 
 local function stopFastReel()
     config.fastReelActive = false
-    config.pauseFastReel = false
+    config.fastReelPaused = false
     if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
 end
 
--- ========== PET BUG TRIGGER (3x ON-OFF, pause Fast Reel sebentar) ==========
-local function triggerPetBug()
-    if not autoStateRF then return end
+-- ========== BLAPET METHOD (FIXED) ==========
+local function runBlapetCycle(isLastCycle)
+    -- 1. Pause Fast Reel (user stuck setelah charge)
+    config.fastReelPaused = true
+    task.wait(0.3)
 
-    -- Pause fast reel
-    config.pauseFastReel = true
+    -- 2. Mulai ulang Pet Bug (OFF dulu, ON, trigger)
+    config.petBugActive = false
+    task.wait(0.1)
+    config.petBugActive = true
+    task.spawn(function() triggerPetBug() end)
 
-    -- Paksa OFF dulu
-    pcall(function() autoStateRF:InvokeServer(false) end)
-    task.wait(0.02)
+    -- 3. Stuck selama durasi yang sesuai
+    local stuckDuration = isLastCycle and config.blapetFinalStuck or config.blapetStuckTime
+    task.wait(stuckDuration)
 
-    -- 3x siklus ON-OFF sangat cepat
-    for _ = 1, 3 do
-        pcall(function() autoStateRF:InvokeServer(true) end)
-        task.wait(0.02)
-        pcall(function() autoStateRF:InvokeServer(false) end)
-        task.wait(0.02)
-    end
-
-    -- Bersihkan sisa auto fishing dengan CancelFishingInputs (jika ada)
-    if cancelRF then
-        pcall(function() cancelRF:InvokeServer() end)
-    end
-
-    -- MarkAuto untuk menambah chaos
-    if markAutoRF then
-        pcall(function() markAutoRF:InvokeServer() end)
-    end
-
-    -- Lepas pause
-    config.pauseFastReel = false
+    -- 4. Matikan Pet Bug
+    config.petBugActive = false
+    config.fastReelPaused = false  -- resume Fast Reel (user akan reel, catch, charge lagi)
 end
 
-local function startPetBug()
-    if config.petBugActive then return end
-    config.petBugActive = true
-    petBugThread = task.spawn(function()
-        while config.petBugActive do
-            triggerPetBug()
-            task.wait(config.petBugInterval)
+local function blapetSession()
+    for i = 1, config.blapetCycles do
+        if not config.blapetActive then break end
+        local isLast = (i == config.blapetCycles)
+        runBlapetCycle(isLast)
+
+        -- Jika bukan siklus terakhir, tunggu sampai user charge lagi sebelum pause berikutnya
+        if not isLast then
+            local lastCharge = config.chargeStartTime
+            local waited = 0
+            while config.blapetActive and waited < 10 do
+                if config.chargeStartTime > lastCharge then break end
+                task.wait(0.1)
+                waited = waited + 0.1
+            end
+            -- Sekarang user sudah charge lagi, siklus berikutnya akan pause di awal.
+        end
+    end
+end
+
+local function startBlapet()
+    if config.blapetActive then return end
+    config.blapetActive = true
+    blapetThread = task.spawn(function()
+        while config.blapetActive do
+            blapetSession()
+            -- Jadwalkan ulang
+            local waitTime = config.blapetIntervalHours * 3600
+            config.blapetNextRun = tick() + waitTime
+            while config.blapetActive and tick() < config.blapetNextRun do
+                task.wait(10)
+            end
         end
     end)
 end
 
-local function stopPetBug()
+local function stopBlapet()
+    config.blapetActive = false
+    config.fastReelPaused = false
     config.petBugActive = false
-    if petBugThread then task.cancel(petBugThread); petBugThread = nil end
+    if blapetThread then task.cancel(blapetThread); blapetThread = nil end
 end
 
 -- ========== UI ==========
 local pg = LP:WaitForChild("PlayerGui")
+
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_FastReel_v4.5"
+sg.Name = "ZHX_SmartFishing_v6.2"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
+pcall(function() sg.DisplayOrder = 99999 end)
+
+local floatingGui = Instance.new("ScreenGui")
+floatingGui.Name = "ZHX_FloatingBtn"
+floatingGui.ResetOnSpawn = false
+floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+floatingGui.Parent = pg
+pcall(function() floatingGui.DisplayOrder = 99998 end)
+
+local floatBtn = Instance.new("ImageButton")
+floatBtn.Size = UDim2.new(0, 46, 0, 46)
+floatBtn.Position = UDim2.new(0, 12, 0, 100)
+floatBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
+floatBtn.BorderSizePixel = 0
+floatBtn.Image = "rbxassetid://78392602281326"
+floatBtn.ScaleType = Enum.ScaleType.Fit
+floatBtn.ZIndex = 9999
+floatBtn.Parent = floatingGui
+Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
+local stroke = Instance.new("UIStroke", floatBtn)
+stroke.Color = Color3.fromRGB(72, 210, 130)
+stroke.Thickness = 1.5
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 250, 0, 200)
-frame.Position = UDim2.new(1, -260, 1, -210)
+frame.Size = UDim2.new(0, 220, 0, 400)
+frame.Position = UDim2.new(1, -230, 1, -410)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
-frame.ZIndex = 100
+frame.ZIndex = 9998
+frame.Visible = false
 frame.Parent = sg
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
 
+floatBtn.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
+end)
+
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "⚡ Fast Reel v4.5 (Stabil)"
+title.Text = "⚡ Smart Fishing v6.2"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
-title.TextSize = 13
+title.TextSize = 12
 title.Font = Enum.Font.GothamBold
 title.ZIndex = 101
 title.Parent = frame
 
 local function makeInput(y, label, default, callback)
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 100, 0, 20)
-    lbl.Position = UDim2.new(0, 10, 0, y)
+    lbl.Size = UDim2.new(0, 95, 0, 20)
+    lbl.Position = UDim2.new(0, 8, 0, y)
     lbl.BackgroundTransparency = 1
     lbl.Text = label
     lbl.TextColor3 = Color3.fromRGB(200,200,200)
-    lbl.TextSize = 11
+    lbl.TextSize = 10
     lbl.Font = Enum.Font.Gotham
     lbl.ZIndex = 101
     lbl.Parent = frame
 
     local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0, 60, 0, 20)
-    box.Position = UDim2.new(0, 115, 0, y)
+    box.Size = UDim2.new(0, 55, 0, 20)
+    box.Position = UDim2.new(0, 108, 0, y)
     box.BackgroundColor3 = Color3.fromRGB(30,30,40)
     box.BorderSizePixel = 0
     box.Text = tostring(default)
     box.TextColor3 = Color3.fromRGB(255,255,255)
-    box.TextSize = 11
+    box.TextSize = 10
     box.Font = Enum.Font.Gotham
     box.ZIndex = 101
     box.Parent = frame
@@ -228,70 +308,74 @@ local function makeInput(y, label, default, callback)
     return box
 end
 
+local function makeToggleButton(y, text, startFn, stopFn, getActiveFn)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -16, 0, 28)
+    btn.Position = UDim2.new(0, 8, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+    btn.BorderSizePixel = 0
+    btn.Text = "▶ " .. text
+    btn.TextColor3 = Color3.fromRGB(72, 210, 130)
+    btn.TextSize = 11
+    btn.Font = Enum.Font.GothamBold
+    btn.ZIndex = 101
+    btn.AutoButtonColor = false
+    btn.Parent = frame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
+
+    btn.MouseButton1Click:Connect(function()
+        if getActiveFn() then
+            stopFn()
+            btn.Text = "▶ " .. text
+            btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+        else
+            startFn()
+            btn.Text = "⏹ " .. text
+            btn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+        end
+    end)
+    return btn
+end
+
 local y = 35
 makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end)
-y = y + 25
+y = y + 24
 makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end)
-y = y + 25
-makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end)
+y = y + 24
+makeInput(y, "Timing Trigger", config.timingTrigger, function(v) config.timingTrigger = v end)
 
--- Toggle Fast Reel
 y = y + 30
-local fastBtn = Instance.new("TextButton")
-fastBtn.Size = UDim2.new(1, -20, 0, 35)
-fastBtn.Position = UDim2.new(0, 10, 0, y)
-fastBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
-fastBtn.BorderSizePixel = 0
-fastBtn.Text = "▶ Fast Reel"
-fastBtn.TextColor3 = Color3.fromRGB(72, 210, 130)
-fastBtn.TextSize = 13
-fastBtn.Font = Enum.Font.GothamBold
-fastBtn.ZIndex = 101
-fastBtn.AutoButtonColor = false
-fastBtn.Parent = frame
-Instance.new("UICorner", fastBtn).CornerRadius = UDim.new(0,6)
+makeToggleButton(y, "Fast Reel", startFastReel, stopFastReel, function() return config.fastReelActive end)
 
-fastBtn.MouseButton1Click:Connect(function()
-    if config.fastReelActive then
-        stopFastReel()
-        fastBtn.Text = "▶ Fast Reel"
-        fastBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
-    else
-        startFastReel()
-        fastBtn.Text = "⏹ Fast Reel"
-        fastBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
-    end
-end)
+y = y + 35
+makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end)
+y = y + 24
+makeInput(y, "Toggle Count", config.toggleCount, function(v) config.toggleCount = math.max(1, math.floor(v)) end)
 
--- Toggle Pet Bug
-y = y + 40
-local petBtn = Instance.new("TextButton")
-petBtn.Size = UDim2.new(1, -20, 0, 35)
-petBtn.Position = UDim2.new(0, 10, 0, y)
-petBtn.BackgroundColor3 = Color3.fromRGB(20, 30, 60)
-petBtn.BorderSizePixel = 0
-petBtn.Text = "▶ Pet Bug Trigger"
-petBtn.TextColor3 = Color3.fromRGB(130, 180, 255)
-petBtn.TextSize = 13
-petBtn.Font = Enum.Font.GothamBold
-petBtn.ZIndex = 101
-petBtn.AutoButtonColor = false
-petBtn.Parent = frame
-Instance.new("UICorner", petBtn).CornerRadius = UDim.new(0,6)
+y = y + 30
+makeToggleButton(y, "Pet Bug (Smart)", 
+    function() config.petBugActive = true; config.lastPetBugTime = 0 end,
+    function() config.petBugActive = false end,
+    function() return config.petBugActive end
+)
 
-petBtn.MouseButton1Click:Connect(function()
-    if config.petBugActive then
-        stopPetBug()
-        petBtn.Text = "▶ Pet Bug Trigger"
-        petBtn.BackgroundColor3 = Color3.fromRGB(20, 30, 60)
-    else
-        startPetBug()
-        petBtn.Text = "⏹ Pet Bug Trigger"
-        petBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
-    end
-end)
+y = y + 35
+makeInput(y, "Blapet Cycles", config.blapetCycles, function(v) config.blapetCycles = math.max(1, math.floor(v)) end)
+y = y + 24
+makeInput(y, "Stuck Time (s)", config.blapetStuckTime, function(v) config.blapetStuckTime = math.max(5, v) end)
+y = y + 24
+makeInput(y, "Final Stuck (s)", config.blapetFinalStuck, function(v) config.blapetFinalStuck = math.max(30, v) end)
+y = y + 24
+makeInput(y, "Interval (jam)", config.blapetIntervalHours, function(v) config.blapetIntervalHours = math.max(0.5, v) end)
 
--- Drag functionality (sama seperti sebelum)
+y = y + 30
+makeToggleButton(y, "Blapet (Auto)", 
+    startBlapet,
+    stopBlapet,
+    function() return config.blapetActive end
+)
+
+-- Drag
 local dragging, dragStart, startPos = false, nil, nil
 frame.InputBegan:Connect(function(inp)
     if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
@@ -312,4 +396,27 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("ZHX Fast Reel v4.5 siap. Reel Delay & Loop Interval adjustable.")
+local floatDragging, floatDragStart, floatStartPos = false, nil, nil
+floatBtn.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = true
+        floatDragStart = inp.Position
+        floatStartPos = floatBtn.Position
+    end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if floatDragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - floatDragStart
+        local viewport = workspace.CurrentCamera.ViewportSize
+        local newX = math.clamp(floatStartPos.X.Offset + delta.X, 0, viewport.X - 46)
+        local newY = math.clamp(floatStartPos.Y.Offset + delta.Y, 0, viewport.Y - 46)
+        floatBtn.Position = UDim2.new(0, newX, 0, newY)
+    end
+end)
+UIS.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = false
+    end
+end)
+
+print("v6.2 Blapet: Final Stuck Time untuk menunggu toggle selesai. Panduan di komentar.")
