@@ -1,6 +1,6 @@
--- // ZHX Smart Fishing v6.4 — Rapi UI + Save/Load Config
--- // Dua kolom presisi, tidak ada elemen terpotong, tombol Save di bawah
--- // Blapet Method dengan logika yang sudah matang
+-- // ZHX Smart Fishing v6.5 — Final Clean UI + Save/Load Config
+-- // Single column, rapi, Save di bawah Blapet, auto-load config
+-- // Semua logika Blapet sesuai temuan
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -63,7 +63,7 @@ local chargeStartTime = 0
 local fastReelThread = nil
 local blapetThread   = nil
 
--- ========== SAVE / LOAD ==========
+-- ========== SAVE / LOAD CONFIG ==========
 local CONFIG_FOLDER = "ZHX_Configs"
 local CONFIG_FILE   = CONFIG_FOLDER .. "/FastReelConfig.json"
 local inputBoxes = {}
@@ -239,7 +239,7 @@ end
 local pg = LP:WaitForChild("PlayerGui")
 
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_SmartFishing_v6.4"
+sg.Name = "ZHX_SmartFishing_v6.5"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
@@ -252,7 +252,6 @@ floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 floatingGui.Parent = pg
 pcall(function() floatingGui.DisplayOrder = 99998 end)
 
--- Floating button
 local floatBtn = Instance.new("ImageButton")
 floatBtn.Size = UDim2.new(0, 46, 0, 46)
 floatBtn.Position = UDim2.new(0, 12, 0, 100)
@@ -265,10 +264,10 @@ floatBtn.Parent = floatingGui
 Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
 Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(72, 210, 130)
 
--- Main panel (380x260)
+-- Main Panel (single column, tinggi disesuaikan)
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 380, 0, 260)
-frame.Position = UDim2.new(1, -390, 1, -270)
+frame.Size = UDim2.new(0, 220, 0, 430)  -- cukup untuk semua elemen + save
+frame.Position = UDim2.new(1, -230, 1, -440)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
@@ -282,23 +281,21 @@ floatBtn.MouseButton1Click:Connect(function()
     frame.Visible = not frame.Visible
 end)
 
--- Title
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -20, 0, 24)
-title.Position = UDim2.new(0, 10, 0, 4)
+title.Size = UDim2.new(1, 0, 0, 26)
 title.BackgroundTransparency = 1
-title.Text = "⚡ Smart Fishing v6.4"
+title.Text = "⚡ ZHX BLAPET [BETA] v6.5"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 12
 title.Font = Enum.Font.GothamBold
 title.ZIndex = 101
 title.Parent = frame
 
--- Helper: input baris (label + textbox) di posisi (x, y)
-local function makeInput(x, y, label, default, callback, configKey)
+-- Helper functions (single column)
+local function makeInput(y, label, default, callback, configKey)
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 82, 0, 20)
-    lbl.Position = UDim2.new(0, x, 0, y)
+    lbl.Size = UDim2.new(0, 90, 0, 20)
+    lbl.Position = UDim2.new(0, 10, 0, y)
     lbl.BackgroundTransparency = 1
     lbl.Text = label
     lbl.TextColor3 = Color3.fromRGB(200,200,200)
@@ -309,7 +306,7 @@ local function makeInput(x, y, label, default, callback, configKey)
 
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(0, 60, 0, 20)
-    box.Position = UDim2.new(0, x + 90, 0, y)
+    box.Position = UDim2.new(0, 105, 0, y)
     box.BackgroundColor3 = Color3.fromRGB(30,30,40)
     box.BorderSizePixel = 0
     box.Text = tostring(default)
@@ -329,11 +326,10 @@ local function makeInput(x, y, label, default, callback, configKey)
     return box
 end
 
--- Helper: toggle button
-local function makeToggleButton(x, y, w, text, startFn, stopFn, getActiveFn)
+local function makeToggleButton(y, text, startFn, stopFn, getActiveFn)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, w, 0, 26)
-    btn.Position = UDim2.new(0, x, 0, y)
+    btn.Size = UDim2.new(1, -20, 0, 28)
+    btn.Position = UDim2.new(0, 10, 0, y)
     btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
     btn.BorderSizePixel = 0
     btn.Text = "▶ " .. text
@@ -345,68 +341,64 @@ local function makeToggleButton(x, y, w, text, startFn, stopFn, getActiveFn)
     btn.Parent = frame
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
 
-    local active = false
     btn.MouseButton1Click:Connect(function()
-        if active then
-            active = false
+        if getActiveFn() then
+            stopFn()
             btn.Text = "▶ " .. text
             btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
-            if stopFn then stopFn() end
         else
-            active = true
+            startFn()
             btn.Text = "⏹ " .. text
             btn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
-            if startFn then startFn() end
         end
     end)
-    -- Update dari state jika diperlukan (opsional, tidak wajib)
     return btn
 end
 
--- Layout presisi: kolom kiri (x=10), kolom kanan (x=195)
-local leftX = 10
-local rightX = 195
-local yBase = 32  -- setelah title
-local rowH = 24   -- jarak vertikal
+-- Layout vertikal
+local y = 32
+makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end, "reelDelay")
+y = y + 24
+makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end, "loopInterval")
+y = y + 24
+makeInput(y, "Timing Trigger", config.timingTrigger, function(v) config.timingTrigger = v end, "timingTrigger")
 
--- Kolom Kiri: Fast Reel
-makeInput(leftX, yBase, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end, "reelDelay")
-makeInput(leftX, yBase + rowH, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end, "loopInterval")
-makeInput(leftX, yBase + rowH*2, "Timing Trigger", config.timingTrigger, function(v) config.timingTrigger = v end, "timingTrigger")
-makeToggleButton(leftX, yBase + rowH*3 + 4, 175, "Fast Reel",
-    startFastReel, stopFastReel,
-    function() return fastReelActive end
-)
+y = y + 30
+makeToggleButton(y, "Fast Reel", startFastReel, stopFastReel, function() return fastReelActive end)
 
--- Kolom Kanan: Pet Bug + Blapet
-local ry = yBase
-makeInput(rightX, ry, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end, "petBugInterval")
-ry = ry + rowH
-makeInput(rightX, ry, "Toggle Count", config.toggleCount, function(v) config.toggleCount = math.max(1, math.floor(v)) end, "toggleCount")
-ry = ry + rowH
-makeToggleButton(rightX, ry + 2, 175, "Pet Bug (Smart)",
+y = y + 35
+makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end, "petBugInterval")
+y = y + 24
+makeInput(y, "Toggle Count", config.toggleCount, function(v) config.toggleCount = math.max(1, math.floor(v)) end, "toggleCount")
+
+y = y + 30
+makeToggleButton(y, "Pet Bug (Smart)", 
     function() petBugActive = true; lastPetBugTime = 0 end,
     function() petBugActive = false end,
     function() return petBugActive end
 )
-ry = ry + rowH + 8
-makeInput(rightX, ry, "Blapet Cycles", config.blapetCycles, function(v) config.blapetCycles = math.max(1, math.floor(v)) end, "blapetCycles")
-ry = ry + rowH
-makeInput(rightX, ry, "Stuck Time (s)", config.blapetStuckTime, function(v) config.blapetStuckTime = math.max(5, v) end, "blapetStuckTime")
-ry = ry + rowH
-makeInput(rightX, ry, "Final Stuck (s)", config.blapetFinalStuck, function(v) config.blapetFinalStuck = math.max(30, v) end, "blapetFinalStuck")
-ry = ry + rowH
-makeInput(rightX, ry, "Interval (jam)", config.blapetIntervalHours, function(v) config.blapetIntervalHours = math.max(0.5, v) end, "blapetIntervalHours")
-ry = ry + rowH
-makeToggleButton(rightX, ry + 2, 175, "Blapet (Auto)",
-    startBlapet, stopBlapet,
+
+y = y + 35
+makeInput(y, "Blapet Cycles", config.blapetCycles, function(v) config.blapetCycles = math.max(1, math.floor(v)) end, "blapetCycles")
+y = y + 24
+makeInput(y, "Stuck Time (s)", config.blapetStuckTime, function(v) config.blapetStuckTime = math.max(5, v) end, "blapetStuckTime")
+y = y + 24
+makeInput(y, "Final Stuck (s)", config.blapetFinalStuck, function(v) config.blapetFinalStuck = math.max(30, v) end, "blapetFinalStuck")
+y = y + 24
+makeInput(y, "Interval (jam)", config.blapetIntervalHours, function(v) config.blapetIntervalHours = math.max(0.5, v) end, "blapetIntervalHours")
+
+y = y + 30
+makeToggleButton(y, "Blapet (Auto)", 
+    startBlapet,
+    stopBlapet,
     function() return blapetActive end
 )
 
--- Tombol Save Config (full width di bagian bawah)
+-- Tombol Save Config
+y = y + 40
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -20, 0, 30)
-saveBtn.Position = UDim2.new(0.5, -170, 1, -36)  -- tengah bawah
+saveBtn.Position = UDim2.new(0, 10, 0, y)
 saveBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 80)
 saveBtn.BorderSizePixel = 0
 saveBtn.Text = "💾 Save Config"
@@ -425,7 +417,7 @@ saveBtn.MouseButton1Click:Connect(function()
     saveBtn.Text = "💾 Save Config"
 end)
 
--- ========== LOAD CONFIG ==========
+-- ========== LOAD CONFIG SAAT STARTUP ==========
 loadConfig()
 
 -- ========== DRAG ==========
@@ -472,4 +464,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("v6.4: UI rapi, Save/Load siap. Klik logo ZHX untuk buka panel.")
+print("v6.5 siap. ZHX HUB - TALON VS MR X BEKASI.")
