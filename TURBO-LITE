@@ -1,11 +1,13 @@
--- // ZHX Blapet Lite v1.1 — Turbo Mode (Spam Auto OFF Only)
--- // Fast Reel + Stuck + Blapet Lite + Anim Off + Save/Load
--- // Turbo: multi-thread spam saat Spam Speed = 0
+-- // ZHX Blapet Lite v1.2 — Turbo + Pet Sound + Anim Off + Save/Load
+-- // Spam Auto OFF Only, Fast Reel, Stuck, Turbo Multi-Thread
+-- // Pet Sound berdasarkan Tier (Secret custom ID)
+-- // Save config terpisah: ZHX_Configs/BlapetLiteConfig.json
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local WS = game:GetService("Workspace")
+local SoundService = game:GetService("SoundService")
 local LP = Players.LocalPlayer
 
 -- ========== REMOTE HASH FINDER ==========
@@ -48,6 +50,7 @@ local config = {
     turboMultiplier = 30,
     turboThreads   = 10,
     animOff        = false,
+    petSoundEnabled = false,
 }
 
 -- State
@@ -56,7 +59,7 @@ local blapetLiteActive = false
 local fastReelPaused = false
 local chargeStartTime = 0
 local fastReelThread = nil
-local blapetLiteThreads = {}  -- table untuk menampung thread spam
+local blapetLiteThreads = {}
 
 -- ========== SAVE / LOAD CONFIG ==========
 local CONFIG_FOLDER = "ZHX_Configs"
@@ -200,7 +203,6 @@ local function doStuck()
 end
 
 -- ========== BLAPET LITE (SPAM AUTO OFF) ==========
--- Fungsi dasar 1 thread spam OFF
 local function spamOFFThread()
     while blapetLiteActive do
         if autoStateRF then
@@ -216,14 +218,12 @@ local function startBlapetLite()
     blapetLiteActive = true
 
     if config.spamSpeed <= 0 then
-        -- Turbo Mode: multi-thread
         local threadCount = config.turboThreads
         for i = 1, threadCount do
             local th = task.spawn(spamOFFThread)
             table.insert(blapetLiteThreads, th)
         end
     else
-        -- Normal dengan jeda
         local th = task.spawn(function()
             while blapetLiteActive do
                 if autoStateRF then
@@ -246,11 +246,76 @@ local function stopBlapetLite()
     blapetLiteThreads = {}
 end
 
+-- ========== PET SOUND ==========
+local soundIDs = {
+    [1] = "rbxassetid://83860556266817",
+    [2] = "rbxassetid://83860556266817",
+    [3] = "rbxassetid://121577274659676",
+    [4] = "rbxassetid://87388159598313",
+    [5] = "rbxassetid://126637308388260",
+    [6] = "rbxassetid://126637308388260",
+    [7] = "rbxassetid://139535360137391",
+}
+
+local function playSound(soundId)
+    if not config.petSoundEnabled then return end
+    local sound = Instance.new("Sound")
+    sound.SoundId = soundId
+    sound.Volume = 0.8
+    sound.Parent = SoundService
+    sound:Play()
+    sound.Ended:Connect(function() sound:Destroy() end)
+    task.delay(5, function() pcall(function() if sound then sound:Destroy() end end) end)
+end
+
+-- ========== MONITOR INVENTORY & PUTAR SUARA ==========
+local ItemUtility = require(RS.Shared.ItemUtility)
+local Replion = require(RS.Packages.Replion)
+local PlayerData = Replion.Client:WaitReplion("Data")
+task.wait(2)
+
+local lastUUIDs = {}
+local function getInventoryItems()
+    local items = {}
+    pcall(function()
+        local inv = PlayerData:Get("Inventory")
+        if inv and inv.Items then
+            for _, item in ipairs(inv.Items) do
+                table.insert(items, item)
+            end
+        end
+    end)
+    return items
+end
+
+for _, item in ipairs(getInventoryItems()) do
+    lastUUIDs[item.UUID] = true
+end
+
+task.spawn(function()
+    while true do
+        local current = getInventoryItems()
+        for _, item in ipairs(current) do
+            if not lastUUIDs[item.UUID] then
+                lastUUIDs[item.UUID] = true
+                local fishData = nil
+                pcall(function() fishData = ItemUtility:GetItemData(item.Id) end)
+                if fishData and fishData.Data and fishData.Data.Tier then
+                    local tier = tonumber(fishData.Data.Tier) or 1
+                    local soundId = soundIDs[tier]
+                    if soundId then playSound(soundId) end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
 -- ========== UI ==========
 local pg = LP:WaitForChild("PlayerGui")
 
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_BlapetLite_v1.1"
+sg.Name = "ZHX_BlapetLite_v1.2"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
@@ -275,9 +340,9 @@ floatBtn.Parent = floatingGui
 Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
 Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(72, 210, 130)
 
--- Main Panel (sedikit lebih tinggi untuk turbo)
+-- Main Panel
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 210, 0, 380)
+frame.Size = UDim2.new(0, 210, 0, 350)
 frame.Position = UDim2.new(1, -220, 1, -390)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
@@ -295,7 +360,7 @@ end)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 22)
 title.BackgroundTransparency = 1
-title.Text = "⚡ ZHX Blapet Lite v1.1"
+title.Text = "⚡ ZHX Blapet Lite v1.2"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 12
 title.Font = Enum.Font.GothamBold
@@ -480,23 +545,48 @@ makeToggleButton(y, "Stuck", doStuck, nil, function() return false end)
 y = y + 32
 makeToggleButton(y, "Blapet Lite", startBlapetLite, stopBlapetLite, function() return blapetLiteActive end)
 
--- Baris horizontal: Anim Off, Save
+-- Baris horizontal: 3 tombol (Pet Sound, Anim Off, Save)
 y = y + 34
-local btnW = 85
+local btnW = 58
 local btnH = 28
-local gap = 8
-local totalW = btnW * 2 + gap
+local gap = 5
+local totalW = btnW * 3 + gap * 2
 local startX = (frame.Size.X.Offset - totalW) / 2
+
+-- Tombol Pet Sound
+local soundBtn = Instance.new("TextButton")
+soundBtn.Size = UDim2.new(0, btnW, 0, btnH)
+soundBtn.Position = UDim2.new(0, startX, 0, y)
+soundBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+soundBtn.BorderSizePixel = 0
+soundBtn.Text = "🔇"
+soundBtn.TextColor3 = Color3.fromRGB(72, 210, 130)
+soundBtn.TextSize = 16
+soundBtn.Font = Enum.Font.GothamBold
+soundBtn.ZIndex = 101
+soundBtn.AutoButtonColor = false
+soundBtn.Parent = frame
+Instance.new("UICorner", soundBtn).CornerRadius = UDim.new(0,5)
+soundBtn.MouseButton1Click:Connect(function()
+    config.petSoundEnabled = not config.petSoundEnabled
+    if config.petSoundEnabled then
+        soundBtn.Text = "🔉"
+        soundBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    else
+        soundBtn.Text = "🔇"
+        soundBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+    end
+end)
 
 -- Tombol Anim Off
 local animBtn = Instance.new("TextButton")
 animBtn.Size = UDim2.new(0, btnW, 0, btnH)
-animBtn.Position = UDim2.new(0, startX, 0, y)
+animBtn.Position = UDim2.new(0, startX + (btnW + gap), 0, y)
 animBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
 animBtn.BorderSizePixel = 0
-animBtn.Text = "🕺 Anim"
+animBtn.Text = "🕺"
 animBtn.TextColor3 = Color3.fromRGB(72, 210, 130)
-animBtn.TextSize = 12
+animBtn.TextSize = 16
 animBtn.Font = Enum.Font.GothamBold
 animBtn.ZIndex = 101
 animBtn.AutoButtonColor = false
@@ -506,10 +596,10 @@ animBtn.MouseButton1Click:Connect(function()
     config.animOff = not config.animOff
     if config.animOff then
         disablePetAnimations()
-        animBtn.Text = "🕺❌ Anim"
+        animBtn.Text = "🕺❌"
         animBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
     else
-        animBtn.Text = "🕺 Anim"
+        animBtn.Text = "🕺"
         animBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
     end
 end)
@@ -517,12 +607,12 @@ end)
 -- Tombol Save
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(0, btnW, 0, btnH)
-saveBtn.Position = UDim2.new(0, startX + btnW + gap, 0, y)
+saveBtn.Position = UDim2.new(0, startX + (btnW + gap) * 2, 0, y)
 saveBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 80)
 saveBtn.BorderSizePixel = 0
-saveBtn.Text = "💾 Save"
+saveBtn.Text = "💾"
 saveBtn.TextColor3 = Color3.fromRGB(130, 180, 255)
-saveBtn.TextSize = 12
+saveBtn.TextSize = 16
 saveBtn.Font = Enum.Font.GothamBold
 saveBtn.ZIndex = 101
 saveBtn.AutoButtonColor = false
@@ -532,7 +622,7 @@ saveBtn.MouseButton1Click:Connect(function()
     saveConfig()
     saveBtn.Text = "✅"
     task.wait(2)
-    saveBtn.Text = "💾 Save"
+    saveBtn.Text = "💾"
 end)
 
 -- ========== LOAD CONFIG SAAT STARTUP ==========
@@ -582,4 +672,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("ZHX Blapet Lite v1.1.")
+print("ZHX Blapet Lite v1.2.")
