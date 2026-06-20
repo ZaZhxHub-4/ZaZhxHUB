@@ -1,0 +1,585 @@
+-- // ZHX Blapet Lite v1.1 — Turbo Mode (Spam Auto OFF Only)
+-- // Fast Reel + Stuck + Blapet Lite + Anim Off + Save/Load
+-- // Turbo: multi-thread spam saat Spam Speed = 0
+
+local RS = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local WS = game:GetService("Workspace")
+local LP = Players.LocalPlayer
+
+-- ========== REMOTE HASH FINDER ==========
+local function findRemoteByLabel(label)
+    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
+        if child.Name == label then
+            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
+            if inside then
+                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return inside end
+            end
+            local nxt = children[i+1]
+            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
+                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return nxt end
+            end
+            break
+        end
+    end
+    return nil
+end
+
+local chargeRF    = findRemoteByLabel("RF/ChargeFishingRod")
+local minigameRF  = findRemoteByLabel("RF/RequestFishingMinigameStarted")
+local catchRE     = findRemoteByLabel("RE/CatchFishCompleted") or findRemoteByLabel("RE/FishCaught")
+local equipRE     = findRemoteByLabel("RE/EquipToolFromHotbar")
+local autoStateRF = findRemoteByLabel("RF/UpdateAutoFishingState")
+
+if not chargeRF or not minigameRF or not catchRE or not autoStateRF then
+    error("Remote inti tidak ditemukan.")
+end
+
+-- ========== KONFIGURASI ==========
+local config = {
+    reelDelay      = 4,
+    loopInterval   = 0.15,
+    spamSpeed      = 0.05,
+    turboMultiplier = 30,
+    turboThreads   = 10,
+    animOff        = false,
+}
+
+-- State
+local fastReelActive = false
+local blapetLiteActive = false
+local fastReelPaused = false
+local chargeStartTime = 0
+local fastReelThread = nil
+local blapetLiteThreads = {}  -- table untuk menampung thread spam
+
+-- ========== SAVE / LOAD CONFIG ==========
+local CONFIG_FOLDER = "ZHX_Configs"
+local CONFIG_FILE   = CONFIG_FOLDER .. "/BlapetLiteConfig.json"
+local inputBoxes = {}
+
+local function ensureFolder()
+    if not isfolder or not makefolder then return false end
+    if not isfolder(CONFIG_FOLDER) then
+        pcall(function() makefolder(CONFIG_FOLDER) end)
+    end
+    return isfolder(CONFIG_FOLDER)
+end
+
+local function saveConfig()
+    if not writefile or not ensureFolder() then return end
+    pcall(function()
+        writefile(CONFIG_FILE, game:GetService("HttpService"):JSONEncode(config))
+    end)
+end
+
+local function loadConfig()
+    if not readfile or not isfile or not isfile(CONFIG_FILE) then return end
+    pcall(function()
+        local data = game:GetService("HttpService"):JSONDecode(readfile(CONFIG_FILE))
+        for k, v in pairs(data) do
+            if config[k] ~= nil then config[k] = v end
+        end
+        for k, box in pairs(inputBoxes) do
+            if config[k] ~= nil then
+                box.Text = tostring(config[k])
+            end
+        end
+    end)
+end
+
+-- ========== EQUIP ROD ==========
+local function equipRod()
+    if equipRE then
+        pcall(function() equipRE:FireServer(1) end)
+    else
+        local hotbar = LP.PlayerGui:FindFirstChild("Backpack")
+        if hotbar then
+            local slot1 = hotbar:FindFirstChild("1") or hotbar:FindFirstChild("Slot1")
+            if slot1 and slot1:IsA("ImageButton") then
+                pcall(function()
+                    local pos = slot1.AbsolutePosition + slot1.AbsoluteSize/2
+                    firesignal(UIS.InputBegan, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                    firesignal(UIS.InputEnded, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                end)
+            end
+        end
+    end
+end
+
+-- ========== PET UTILITIES (ANIM OFF) ==========
+local fishingPetNames = {
+    "Arctic Fox", "Axolotl", "Penguin", "Capybara", "Polar Bear", "Seal"
+}
+
+local function findFishingPets()
+    local pets = {}
+    local char = LP.Character
+    if not char then return pets end
+    local rootPos = char:FindFirstChild("HumanoidRootPart")
+    if not rootPos then return pets end
+    
+    for _, model in ipairs(WS:GetChildren()) do
+        if model:IsA("Model") then
+            for _, name in ipairs(fishingPetNames) do
+                if model.Name == name then
+                    local primary = model.PrimaryPart or model:FindFirstChild("HumanoidRootPart")
+                    if primary then
+                        local dist = (primary.Position - rootPos.Position).Magnitude
+                        if dist < 100 then
+                            table.insert(pets, model)
+                        end
+                    end
+                    break
+                end
+            end
+        end
+    end
+    return pets
+end
+
+local function disablePetAnimations()
+    local pets = findFishingPets()
+    for _, pet in ipairs(pets) do
+        local animator = pet:FindFirstChildOfClass("Animator")
+        if animator then pcall(function() animator:Destroy() end) end
+        local ac = pet:FindFirstChildOfClass("AnimationController")
+        if ac then pcall(function() ac:Destroy() end) end
+    end
+end
+
+-- ========== FAST REEL CYCLE ==========
+local function fastReelCycle()
+    if fastReelPaused then return end
+    pcall(function() chargeRF:InvokeServer(1755848498.4834) end)
+    chargeStartTime = tick()
+    pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end)
+
+    local elapsed = tick() - chargeStartTime
+    local remaining = math.max(0, config.reelDelay - elapsed)
+    if remaining > 0 then task.wait(remaining) end
+    if not fastReelPaused then
+        pcall(function() catchRE:FireServer() end)
+    end
+end
+
+local function mainLoop()
+    while fastReelActive do
+        if not fastReelPaused then fastReelCycle() end
+        task.wait(0.01)
+    end
+end
+
+local function startFastReel()
+    if fastReelActive then return end
+    equipRod()
+    task.wait(0.1)
+    fastReelActive = true
+    fastReelPaused = false
+    fastReelThread = task.spawn(mainLoop)
+end
+
+local function stopFastReel()
+    fastReelActive = false
+    fastReelPaused = false
+    if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
+end
+
+-- ========== STUCK (CHARGE + BITE ONLY) ==========
+local function doStuck()
+    equipRod()
+    task.wait(0.1)
+    if chargeRF then pcall(function() chargeRF:InvokeServer(1755848498.4834) end) end
+    task.wait(0.2)
+    if minigameRF then pcall(function() minigameRF:InvokeServer(1.2854545116425, 1) end) end
+end
+
+-- ========== BLAPET LITE (SPAM AUTO OFF) ==========
+-- Fungsi dasar 1 thread spam OFF
+local function spamOFFThread()
+    while blapetLiteActive do
+        if autoStateRF then
+            for _ = 1, config.turboMultiplier do
+                pcall(function() autoStateRF:InvokeServer(false) end)
+            end
+        end
+    end
+end
+
+local function startBlapetLite()
+    if blapetLiteActive then return end
+    blapetLiteActive = true
+
+    if config.spamSpeed <= 0 then
+        -- Turbo Mode: multi-thread
+        local threadCount = config.turboThreads
+        for i = 1, threadCount do
+            local th = task.spawn(spamOFFThread)
+            table.insert(blapetLiteThreads, th)
+        end
+    else
+        -- Normal dengan jeda
+        local th = task.spawn(function()
+            while blapetLiteActive do
+                if autoStateRF then
+                    pcall(function() autoStateRF:InvokeServer(false) end)
+                    task.wait(config.spamSpeed)
+                else
+                    task.wait(0.1)
+                end
+            end
+        end)
+        table.insert(blapetLiteThreads, th)
+    end
+end
+
+local function stopBlapetLite()
+    blapetLiteActive = false
+    for _, th in ipairs(blapetLiteThreads) do
+        task.cancel(th)
+    end
+    blapetLiteThreads = {}
+end
+
+-- ========== UI ==========
+local pg = LP:WaitForChild("PlayerGui")
+
+local sg = Instance.new("ScreenGui")
+sg.Name = "ZHX_BlapetLite_v1.1"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent = pg
+pcall(function() sg.DisplayOrder = 99999 end)
+
+local floatingGui = Instance.new("ScreenGui")
+floatingGui.Name = "ZHX_FloatingBtn"
+floatingGui.ResetOnSpawn = false
+floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+floatingGui.Parent = pg
+pcall(function() floatingGui.DisplayOrder = 99998 end)
+
+local floatBtn = Instance.new("ImageButton")
+floatBtn.Size = UDim2.new(0, 44, 0, 44)
+floatBtn.Position = UDim2.new(0, 10, 0, 100)
+floatBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
+floatBtn.BorderSizePixel = 0
+floatBtn.Image = "rbxassetid://78392602281326"
+floatBtn.ScaleType = Enum.ScaleType.Fit
+floatBtn.ZIndex = 9999
+floatBtn.Parent = floatingGui
+Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
+Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(72, 210, 130)
+
+-- Main Panel (sedikit lebih tinggi untuk turbo)
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 210, 0, 380)
+frame.Position = UDim2.new(1, -220, 1, -390)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+frame.BackgroundTransparency = 0.1
+frame.BorderSizePixel = 0
+frame.ZIndex = 9998
+frame.Visible = false
+frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", frame).Color = Color3.fromRGB(72, 210, 130)
+
+floatBtn.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
+end)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 22)
+title.BackgroundTransparency = 1
+title.Text = "⚡ ZHX Blapet Lite v1.1"
+title.TextColor3 = Color3.fromRGB(72, 210, 130)
+title.TextSize = 12
+title.Font = Enum.Font.GothamBold
+title.ZIndex = 101
+title.Parent = frame
+
+-- Helper functions
+local function makeInput(y, label, default, callback, configKey)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0, 82, 0, 20)
+    lbl.Position = UDim2.new(0, 8, 0, y)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.TextColor3 = Color3.fromRGB(200,200,200)
+    lbl.TextSize = 10
+    lbl.Font = Enum.Font.Gotham
+    lbl.ZIndex = 101
+    lbl.Parent = frame
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, 55, 0, 20)
+    box.Position = UDim2.new(0, 100, 0, y)
+    box.BackgroundColor3 = Color3.fromRGB(30,30,40)
+    box.BorderSizePixel = 0
+    box.Text = tostring(default)
+    box.TextColor3 = Color3.fromRGB(255,255,255)
+    box.TextSize = 10
+    box.Font = Enum.Font.Gotham
+    box.ZIndex = 101
+    box.Parent = frame
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,4)
+
+    if configKey then inputBoxes[configKey] = box end
+
+    box.FocusLost:Connect(function()
+        local num = tonumber(box.Text)
+        if num then callback(num) end
+    end)
+    return box
+end
+
+local function makeToggleButton(y, text, startFn, stopFn, getActiveFn)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -16, 0, 26)
+    btn.Position = UDim2.new(0, 8, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+    btn.BorderSizePixel = 0
+    btn.Text = "▶ " .. text
+    btn.TextColor3 = Color3.fromRGB(72, 210, 130)
+    btn.TextSize = 11
+    btn.Font = Enum.Font.GothamBold
+    btn.ZIndex = 101
+    btn.AutoButtonColor = false
+    btn.Parent = frame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
+
+    btn.MouseButton1Click:Connect(function()
+        if getActiveFn() then
+            stopFn()
+            btn.Text = "▶ " .. text
+            btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+        else
+            startFn()
+            btn.Text = "⏹ " .. text
+            btn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+        end
+    end)
+    return btn
+end
+
+-- Layout vertikal
+local y = 28
+makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end, "reelDelay")
+y = y + 22
+makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end, "loopInterval")
+y = y + 22
+makeInput(y, "Spam Speed", config.spamSpeed, function(v) config.spamSpeed = math.max(0, v) end, "spamSpeed")
+
+-- Label Turbo Hijau
+y = y + 22
+local turboLabel = Instance.new("TextLabel")
+turboLabel.Size = UDim2.new(1, -16, 0, 16)
+turboLabel.Position = UDim2.new(0, 8, 0, y)
+turboLabel.BackgroundTransparency = 1
+turboLabel.Text = "⚡ Turbo Blapet Mode ON ⚡"
+turboLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+turboLabel.TextSize = 10
+turboLabel.Font = Enum.Font.GothamBold
+turboLabel.ZIndex = 101
+turboLabel.Visible = (config.spamSpeed <= 0)
+turboLabel.Parent = frame
+
+-- Input Turbo x
+y = y + 18
+local turboXLabel = Instance.new("TextLabel")
+turboXLabel.Size = UDim2.new(0, 82, 0, 20)
+turboXLabel.Position = UDim2.new(0, 8, 0, y)
+turboXLabel.BackgroundTransparency = 1
+turboXLabel.Text = "Turbo x"
+turboXLabel.TextColor3 = Color3.fromRGB(200,200,200)
+turboXLabel.TextSize = 10
+turboXLabel.Font = Enum.Font.Gotham
+turboXLabel.ZIndex = 101
+turboXLabel.Visible = (config.spamSpeed <= 0)
+turboXLabel.Parent = frame
+
+local turboXBox = Instance.new("TextBox")
+turboXBox.Size = UDim2.new(0, 55, 0, 20)
+turboXBox.Position = UDim2.new(0, 100, 0, y)
+turboXBox.BackgroundColor3 = Color3.fromRGB(30,30,40)
+turboXBox.BorderSizePixel = 0
+turboXBox.Text = tostring(config.turboMultiplier)
+turboXBox.TextColor3 = Color3.fromRGB(255,255,255)
+turboXBox.TextSize = 10
+turboXBox.Font = Enum.Font.Gotham
+turboXBox.ZIndex = 101
+turboXBox.Visible = (config.spamSpeed <= 0)
+turboXBox.Parent = frame
+Instance.new("UICorner", turboXBox).CornerRadius = UDim.new(0,4)
+turboXBox.FocusLost:Connect(function()
+    local num = tonumber(turboXBox.Text)
+    if num then
+        config.turboMultiplier = math.max(1, math.floor(num))
+        turboXBox.Text = tostring(config.turboMultiplier)
+    end
+end)
+
+-- Input Turbo Threads
+y = y + 22
+local turboThreadLabel = Instance.new("TextLabel")
+turboThreadLabel.Size = UDim2.new(0, 82, 0, 20)
+turboThreadLabel.Position = UDim2.new(0, 8, 0, y)
+turboThreadLabel.BackgroundTransparency = 1
+turboThreadLabel.Text = "Turbo Threads"
+turboThreadLabel.TextColor3 = Color3.fromRGB(200,200,200)
+turboThreadLabel.TextSize = 10
+turboThreadLabel.Font = Enum.Font.Gotham
+turboThreadLabel.ZIndex = 101
+turboThreadLabel.Visible = (config.spamSpeed <= 0)
+turboThreadLabel.Parent = frame
+
+local turboThreadBox = Instance.new("TextBox")
+turboThreadBox.Size = UDim2.new(0, 55, 0, 20)
+turboThreadBox.Position = UDim2.new(0, 100, 0, y)
+turboThreadBox.BackgroundColor3 = Color3.fromRGB(30,30,40)
+turboThreadBox.BorderSizePixel = 0
+turboThreadBox.Text = tostring(config.turboThreads)
+turboThreadBox.TextColor3 = Color3.fromRGB(255,255,255)
+turboThreadBox.TextSize = 10
+turboThreadBox.Font = Enum.Font.Gotham
+turboThreadBox.ZIndex = 101
+turboThreadBox.Visible = (config.spamSpeed <= 0)
+turboThreadBox.Parent = frame
+Instance.new("UICorner", turboThreadBox).CornerRadius = UDim.new(0,4)
+turboThreadBox.FocusLost:Connect(function()
+    local num = tonumber(turboThreadBox.Text)
+    if num then
+        config.turboThreads = math.max(1, math.floor(num))
+        turboThreadBox.Text = tostring(config.turboThreads)
+    end
+end)
+
+-- Loop untuk update visibility Turbo
+task.spawn(function()
+    while true do
+        local isTurbo = (config.spamSpeed <= 0)
+        turboLabel.Visible = isTurbo
+        turboXLabel.Visible = isTurbo
+        turboXBox.Visible = isTurbo
+        turboThreadLabel.Visible = isTurbo
+        turboThreadBox.Visible = isTurbo
+        task.wait(0.5)
+    end
+end)
+
+y = y + 26
+makeToggleButton(y, "Fast Reel", startFastReel, stopFastReel, function() return fastReelActive end)
+
+y = y + 32
+makeToggleButton(y, "Stuck", doStuck, nil, function() return false end)
+
+y = y + 32
+makeToggleButton(y, "Blapet Lite", startBlapetLite, stopBlapetLite, function() return blapetLiteActive end)
+
+-- Baris horizontal: Anim Off, Save
+y = y + 34
+local btnW = 85
+local btnH = 28
+local gap = 8
+local totalW = btnW * 2 + gap
+local startX = (frame.Size.X.Offset - totalW) / 2
+
+-- Tombol Anim Off
+local animBtn = Instance.new("TextButton")
+animBtn.Size = UDim2.new(0, btnW, 0, btnH)
+animBtn.Position = UDim2.new(0, startX, 0, y)
+animBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+animBtn.BorderSizePixel = 0
+animBtn.Text = "🕺 Anim"
+animBtn.TextColor3 = Color3.fromRGB(72, 210, 130)
+animBtn.TextSize = 12
+animBtn.Font = Enum.Font.GothamBold
+animBtn.ZIndex = 101
+animBtn.AutoButtonColor = false
+animBtn.Parent = frame
+Instance.new("UICorner", animBtn).CornerRadius = UDim.new(0,5)
+animBtn.MouseButton1Click:Connect(function()
+    config.animOff = not config.animOff
+    if config.animOff then
+        disablePetAnimations()
+        animBtn.Text = "🕺❌ Anim"
+        animBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    else
+        animBtn.Text = "🕺 Anim"
+        animBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+    end
+end)
+
+-- Tombol Save
+local saveBtn = Instance.new("TextButton")
+saveBtn.Size = UDim2.new(0, btnW, 0, btnH)
+saveBtn.Position = UDim2.new(0, startX + btnW + gap, 0, y)
+saveBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 80)
+saveBtn.BorderSizePixel = 0
+saveBtn.Text = "💾 Save"
+saveBtn.TextColor3 = Color3.fromRGB(130, 180, 255)
+saveBtn.TextSize = 12
+saveBtn.Font = Enum.Font.GothamBold
+saveBtn.ZIndex = 101
+saveBtn.AutoButtonColor = false
+saveBtn.Parent = frame
+Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0,5)
+saveBtn.MouseButton1Click:Connect(function()
+    saveConfig()
+    saveBtn.Text = "✅"
+    task.wait(2)
+    saveBtn.Text = "💾 Save"
+end)
+
+-- ========== LOAD CONFIG SAAT STARTUP ==========
+loadConfig()
+
+-- ========== DRAG ==========
+local dragging, dragStart, startPos = false, nil, nil
+frame.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = inp.Position
+        startPos = frame.Position
+    end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+local floatDragging, floatDragStart, floatStartPos = false, nil, nil
+floatBtn.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = true
+        floatDragStart = inp.Position
+        floatStartPos = floatBtn.Position
+    end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if floatDragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - floatDragStart
+        local viewport = workspace.CurrentCamera.ViewportSize
+        local newX = math.clamp(floatStartPos.X.Offset + delta.X, 0, viewport.X - 44)
+        local newY = math.clamp(floatStartPos.Y.Offset + delta.Y, 0, viewport.Y - 44)
+        floatBtn.Position = UDim2.new(0, newX, 0, newY)
+    end
+end)
+UIS.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = false
+    end
+end)
+
+print("ZHX Blapet Lite v1.1.")
