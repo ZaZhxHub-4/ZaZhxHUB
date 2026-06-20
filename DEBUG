@@ -1,7 +1,6 @@
-
--- // ZHX Smart Fishing v6.7 — Upgrade: Pet Sound + Stop Spam + Anim Off
+-- // ZHX Smart Fishing v6.8 — Panel Ringkas, Tombol Horizontal, Stop Spam Fungsional
+-- // Upgrade: Pet Sound + Stop Spam + Anim Off + UI Compact
 -- // Single column, rapi, Save di bawah, auto-load config
--- // Semua logika Blapet sesuai temuan + fitur baru
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -283,8 +282,11 @@ end
 
 -- ========== STOP ALL SPAM ==========
 local function forceStopAllSpam()
-    if blapetActive then return end
+    -- Hentikan semua proses
     stopBlapet()
+    petBugActive = false
+    fastReelPaused = false
+    -- Kirim perintah OFF ke server untuk memastikan auto fishing mati
     if autoStateRF then
         pcall(function() autoStateRF:InvokeServer(false) end)
     end
@@ -292,13 +294,13 @@ end
 
 -- ========== PET SOUND ==========
 local soundIDs = {
-    [1] = "rbxassetid://83860556266817",  -- Common & Uncommon
+    [1] = "rbxassetid://83860556266817",
     [2] = "rbxassetid://83860556266817",
-    [3] = "rbxassetid://121577274659676", -- Rare
-    [4] = "rbxassetid://87388159598313",  -- Epic
-    [5] = "rbxassetid://126637308388260", -- Legendary
-    [6] = "rbxassetid://126637308388260", -- Mythic
-    [7] = "rbxassetid://139535360137391", -- Secret (custom ID)
+    [3] = "rbxassetid://121577274659676",
+    [4] = "rbxassetid://87388159598313",
+    [5] = "rbxassetid://126637308388260",
+    [6] = "rbxassetid://126637308388260",
+    [7] = "rbxassetid://139535360137391",
 }
 
 local function playSound(soundId)
@@ -359,7 +361,7 @@ end)
 local pg = LP:WaitForChild("PlayerGui")
 
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_SmartFishing_v6.7"
+sg.Name = "ZHX_SmartFishing_v6.8"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
@@ -373,8 +375,8 @@ floatingGui.Parent = pg
 pcall(function() floatingGui.DisplayOrder = 99998 end)
 
 local floatBtn = Instance.new("ImageButton")
-floatBtn.Size = UDim2.new(0, 46, 0, 46)
-floatBtn.Position = UDim2.new(0, 12, 0, 100)
+floatBtn.Size = UDim2.new(0, 44, 0, 44)
+floatBtn.Position = UDim2.new(0, 10, 0, 100)
 floatBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
 floatBtn.BorderSizePixel = 0
 floatBtn.Image = "rbxassetid://78392602281326"
@@ -384,10 +386,10 @@ floatBtn.Parent = floatingGui
 Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
 Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(72, 210, 130)
 
--- Main Panel (single column, tinggi disesuaikan)
+-- Main Panel (lebih pendek, single column)
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 540)
-frame.Position = UDim2.new(1, -230, 1, -550)
+frame.Size = UDim2.new(0, 210, 0, 440)  -- dikurangi dari 540 ke 440
+frame.Position = UDim2.new(1, -220, 1, -450)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
@@ -402,20 +404,20 @@ floatBtn.MouseButton1Click:Connect(function()
 end)
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 26)
+title.Size = UDim2.new(1, 0, 0, 24)
 title.BackgroundTransparency = 1
-title.Text = "⚡ ZHX BLAPET v6.7"
+title.Text = "⚡ ZHX BLAPET v6.8"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 12
 title.Font = Enum.Font.GothamBold
 title.ZIndex = 101
 title.Parent = frame
 
--- Helper functions (single column)
+-- Helper functions (single column, ukuran sedikit lebih kecil)
 local function makeInput(y, label, default, callback, configKey)
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 90, 0, 20)
-    lbl.Position = UDim2.new(0, 10, 0, y)
+    lbl.Size = UDim2.new(0, 82, 0, 20)
+    lbl.Position = UDim2.new(0, 8, 0, y)
     lbl.BackgroundTransparency = 1
     lbl.Text = label
     lbl.TextColor3 = Color3.fromRGB(200,200,200)
@@ -425,8 +427,8 @@ local function makeInput(y, label, default, callback, configKey)
     lbl.Parent = frame
 
     local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0, 60, 0, 20)
-    box.Position = UDim2.new(0, 105, 0, y)
+    box.Size = UDim2.new(0, 55, 0, 20)
+    box.Position = UDim2.new(0, 100, 0, y)
     box.BackgroundColor3 = Color3.fromRGB(30,30,40)
     box.BorderSizePixel = 0
     box.Text = tostring(default)
@@ -448,8 +450,8 @@ end
 
 local function makeToggleButton(y, text, startFn, stopFn, getActiveFn)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 28)
-    btn.Position = UDim2.new(0, 10, 0, y)
+    btn.Size = UDim2.new(1, -16, 0, 26)
+    btn.Position = UDim2.new(0, 8, 0, y)
     btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
     btn.BorderSizePixel = 0
     btn.Text = "▶ " .. text
@@ -475,84 +477,141 @@ local function makeToggleButton(y, text, startFn, stopFn, getActiveFn)
     return btn
 end
 
--- Layout vertikal
-local y = 32
+-- Layout vertikal (lebih rapat)
+local y = 30
 makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end, "reelDelay")
-y = y + 24
+y = y + 22
 makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end, "loopInterval")
-y = y + 24
+y = y + 22
 makeInput(y, "Timing Trigger", config.timingTrigger, function(v) config.timingTrigger = v end, "timingTrigger")
 
-y = y + 30
+y = y + 28
 makeToggleButton(y, "Fast Reel", startFastReel, stopFastReel, function() return fastReelActive end)
 
-y = y + 35
+y = y + 32
 makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end, "petBugInterval")
-y = y + 24
+y = y + 22
 makeInput(y, "Toggle Count", config.toggleCount, function(v) config.toggleCount = math.max(1, math.floor(v)) end, "toggleCount")
 
-y = y + 30
+y = y + 28
 makeToggleButton(y, "Pet Bug (Smart)", 
     function() petBugActive = true; lastPetBugTime = 0 end,
     function() petBugActive = false end,
     function() return petBugActive end
 )
 
-y = y + 35
+y = y + 32
 makeInput(y, "Blapet Cycles", config.blapetCycles, function(v) config.blapetCycles = math.max(1, math.floor(v)) end, "blapetCycles")
-y = y + 24
+y = y + 22
 makeInput(y, "Stuck Time (s)", config.blapetStuckTime, function(v) config.blapetStuckTime = math.max(5, v) end, "blapetStuckTime")
-y = y + 24
+y = y + 22
 makeInput(y, "Final Stuck (s)", config.blapetFinalStuck, function(v) config.blapetFinalStuck = math.max(30, v) end, "blapetFinalStuck")
-y = y + 24
+y = y + 22
 makeInput(y, "Interval (jam)", config.blapetIntervalHours, function(v) config.blapetIntervalHours = math.max(0.5, v) end, "blapetIntervalHours")
 
-y = y + 30
+y = y + 28
 makeToggleButton(y, "Blapet (Auto)", 
     startBlapet,
     stopBlapet,
     function() return blapetActive end
 )
 
--- Tombol fitur baru
-y = y + 35
-makeToggleButton(y, "Pet Sound", 
-    function() config.petSoundEnabled = true end,
-    function() config.petSoundEnabled = false end,
-    function() return config.petSoundEnabled end
-)
+-- Baris horizontal: 4 tombol kecil sejajar
+y = y + 34
+local btnW = 45
+local btnH = 28
+local gap = 4
+local totalW = btnW * 4 + gap * 3
+local startX = (frame.Size.X.Offset - totalW) / 2
 
-y = y + 30
-makeToggleButton(y, "Anim Off", 
-    function() config.animOff = true; disablePetAnimations() end,
-    function() config.animOff = false end,
-    function() return config.animOff end
-)
+-- Helper untuk tombol kecil
+local function makeSmallBtn(x, y, w, h, textOn, textOff, startFn, stopFn, getActiveFn)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, w, 0, h)
+    btn.Position = UDim2.new(0, x, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+    btn.BorderSizePixel = 0
+    btn.Text = textOff or "▶"
+    btn.TextColor3 = Color3.fromRGB(72, 210, 130)
+    btn.TextSize = 14
+    btn.Font = Enum.Font.GothamBold
+    btn.ZIndex = 101
+    btn.AutoButtonColor = false
+    btn.Parent = frame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
 
-y = y + 30
-makeToggleButton(y, "Stop Spam", nil, forceStopAllSpam, function() return false end)
+    btn.MouseButton1Click:Connect(function()
+        if getActiveFn() then
+            if stopFn then stopFn() end
+            btn.Text = textOff or "▶"
+            btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+        else
+            if startFn then startFn() end
+            btn.Text = textOn or "⏹"
+            btn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+        end
+    end)
+    return btn
+end
 
--- Tombol Save Config
-y = y + 40
+-- Tombol Save
 local saveBtn = Instance.new("TextButton")
-saveBtn.Size = UDim2.new(1, -20, 0, 30)
-saveBtn.Position = UDim2.new(0, 10, 0, y)
+saveBtn.Size = UDim2.new(0, btnW, 0, btnH)
+saveBtn.Position = UDim2.new(0, startX, 0, y)
 saveBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 80)
 saveBtn.BorderSizePixel = 0
-saveBtn.Text = "💾 Save Config"
+saveBtn.Text = "💾"
 saveBtn.TextColor3 = Color3.fromRGB(130, 180, 255)
-saveBtn.TextSize = 12
+saveBtn.TextSize = 16
 saveBtn.Font = Enum.Font.GothamBold
 saveBtn.ZIndex = 101
 saveBtn.AutoButtonColor = false
 saveBtn.Parent = frame
 Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0,5)
-
 saveBtn.MouseButton1Click:Connect(function()
     saveConfig()
-    saveBtn.Text = "✅ Tersimpan!"
+    saveBtn.Text = "✅"
     task.wait(2)
-    saveBtn.Text = "💾 Save Config"
+    saveBtn.Text = "💾"
+end)
+
+-- Tombol Pet Sound
+makeSmallBtn(
+    startX + (btnW + gap) * 1, y, btnW, btnH,
+    "🔉", "🔇",
+    function() config.petSoundEnabled = true end,
+    function() config.petSoundEnabled = false end,
+    function() return config.petSoundEnabled end
+)
+
+-- Tombol Anim Off
+makeSmallBtn(
+    startX + (btnW + gap) * 2, y, btnW, btnH,
+    "🕺❌", "🕺",
+    function() config.animOff = true; disablePetAnimations() end,
+    function() config.animOff = false end,
+    function() return config.animOff end
+)
+
+-- Tombol Stop Spam
+local stopSpamBtn = Instance.new("TextButton")
+stopSpamBtn.Size = UDim2.new(0, btnW, 0, btnH)
+stopSpamBtn.Position = UDim2.new(0, startX + (btnW + gap) * 3, 0, y)
+stopSpamBtn.BackgroundColor3 = Color3.fromRGB(80, 40, 20)
+stopSpamBtn.BorderSizePixel = 0
+stopSpamBtn.Text = "⛔"
+stopSpamBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+stopSpamBtn.TextSize = 16
+stopSpamBtn.Font = Enum.Font.GothamBold
+stopSpamBtn.ZIndex = 101
+stopSpamBtn.AutoButtonColor = false
+stopSpamBtn.Parent = frame
+Instance.new("UICorner", stopSpamBtn).CornerRadius = UDim.new(0,5)
+stopSpamBtn.MouseButton1Click:Connect(function()
+    forceStopAllSpam()
+    stopSpamBtn.Text = "✅"
+    task.wait(1)
+    stopSpamBtn.Text = "⛔"
 end)
 
 -- ========== LOAD CONFIG SAAT STARTUP ==========
@@ -591,8 +650,8 @@ UIS.InputChanged:Connect(function(inp)
     if floatDragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
         local delta = inp.Position - floatDragStart
         local viewport = workspace.CurrentCamera.ViewportSize
-        local newX = math.clamp(floatStartPos.X.Offset + delta.X, 0, viewport.X - 46)
-        local newY = math.clamp(floatStartPos.Y.Offset + delta.Y, 0, viewport.Y - 46)
+        local newX = math.clamp(floatStartPos.X.Offset + delta.X, 0, viewport.X - 44)
+        local newY = math.clamp(floatStartPos.Y.Offset + delta.Y, 0, viewport.Y - 44)
         floatBtn.Position = UDim2.new(0, newX, 0, newY)
     end
 end)
@@ -602,4 +661,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("v6.7 BLATANT PET By ZhxHub")
+print("v6.8 BLAPET By Zhx Hub.")
