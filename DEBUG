@@ -1,3 +1,4 @@
+
 -- // ZHX Smart Fishing v6.7 — Upgrade: Pet Sound + Stop Spam + Anim Off
 -- // Single column, rapi, Save di bawah, auto-load config
 -- // Semua logika Blapet sesuai temuan + fitur baru
@@ -601,4 +602,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("v6.7 siap. Upgrade: Pet Sound, Stop Spam, Anim Off.")
+print("v6.7 BLATANT PET By ZhxHub")
