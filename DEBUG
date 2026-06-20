@@ -1,15 +1,13 @@
-
--- // ZHX Blapet Auto v7.0 — Pet Sound + Stop Spam + Anim Off + UI Baru
--- // Remote hash finder, dua kolom, mobile friendly
--- // Fitur: Fast Reel, Pet Bug, Blapet, Pet Sound (Secret ID), Stop All Spam, Disable Pet Anim
+-- // ZHX Smart Fishing v6.7 — Upgrade: Pet Sound + Stop Spam + Anim Off
+-- // Single column, rapi, Save di bawah, auto-load config
+-- // Semua logika Blapet sesuai temuan + fitur baru
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
 local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
 local WS = game:GetService("Workspace")
 local SoundService = game:GetService("SoundService")
-local RunService = game:GetService("RunService")
-local LP = Players.LocalPlayer
 
 -- ========== REMOTE HASH FINDER ==========
 local function findRemoteByLabel(label)
@@ -68,11 +66,11 @@ local lastPetBugTime = 0
 local chargeStartTime = 0
 local fastReelThread = nil
 local blapetThread   = nil
-local inputBoxes = {}
 
 -- ========== SAVE / LOAD CONFIG ==========
 local CONFIG_FOLDER = "ZHX_Configs"
 local CONFIG_FILE   = CONFIG_FOLDER .. "/FastReelConfig.json"
+local inputBoxes = {}
 
 local function ensureFolder()
     if not isfolder or not makefolder then return false end
@@ -102,6 +100,25 @@ local function loadConfig()
             end
         end
     end)
+end
+
+-- ========== EQUIP ROD ==========
+local function equipRod()
+    if equipRE then
+        pcall(function() equipRE:FireServer(1) end)
+    else
+        local hotbar = LP.PlayerGui:FindFirstChild("Backpack")
+        if hotbar then
+            local slot1 = hotbar:FindFirstChild("1") or hotbar:FindFirstChild("Slot1")
+            if slot1 and slot1:IsA("ImageButton") then
+                pcall(function()
+                    local pos = slot1.AbsolutePosition + slot1.AbsoluteSize/2
+                    firesignal(UIS.InputBegan, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                    firesignal(UIS.InputEnded, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
+                end)
+            end
+        end
+    end
 end
 
 -- ========== PET UTILITIES ==========
@@ -138,16 +155,10 @@ end
 local function disablePetAnimations()
     local pets = findFishingPets()
     for _, pet in ipairs(pets) do
-        -- Destroy Animator (cara yang berhasil dari test)
         local animator = pet:FindFirstChildOfClass("Animator")
-        if animator then
-            pcall(function() animator:Destroy() end)
-        end
-        -- Destroy AnimationController juga
+        if animator then pcall(function() animator:Destroy() end) end
         local ac = pet:FindFirstChildOfClass("AnimationController")
-        if ac then
-            pcall(function() ac:Destroy() end)
-        end
+        if ac then pcall(function() ac:Destroy() end) end
     end
 end
 
@@ -214,25 +225,6 @@ local function stopFastReel()
     fastReelActive = false
     fastReelPaused = false
     if fastReelThread then task.cancel(fastReelThread); fastReelThread = nil end
-end
-
--- ========== EQUIP ROD ==========
-local function equipRod()
-    if equipRE then
-        pcall(function() equipRE:FireServer(1) end)
-    else
-        local hotbar = LP.PlayerGui:FindFirstChild("Backpack")
-        if hotbar then
-            local slot1 = hotbar:FindFirstChild("1") or hotbar:FindFirstChild("Slot1")
-            if slot1 and slot1:IsA("ImageButton") then
-                pcall(function()
-                    local pos = slot1.AbsolutePosition + slot1.AbsoluteSize/2
-                    firesignal(UIS.InputBegan, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
-                    firesignal(UIS.InputEnded, {UserInputType = Enum.UserInputType.MouseButton1, Position = pos})
-                end)
-            end
-        end
-    end
 end
 
 -- ========== BLAPET METHOD ==========
@@ -366,7 +358,7 @@ end)
 local pg = LP:WaitForChild("PlayerGui")
 
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_BlapetAuto_v7"
+sg.Name = "ZHX_SmartFishing_v6.7"
 sg.ResetOnSpawn = false
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = pg
@@ -391,10 +383,10 @@ floatBtn.Parent = floatingGui
 Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
 Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(72, 210, 130)
 
--- Main Panel (dua kolom)
+-- Main Panel (single column, tinggi disesuaikan)
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 230, 0, 380)
-frame.Position = UDim2.new(1, -240, 1, -390)
+frame.Size = UDim2.new(0, 220, 0, 540)
+frame.Position = UDim2.new(1, -230, 1, -550)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
@@ -410,20 +402,19 @@ end)
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 26)
-title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "⚡ ZHX Blapet Auto v7.0"
+title.Text = "⚡ ZHX BLAPET v6.7"
 title.TextColor3 = Color3.fromRGB(72, 210, 130)
 title.TextSize = 12
 title.Font = Enum.Font.GothamBold
 title.ZIndex = 101
 title.Parent = frame
 
--- Helper functions untuk dua kolom
-local function makeInput(x, y, label, default, callback, configKey)
+-- Helper functions (single column)
+local function makeInput(y, label, default, callback, configKey)
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 75, 0, 20)
-    lbl.Position = UDim2.new(0, x, 0, y)
+    lbl.Size = UDim2.new(0, 90, 0, 20)
+    lbl.Position = UDim2.new(0, 10, 0, y)
     lbl.BackgroundTransparency = 1
     lbl.Text = label
     lbl.TextColor3 = Color3.fromRGB(200,200,200)
@@ -433,8 +424,8 @@ local function makeInput(x, y, label, default, callback, configKey)
     lbl.Parent = frame
 
     local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0, 50, 0, 20)
-    box.Position = UDim2.new(0, x+80, 0, y)
+    box.Size = UDim2.new(0, 60, 0, 20)
+    box.Position = UDim2.new(0, 105, 0, y)
     box.BackgroundColor3 = Color3.fromRGB(30,30,40)
     box.BorderSizePixel = 0
     box.Text = tostring(default)
@@ -454,10 +445,10 @@ local function makeInput(x, y, label, default, callback, configKey)
     return box
 end
 
-local function makeToggleButton(x, y, w, text, startFn, stopFn, getActiveFn)
+local function makeToggleButton(y, text, startFn, stopFn, getActiveFn)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, w, 0, 26)
-    btn.Position = UDim2.new(0, x, 0, y)
+    btn.Size = UDim2.new(1, -20, 0, 28)
+    btn.Position = UDim2.new(0, 10, 0, y)
     btn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
     btn.BorderSizePixel = 0
     btn.Text = "▶ " .. text
@@ -483,57 +474,68 @@ local function makeToggleButton(x, y, w, text, startFn, stopFn, getActiveFn)
     return btn
 end
 
--- Kolom Kiri (x=10), Kolom Kanan (x=130)
-local lx, rx, y0, rh = 10, 130, 34, 22
+-- Layout vertikal
+local y = 32
+makeInput(y, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end, "reelDelay")
+y = y + 24
+makeInput(y, "Loop Interval", config.loopInterval, function(v) config.loopInterval = v end, "loopInterval")
+y = y + 24
+makeInput(y, "Timing Trigger", config.timingTrigger, function(v) config.timingTrigger = v end, "timingTrigger")
 
--- Kolom Kiri: Fast Reel
-makeInput(lx, y0, "Reel Delay", config.reelDelay, function(v) config.reelDelay = v end, "reelDelay")
-makeInput(lx, y0+rh, "Loop Int", config.loopInterval, function(v) config.loopInterval = v end, "loopInterval")
-makeInput(lx, y0+rh*2, "Timing Trig", config.timingTrigger, function(v) config.timingTrigger = v end, "timingTrigger")
-makeToggleButton(lx, y0+rh*3+2, 105, "Fast Reel", startFastReel, stopFastReel, function() return fastReelActive end)
+y = y + 30
+makeToggleButton(y, "Fast Reel", startFastReel, stopFastReel, function() return fastReelActive end)
 
--- Kolom Kanan: Pet Bug + Blapet
-local ry = y0
-makeInput(rx, ry, "Pet Bug Int", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end, "petBugInterval")
-ry = ry + rh
-makeInput(rx, ry, "Toggle Cnt", config.toggleCount, function(v) config.toggleCount = math.max(1, math.floor(v)) end, "toggleCount")
-ry = ry + rh
-makeToggleButton(rx, ry+2, 105, "Pet Bug", 
+y = y + 35
+makeInput(y, "Pet Bug Interval", config.petBugInterval, function(v) config.petBugInterval = math.max(10, v) end, "petBugInterval")
+y = y + 24
+makeInput(y, "Toggle Count", config.toggleCount, function(v) config.toggleCount = math.max(1, math.floor(v)) end, "toggleCount")
+
+y = y + 30
+makeToggleButton(y, "Pet Bug (Smart)", 
     function() petBugActive = true; lastPetBugTime = 0 end,
     function() petBugActive = false end,
     function() return petBugActive end
 )
-ry = ry + rh + 8
-makeInput(rx, ry, "Blapet Cyc", config.blapetCycles, function(v) config.blapetCycles = math.max(1, math.floor(v)) end, "blapetCycles")
-ry = ry + rh
-makeInput(rx, ry, "Stuck (s)", config.blapetStuckTime, function(v) config.blapetStuckTime = math.max(5, v) end, "blapetStuckTime")
-ry = ry + rh
-makeInput(rx, ry, "Final (s)", config.blapetFinalStuck, function(v) config.blapetFinalStuck = math.max(30, v) end, "blapetFinalStuck")
-ry = ry + rh
-makeInput(rx, ry, "Interv (j)", config.blapetIntervalHours, function(v) config.blapetIntervalHours = math.max(0.5, v) end, "blapetIntervalHours")
-ry = ry + rh
-makeToggleButton(rx, ry+2, 105, "Blapet", startBlapet, stopBlapet, function() return blapetActive end)
 
--- Baris bawah: Pet Sound, Anim Off, Stop Spam, Save
-local by = ry + 30
-makeToggleButton(lx, by, 105, "Pet Sound", 
+y = y + 35
+makeInput(y, "Blapet Cycles", config.blapetCycles, function(v) config.blapetCycles = math.max(1, math.floor(v)) end, "blapetCycles")
+y = y + 24
+makeInput(y, "Stuck Time (s)", config.blapetStuckTime, function(v) config.blapetStuckTime = math.max(5, v) end, "blapetStuckTime")
+y = y + 24
+makeInput(y, "Final Stuck (s)", config.blapetFinalStuck, function(v) config.blapetFinalStuck = math.max(30, v) end, "blapetFinalStuck")
+y = y + 24
+makeInput(y, "Interval (jam)", config.blapetIntervalHours, function(v) config.blapetIntervalHours = math.max(0.5, v) end, "blapetIntervalHours")
+
+y = y + 30
+makeToggleButton(y, "Blapet (Auto)", 
+    startBlapet,
+    stopBlapet,
+    function() return blapetActive end
+)
+
+-- Tombol fitur baru
+y = y + 35
+makeToggleButton(y, "Pet Sound", 
     function() config.petSoundEnabled = true end,
     function() config.petSoundEnabled = false end,
     function() return config.petSoundEnabled end
 )
-makeToggleButton(rx, by, 105, "Anim Off", 
+
+y = y + 30
+makeToggleButton(y, "Anim Off", 
     function() config.animOff = true; disablePetAnimations() end,
     function() config.animOff = false end,
     function() return config.animOff end
 )
-by = by + 30
-makeToggleButton(lx, by, 105, "Stop Spam", nil, forceStopAllSpam, function() return false end)
 
--- Save button
-by = by + 35
+y = y + 30
+makeToggleButton(y, "Stop Spam", nil, forceStopAllSpam, function() return false end)
+
+-- Tombol Save Config
+y = y + 40
 local saveBtn = Instance.new("TextButton")
-saveBtn.Size = UDim2.new(1, -20, 0, 28)
-saveBtn.Position = UDim2.new(0, 10, 0, by)
+saveBtn.Size = UDim2.new(1, -20, 0, 30)
+saveBtn.Position = UDim2.new(0, 10, 0, y)
 saveBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 80)
 saveBtn.BorderSizePixel = 0
 saveBtn.Text = "💾 Save Config"
@@ -552,7 +554,7 @@ saveBtn.MouseButton1Click:Connect(function()
     saveBtn.Text = "💾 Save Config"
 end)
 
--- ========== LOAD CONFIG ==========
+-- ========== LOAD CONFIG SAAT STARTUP ==========
 loadConfig()
 
 -- ========== DRAG ==========
@@ -599,4 +601,4 @@ UIS.InputEnded:Connect(function(inp)
     end
 end)
 
-print("ZHX Blapet Auto v7.0 siap. Pet Sound, Stop Spam, Anim Off, UI dua kolom.")
+print("v6.7 siap. Upgrade: Pet Sound, Stop Spam, Anim Off.")
