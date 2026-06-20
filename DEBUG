@@ -376,7 +376,7 @@ Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(72, 210, 130)
 
 -- Main Panel (lebih pendek)
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 210, 0, 415)  -- 440 -> 415
+frame.Size = UDim2.new(0, 210, 0, 390)  -- 440 -> 415
 frame.Position = UDim2.new(1, -220, 1, -425)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
