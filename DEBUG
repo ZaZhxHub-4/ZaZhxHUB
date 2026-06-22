@@ -1,7 +1,7 @@
--- // ZHX Safe Walk v3.6 — Smooth No Pause + Default Tab Active + Config Save/Load
--- // Walk: interpolasi CFrame, speed 0.03, tanpa jeda berhenti
+-- // ZHX Safe Walk v3.7 — Final Layout Fix: Saved Positions tombol turun, tidak terpotong
+-- // Smooth walk (CFrame interpolation), speed tetap 0.03, tanpa jeda berhenti
 -- // Tab pertama (Walk to Location) langsung aktif saat panel dibuka
--- // Saved Positions dengan Save/Load Config
+-- // Saved Positions dengan Save/Load Config, layout tombol diperbaiki
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -31,7 +31,7 @@ local state = {
     isWalking = false,
     stopRequested = false,
     noclipConn = nil,
-    speed = 0.03,  -- fixed
+    speed = 0.03,
     savedPositions = {},
     selectedSavedIndex = nil,
     selectedLocation = nil,
@@ -42,7 +42,7 @@ local state = {
     saveName = "",
 }
 
--- ========== SAVE / LOAD CONFIG FOR SAVED POSITIONS ==========
+-- ========== SAVE / LOAD CONFIG ==========
 local CONFIG_FOLDER = "ZHX_Configs"
 local CONFIG_FILE   = CONFIG_FOLDER .. "/SafeWalkSavedPositions.json"
 
@@ -155,7 +155,6 @@ local function safeWalk(targetCF)
             root.Velocity = Vector3.zero
             root.RotVelocity = Vector3.zero
         end)
-        -- Hanya delay dasar, tanpa pause tambahan
         task.wait(state.speed * (0.9 + math.random() * 0.2))
     end
 
@@ -216,7 +215,7 @@ Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
 
 -- Main Panel
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHX_SafeWalk_v3.6"
+mainGui.Name = "ZHX_SafeWalk_v3.7"
 mainGui.ResetOnSpawn = false
 mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mainGui.Parent = pg
@@ -242,7 +241,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "📍 ZHX Safe Walk v3.6"
+title.Text = "📍 ZHX Safe Walk v3.7"
 title.TextColor3 = Color3.fromRGB(255, 200, 0)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -535,14 +534,14 @@ local function buildTab2()
     return content
 end
 
--- ========== BUILD TAB 3: SAVED POSITIONS ==========
+-- ========== BUILD TAB 3: SAVED POSITIONS (LAYOUT FIXED) ==========
 local function buildTab3()
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1, 0, 1, 0)
     content.BackgroundTransparency = 1
     content.ZIndex = 101
 
-    -- Input nama
+    -- Input nama (tetap di atas)
     local nameInput = Instance.new("TextBox")
     nameInput.Size = UDim2.new(1, -10, 0, 26)
     nameInput.Position = UDim2.new(0, 5, 0, 4)
@@ -560,9 +559,9 @@ local function buildTab3()
         state.saveName = nameInput.Text:gsub("%s+", " ")
     end)
 
-    -- Scroll untuk daftar posisi tersimpan
+    -- Scroll untuk daftar posisi tersimpan (lebih pendek, agar tidak menutupi tombol)
     local savedScroll = Instance.new("ScrollingFrame")
-    savedScroll.Size = UDim2.new(1, -10, 1, -100)
+    savedScroll.Size = UDim2.new(1, -10, 1, -115) -- sisa ruang untuk tombol di bawah
     savedScroll.Position = UDim2.new(0, 5, 0, 34)
     savedScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     savedScroll.BorderSizePixel = 0
@@ -577,17 +576,17 @@ local function buildTab3()
     savedLayout.Padding = UDim.new(0, 2)
     savedLayout.Parent = savedScroll
 
-    -- Frame tombol bawah (fixed position)
+    -- Frame tombol bawah (fixed position, di bawah scroll)
     local btnFrame = Instance.new("Frame")
-    btnFrame.Size = UDim2.new(1, -10, 0, 80)
-    btnFrame.Position = UDim2.new(0, 5, 1, -85)
+    btnFrame.Size = UDim2.new(1, -10, 0, 85) -- tinggi total 85 untuk dua baris tombol
+    btnFrame.Position = UDim2.new(0, 5, 1, -92) -- pas di bawah, 92px dari bawah
     btnFrame.BackgroundTransparency = 1
     btnFrame.ZIndex = 101
     btnFrame.Parent = content
 
     -- Tombol Save (full width)
     local savePosBtn = Instance.new("TextButton")
-    savePosBtn.Size = UDim2.new(1, 0, 0, 26)
+    savePosBtn.Size = UDim2.new(1, 0, 0, 28)
     savePosBtn.Position = UDim2.new(0, 0, 0, 0)
     savePosBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 80)
     savePosBtn.BorderSizePixel = 0
@@ -600,16 +599,16 @@ local function buildTab3()
     savePosBtn.Parent = btnFrame
     Instance.new("UICorner", savePosBtn).CornerRadius = UDim.new(0, 5)
 
-    -- Row tombol Go, Remove, Stop
+    -- Row tombol Go, Remove, Stop (di bawah tombol Save)
     local actionRow = Instance.new("Frame")
-    actionRow.Size = UDim2.new(1, 0, 0, 26)
-    actionRow.Position = UDim2.new(0, 0, 0, 30)
+    actionRow.Size = UDim2.new(1, 0, 0, 28)
+    actionRow.Position = UDim2.new(0, 0, 0, 34) -- 6px gap dari tombol Save
     actionRow.BackgroundTransparency = 1
     actionRow.ZIndex = 101
     actionRow.Parent = btnFrame
 
     local savedGoBtn = Instance.new("TextButton")
-    savedGoBtn.Size = UDim2.new(0, 70, 0, 26)
+    savedGoBtn.Size = UDim2.new(0, 70, 0, 28)
     savedGoBtn.Position = UDim2.new(0, 0, 0, 0)
     savedGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
     savedGoBtn.BorderSizePixel = 0
@@ -623,7 +622,7 @@ local function buildTab3()
     Instance.new("UICorner", savedGoBtn).CornerRadius = UDim.new(0, 5)
 
     local savedRemoveBtn = Instance.new("TextButton")
-    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 26)
+    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 28)
     savedRemoveBtn.Position = UDim2.new(0, 75, 0, 0)
     savedRemoveBtn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
     savedRemoveBtn.BorderSizePixel = 0
@@ -637,7 +636,7 @@ local function buildTab3()
     Instance.new("UICorner", savedRemoveBtn).CornerRadius = UDim.new(0, 5)
 
     local savedStopBtn = Instance.new("TextButton")
-    savedStopBtn.Size = UDim2.new(0, 40, 0, 26)
+    savedStopBtn.Size = UDim2.new(0, 40, 0, 28)
     savedStopBtn.Position = UDim2.new(0, 150, 0, 0)
     savedStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
     savedStopBtn.BorderSizePixel = 0
@@ -765,4 +764,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHX Safe Walk v3.6 siap. Smooth no pause, default tab active, config save/load.")
+print("ZHX Safe Walk v3.7 siap. Layout saved positions fixed, tombol di bawah list.")
