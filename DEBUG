@@ -1,51 +1,279 @@
--- // ZHX Auto Event - Phase 6: Deep Inspect Megalodon Hunt Model
--- // Cari struktur dalam model, dapatkan posisi dari Part "Megalodon Hunt"
+-- // ZHX Auto Event - Phase 11: Walk, Lock & Safe Return Test
+-- // Menggunakan fungsi safeWalk yang sama seperti di Safe Walk utama
+-- // Saat kembali, interpolasi CFrame + anchored di akhir, tidak jatuh
 
-local webhook = "https://discord.com/api/webhooks/1506044266684743801/PlopEC1wwOyfGQh-3oBQFl67_IPfoNmUYDMvEU_kjvZP6zR6v0BjfMeObTUsxhOUepqg"
-local HS = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local WS = game:GetService("Workspace")
+local LP = Players.LocalPlayer
 
-local function send(msg)
-    pcall(function()
-        local body = HS:JSONEncode({content = msg:sub(1, 1900)})
-        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+-- ========== STATE ==========
+local savedPosition = nil
+local isLocked = false
+
+-- ========== NOKLIP AGRESIF ==========
+local noclipConn = nil
+local function enableNoclip()
+    if noclipConn then return end
+    noclipConn = RunService.Stepped:Connect(function()
+        local char = LP.Character
+        if not char then return end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                pcall(function() part.CanCollide = false end)
+            end
         end
     end)
 end
-
-send("🔍 Phase 6: Deep Inspect Megalodon Hunt Model...")
-
-local propsFolder = WS:FindFirstChild("Props")
-if not propsFolder then send("❌ Props tidak ditemukan"); return end
-
-local model = propsFolder:FindFirstChild("Megalodon Hunt")
-if not model then send("❌ Model Megalodon Hunt tidak ditemukan"); return end
-
-send("📁 Model: " .. model.Name .. " (" .. model.ClassName .. ")")
-send("  Children: " .. #model:GetChildren() .. " anak")
-
--- Cari semua anak dan turunannya
-for _, child in ipairs(model:GetDescendants()) do
-    if child:IsA("BasePart") then
-        send("  🧱 Part: " .. child.Name .. " | Posisi: " .. tostring(child.Position) .. " | Size: " .. tostring(child.Size))
+local function disableNoclip()
+    if noclipConn then
+        noclipConn:Disconnect()
+        noclipConn = nil
     end
-    if child:IsA("BillboardGui") or child:IsA("SurfaceGui") then
-        local text = ""
-        for _, guiChild in ipairs(child:GetDescendants()) do
-            if guiChild:IsA("TextLabel") and guiChild.Text ~= "" then
-                text = text .. guiChild.Text .. " | "
-            end
+end
+
+-- ========== DAMAGE PROTECTION ==========
+local function protectCharacter()
+    local char = LP.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function() hum.MaxHealth = 1e9; hum.Health = 1e9 end)
+        hum.PlatformStand = true
+    end
+end
+local function unprotectCharacter()
+    local char = LP.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function() hum.MaxHealth = 100; hum.Health = 100 end)
+        hum.PlatformStand = false
+    end
+end
+
+-- ========== SAFE WALK (FULL INTERPOLASI + ANCHORED DI AKHIR) ==========
+local function safeWalk(targetCF)
+    local char = LP.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    enableNoclip()
+    protectCharacter()
+
+    local startCF = root.CFrame
+    local distance = (targetCF.Position - startCF.Position).Magnitude
+    local stepSize = 2.5
+    local steps = math.max(1, math.ceil(distance / stepSize))
+
+    for i = 1, steps do
+        local t = i / steps
+        local newCF = startCF:Lerp(targetCF, t)
+        pcall(function()
+            root.CFrame = newCF
+            root.Velocity = Vector3.zero
+            root.RotVelocity = Vector3.zero
+        end)
+        task.wait(0.03 * (0.9 + math.random() * 0.2))
+    end
+
+    -- Anchored di akhir agar tidak jatuh
+    pcall(function()
+        root.Anchored = true
+        root.CFrame = targetCF
+        root.Velocity = Vector3.zero
+        root.RotVelocity = Vector3.zero
+        task.wait(0.5) -- beri waktu agar stabil
+        root.Anchored = false
+    end)
+
+    unprotectCharacter()
+    disableNoclip()
+end
+
+-- ========== FUNGSI CARI MODEL EVENT ==========
+local function findEventModel(eventName)
+    local propsFolder = WS:FindFirstChild("Props")
+    if not propsFolder then return nil end
+    for _, child in ipairs(propsFolder:GetChildren()) do
+        if child.Name == eventName and child:IsA("Model") then
+            return child
         end
-        send("  📝 GUI: " .. child.Name .. " | Text: " .. text:sub(1, 200))
     end
+    return nil
 end
 
--- Cari part bernama "Megalodon Hunt" langsung
-local targetPart = model:FindFirstChild("Megalodon Hunt")
-if targetPart and targetPart:IsA("BasePart") then
-    send("🎯 Target Part 'Megalodon Hunt': Posisi = " .. tostring(targetPart.Position))
+-- ========== FUNGSI DAPATKAN POSISI EVENT ==========
+local function getEventPosition(model)
+    if not model then return nil end
+    for _, child in ipairs(model:GetDescendants()) do
+        if child.Name == model.Name and child:IsA("BasePart") then
+            return child.Position
+        end
+    end
+    for _, child in ipairs(model:GetDescendants()) do
+        if child:IsA("BasePart") then
+            return child.Position
+        end
+    end
+    return nil
 end
 
-send("✅ Phase 6 selesai.")
+-- ========== SIMPAN POSISI SAAT INI ==========
+local function saveCurrentPosition()
+    local char = LP.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    savedPosition = root.CFrame
+end
+
+-- ========== LOCK USER ==========
+local function lockUser()
+    local char = LP.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    root.Anchored = true
+    isLocked = true
+end
+
+-- ========== UNLOCK USER ==========
+local function unlockUser()
+    local char = LP.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    root.Anchored = false
+    isLocked = false
+end
+
+-- ========== UI ==========
+local pg = LP:WaitForChild("PlayerGui")
+local sg = Instance.new("ScreenGui")
+sg.Name = "ZHX_EventLockTest_v11"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent = pg
+pcall(function() sg.DisplayOrder = 99999 end)
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 150)
+frame.Position = UDim2.new(0.5, -110, 0.5, -75)
+frame.BackgroundColor3 = Color3.fromRGB(15,15,20)
+frame.BackgroundTransparency = 0.1
+frame.BorderSizePixel = 0
+frame.ZIndex = 9998
+frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
+Instance.new("UIStroke", frame).Color = Color3.fromRGB(255,100,0)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,22)
+title.Position = UDim2.new(0,10,0,4)
+title.BackgroundTransparency = 1
+title.Text = "🔒 Walk & Lock v11"
+title.TextColor3 = Color3.fromRGB(255,100,0)
+title.TextSize = 12
+title.Font = Enum.Font.GothamBold
+title.ZIndex = 101
+title.Parent = frame
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1,-20,0,20)
+statusLabel.Position = UDim2.new(0,10,1,-28)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Tekan Walk & Lock"
+statusLabel.TextColor3 = Color3.fromRGB(200,200,200)
+statusLabel.TextSize = 10
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.ZIndex = 101
+statusLabel.Parent = frame
+
+-- Tombol Walk & Lock
+local walkLockBtn = Instance.new("TextButton")
+walkLockBtn.Size = UDim2.new(1,-20,0,30)
+walkLockBtn.Position = UDim2.new(0,10,0,30)
+walkLockBtn.BackgroundColor3 = Color3.fromRGB(40,40,20)
+walkLockBtn.BorderSizePixel = 0
+walkLockBtn.Text = "🔒 Walk & Lock to Event"
+walkLockBtn.TextColor3 = Color3.fromRGB(255,255,255)
+walkLockBtn.TextSize = 11
+walkLockBtn.Font = Enum.Font.GothamBold
+walkLockBtn.ZIndex = 101
+walkLockBtn.AutoButtonColor = false
+walkLockBtn.Parent = frame
+Instance.new("UICorner", walkLockBtn).CornerRadius = UDim.new(0,5)
+
+-- Tombol Unlock & Safe Return
+local unlockReturnBtn = Instance.new("TextButton")
+unlockReturnBtn.Size = UDim2.new(1,-20,0,30)
+unlockReturnBtn.Position = UDim2.new(0,10,0,68)
+unlockReturnBtn.BackgroundColor3 = Color3.fromRGB(60,30,30)
+unlockReturnBtn.BorderSizePixel = 0
+unlockReturnBtn.Text = "🔓 Unlock & Safe Return"
+unlockReturnBtn.TextColor3 = Color3.fromRGB(255,150,150)
+unlockReturnBtn.TextSize = 11
+unlockReturnBtn.Font = Enum.Font.GothamBold
+unlockReturnBtn.ZIndex = 101
+unlockReturnBtn.AutoButtonColor = false
+unlockReturnBtn.Parent = frame
+Instance.new("UICorner", unlockReturnBtn).CornerRadius = UDim.new(0,5)
+
+-- Fungsi tombol
+walkLockBtn.MouseButton1Click:Connect(function()
+    saveCurrentPosition()
+    statusLabel.Text = "Mencari event..."
+    
+    local model = findEventModel("Megalodon Hunt")
+    if model then
+        local pos = getEventPosition(model)
+        if pos then
+            statusLabel.Text = "Berjalan ke event..."
+            -- Walk ke event (hanya posisi)
+            safeWalk(CFrame.new(pos))
+            lockUser()
+            statusLabel.Text = "Terkunci di lokasi event!"
+        else
+            statusLabel.Text = "Posisi tidak ditemukan"
+        end
+    else
+        statusLabel.Text = "Event tidak ditemukan"
+    end
+end)
+
+unlockReturnBtn.MouseButton1Click:Connect(function()
+    if not isLocked then
+        statusLabel.Text = "User tidak terkunci"
+        return
+    end
+    unlockUser()
+    if savedPosition then
+        statusLabel.Text = "Kembali ke posisi semula..."
+        -- Gunakan safeWalk yang sudah teruji (dengan interpolasi + anchored di akhir)
+        safeWalk(savedPosition)
+        statusLabel.Text = "Sampai di posisi semula!"
+        savedPosition = nil
+    else
+        statusLabel.Text = "Tidak ada posisi tersimpan"
+    end
+end)
+
+-- Drag frame
+local dragging, dragStart, startPos = false, nil, nil
+frame.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = inp.Position; startPos = frame.Position
+    end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(inp) dragging = false end)
+
+print("Walk & Lock v11 siap. Uji Walk & Lock, lalu Unlock & Safe Return.")
