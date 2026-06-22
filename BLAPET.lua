@@ -1,4 +1,4 @@
--- // ZHXHub Full Project v2.2 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
+-- // ZHXHub Full Project v2.3 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
 -- // Perbaikan: panggilan OFF awal + ON-OFF bergantian + MarkAuto digunakan
 -- // AUTO EVENT: Workspace-wide scan V3.0 FINAL
 
@@ -317,7 +317,7 @@ local function getEventPosition(eventName)
     if not eventModel then return nil end
     local ok, cf = pcall(function() return eventModel:GetBoundingBox() end)
     if ok and cf then
-        return cf.Position + Vector3.new(0, -100, 0)
+        return cf.Position + Vector3.new(0, -160, 0)
     end
     return nil
 end
@@ -617,7 +617,7 @@ floatBtn.MouseButton1Click:Connect(function() frame.Visible = not frame.Visible 
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,24); title.Position = UDim2.new(0,10,0,6)
-title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v2.2  ⚡"
+title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v2.3  ⚡"
 title.TextColor3 = Color3.fromRGB(72,210,130); title.TextSize = 13
 title.Font = Enum.Font.GothamBold; title.ZIndex = 101; title.Parent = frame
 
@@ -1036,4 +1036,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHXHub Full Project v2.2 — Auto Event Workspace Scan Ready.")
+print("ZHXHub Full Project v2.3 — Auto Event Workspace Scan Ready.")
