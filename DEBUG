@@ -1,798 +1,269 @@
--- // ZHX Safe Walk v3.3 — Auto Equip Diving Gear Fix + Layout Saved Positions
--- // Mencari UUID Advanced Diving Gear / Diving Gear di inventory
--- // Menggunakan remote EquipItem untuk auto-equip
--- // Layout Saved Positions: tombol di dalam panel, tidak keluar
-
+-- ═══════════════════════════════════════════════════════
+--  MONITOR RF/RE — Rekam semua RF/RE yang fired saat
+--  aksi manual dilakukan (contoh: equip diving gear)
+--  Hasil dikirim ke Discord webhook
+-- ═══════════════════════════════════════════════════════
+local RS      = game:GetService("ReplicatedStorage")
+local HS      = game:GetService("HttpService")
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local RS = game:GetService("ReplicatedStorage")
-local LP = Players.LocalPlayer
 
--- ========== DAFTAR LOKASI HARDCODED ==========
-local locations = {
-    ["Fisherman Island"] = CFrame.new(258.659760, 18.206026, 2899.733154, 0.255222, 0.000000, 0.966882, -0.000000, 1.000000, -0.000000, -0.966882, -0.000000, 0.255222),
-    ["Kohana"] = CFrame.new(-748.334473, 2.744811, 759.022461, 0.015873, 0.000000, 0.999874, 0.000000, 1.000000, -0.000000, -0.999874, 0.000000, 0.015873),
-    ["Ocean"] = CFrame.new(122, 5, 2550, 0.669631, -0.637290, 0.381387, 0, 0.513518, 0.858079, -0.742694, -0.574596, 0.343867),
-    ["Treasure Room"] = CFrame.new(-3556.727295, -266.274231, -1600.418823, 0.685607, 0.000000, -0.727972, -0.000000, 1.000000, 0.000000, 0.727972, 0.000000, 0.685607),
-    ["Coral Reefs"] = CFrame.new(-2762.703857, 4.010764, 2174.476562, -0.679231, -0.000000, -0.733925, -0.000000, 1.000000, -0.000000, 0.733925, -0.000000, -0.679231),
-    ["Crater Island"] = CFrame.new(978.970764, 47.517365, 5086.510254, -0.574029, -0.000000, -0.818835, -0.000000, 1.000000, -0.000000, 0.818835, -0.000000, -0.574029),
-    ["Copper Canyon"] = CFrame.new(-4179.353027, 8.227109, 500.384735, 0.990358, -0.000000, -0.138529, 0.000000, 1.000000, 0.000000, 0.138529, -0.000000, 0.990358),
-    ["Canyon Mines"] = CFrame.new(-4039.090332, -538.592163, 551.931458, 0.754494, -0.000000, -0.656307, 0.000000, 1.000000, -0.000000, 0.656307, -0.000000, 0.754494),
-    ["Lava Basin"] = CFrame.new(950.205383, 84.801346, -10198.104492, -0.018971, -0.000000, -0.999820, 0.000000, 1.000000, -0.000000, 0.999820, -0.000000, -0.018971),
-    ["Underwater City"] = CFrame.new(-3307.890137, -640.492737, -10507.622070, 0.055548, -0.000000, -0.998456, 0.000000, 1.000000, -0.000000, 0.998456, -0.000000, 0.055548),
-    ["Pirate Cove"] = CFrame.new(3409.220459, 4.192971, 3499.211670, 0.663150, -0.000000, 0.748486, 0.000000, 1.000000, 0.000000, -0.748486, -0.000000, 0.663150),
-    ["Ancient Ruin"] = CFrame.new(6085.055176, -585.924255, 4635.187500, -0.711615, 0.000000, -0.702570, 0.000000, 1.000000, 0.000000, 0.702570, -0.000000, -0.711615),
-    ["Crystal Depths"] = CFrame.new(5735.092285, -901.842957, 15324.312500, -0.999445, -0.000000, -0.033315, -0.000000, 1.000000, -0.000000, 0.033315, 0.000000, -0.999445),
-    ["Stingray Shores"] = CFrame.new(-2133.558594, 18.656778, -771.773926, 0.998903, -0.000000, 0.046831, 0.000000, 1.000000, 0.000000, -0.046831, -0.000000, 0.998903),
-}
+local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
 
--- ========== REMOTE HASH FINDER ==========
-local function findRemoteByLabel(label)
-    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
-    local children = net:GetChildren()
-    for i, child in ipairs(children) do
-        if child.Name == label then
-            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
-            if inside then
-                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
-                if h and #h == 64 then return inside end
-            end
-            local nxt = children[i+1]
-            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
-                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
-                if h and #h == 64 then return nxt end
-            end
-            break
-        end
-    end
-    return nil
-end
-
-local equipItemRE = findRemoteByLabel("RE/EquipItem")
-
--- ========== STATE ==========
-local state = {
-    isWalking = false,
-    stopRequested = false,
-    noclipConn = nil,
-    speed = 0.03,
-    savedPositions = {},
-    selectedSavedIndex = nil,
-    selectedLocation = nil,
-    selectedLocBtn = nil,
-    selectedPlayer = nil,
-    selectedPlayerBtn = nil,
-    selectedSavedBtn = nil,
-    saveName = "",
-}
-
--- ========== NOKLIP AGRESIF ==========
-local function enableNoclip()
-    if state.noclipConn then return end
-    state.noclipConn = RunService.Stepped:Connect(function()
-        local char = LP.Character
-        if not char then return end
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                pcall(function() part.CanCollide = false end)
-            end
-        end
-    end)
-end
-
-local function disableNoclip()
-    if state.noclipConn then
-        state.noclipConn:Disconnect()
-        state.noclipConn = nil
-    end
-end
-
--- ========== AUTO EQUIP DIVING GEAR ==========
-local function equipDivingGear()
-    if not equipItemRE then return end
-
-    -- Akses inventory via Replion
-    local Replion = require(RS.Packages.Replion)
-    local PlayerData = Replion.Client:WaitReplion("Data")
-    task.wait(1)
-
-    local uuidToEquip = nil
-
+local function send(title, desc, color)
     pcall(function()
-        local inv = PlayerData:Get("Inventory")
-        if inv and inv.Items then
-            -- Cari Advanced Diving Gear dulu (ID mungkin berbeda, kita cari nama)
-            for _, item in ipairs(inv.Items) do
-                -- Dapatkan data item
-                local ItemUtility = require(RS.Shared.ItemUtility)
-                local data = ItemUtility:GetItemData(item.Id)
-                if data and data.Data and data.Data.Type == "Gears" then
-                    if data.Data.Name == "Advanced Diving Gear" then
-                        uuidToEquip = item.UUID
-                        break
-                    end
-                end
-            end
-            -- Fallback ke Diving Gear biasa
-            if not uuidToEquip then
-                for _, item in ipairs(inv.Items) do
-                    local ItemUtility = require(RS.Shared.ItemUtility)
-                    local data = ItemUtility:GetItemData(item.Id)
-                    if data and data.Data and data.Data.Type == "Gears" then
-                        if data.Data.Name == "Diving Gear" then
-                            uuidToEquip = item.UUID
-                            break
-                        end
-                    end
-                end
-            end
-        end
+        request({
+            Url=WEBHOOK, Method="POST",
+            Headers={["Content-Type"]="application/json"},
+            Body=HS:JSONEncode({
+                username="🔬 ZHX RF Monitor",
+                embeds={{title=title, description=desc, color=color or 3066993,
+                    footer={text="Monitor • "..os.date("%H:%M:%S")}}}
+            })
+        })
     end)
-
-    if uuidToEquip then
-        pcall(function() equipItemRE:FireServer(uuidToEquip) end)
-    end
 end
 
--- ========== DAMAGE PROTECTION ==========
-local function protectCharacter()
-    local char = LP.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        pcall(function() hum.MaxHealth = 1e9; hum.Health = 1e9 end)
-        hum.PlatformStand = true
-    end
-end
+while not Players.LocalPlayer do task.wait() end
 
-local function unprotectCharacter()
-    local char = LP.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        pcall(function() hum.MaxHealth = 100; hum.Health = 100 end)
-        hum.PlatformStand = false
-    end
-end
+-- ─── Hook semua RemoteFunction & RemoteEvent di game ───
+local hooks      = {}
+local firedLog   = {}
+local monitoring = false
+local logCount   = 0
 
--- ========== SAFE WALK CORE ==========
-local function safeWalk(targetCF)
-    if state.isWalking then return end
-    local char = LP.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+local function hookAll()
+    -- Scan semua RF dan RE di seluruh game secara rekursif
+    local function scanDescendants(parent)
+        for _, obj in ipairs(parent:GetDescendants()) do
+            if (obj:IsA("RemoteFunction") or obj:IsA("RemoteEvent")) and not hooks[obj] then
+                hooks[obj] = true
 
-    state.isWalking = true
-    state.stopRequested = false
-    enableNoclip()
-    equipDivingGear()
-    protectCharacter()
+                if obj:IsA("RemoteFunction") then
+                    -- Hook InvokeServer
+                    local ok = pcall(function()
+                        local orig = obj.InvokeServer
+                        obj.InvokeServer = function(self, ...)
+                            if monitoring then
+                                local args = {...}
+                                local argStr = ""
+                                pcall(function()
+                                    argStr = HS:JSONEncode(args):sub(1, 200)
+                                end)
+                                logCount = logCount + 1
+                                table.insert(firedLog, {
+                                    type = "RF:Invoke",
+                                    name = obj.Name,
+                                    path = obj:GetFullName(),
+                                    args = argStr,
+                                    t    = os.date("%H:%M:%S")
+                                })
+                            end
+                            return orig(self, ...)
+                        end
+                    end)
+                    if not ok then
+                        -- Fallback: hook via hookfunction jika tersedia
+                        pcall(function()
+                            hookfunction(obj.InvokeServer, function(self, ...)
+                                if monitoring then
+                                    local args = {...}
+                                    local argStr = ""
+                                    pcall(function() argStr = HS:JSONEncode(args):sub(1,200) end)
+                                    logCount = logCount + 1
+                                    table.insert(firedLog, {
+                                        type="RF:Invoke", name=obj.Name,
+                                        path=obj:GetFullName(), args=argStr, t=os.date("%H:%M:%S")
+                                    })
+                                end
+                            end)
+                        end)
+                    end
 
-    local startCF = root.CFrame
-    local distance = (targetCF.Position - startCF.Position).Magnitude
-    local stepSize = 2.5
-    local steps = math.max(1, math.ceil(distance / stepSize))
-
-    for i = 1, steps do
-        if state.stopRequested then break end
-        local t = i / steps
-        local newCF = startCF:Lerp(targetCF, t)
-        pcall(function()
-            root.CFrame = newCF
-            root.Velocity = Vector3.zero
-            root.RotVelocity = Vector3.zero
-        end)
-        task.wait(state.speed * (0.8 + math.random() * 0.4))
-        if i % math.random(5, 8) == 0 then
-            task.wait(0.05 + math.random() * 0.1)
+                elseif obj:IsA("RemoteEvent") then
+                    -- Connect listener ke FireServer
+                    pcall(function()
+                        obj.OnClientEvent:Connect(function(...)
+                            -- Ini dari server ke client, bukan yang kita butuhkan
+                        end)
+                    end)
+                    -- Hook FireServer
+                    pcall(function()
+                        hookfunction(obj.FireServer, function(self, ...)
+                            if monitoring then
+                                local args={...}
+                                local argStr=""
+                                pcall(function() argStr=HS:JSONEncode(args):sub(1,200) end)
+                                logCount=logCount+1
+                                table.insert(firedLog,{
+                                    type="RE:Fire", name=obj.Name,
+                                    path=obj:GetFullName(), args=argStr, t=os.date("%H:%M:%S")
+                                })
+                            end
+                        end)
+                    end)
+                end
+            end
         end
     end
 
-    if not state.stopRequested then
-        pcall(function()
-            root.Anchored = true
-            root.CFrame = targetCF
-            task.wait(0.3)
-            root.Anchored = false
-        end)
-    end
-
-    unprotectCharacter()
-    disableNoclip()
-    state.isWalking = false
-    state.stopRequested = false
+    scanDescendants(RS)
+    scanDescendants(game:GetService("Workspace"))
 end
 
-local function stopWalking()
-    state.stopRequested = true
-    state.isWalking = false
-    disableNoclip()
-    unprotectCharacter()
-end
-
-LP.CharacterAdded:Connect(function()
-    state.isWalking = false
-    state.stopRequested = false
-    disableNoclip()
-    unprotectCharacter()
-end)
-
--- ========== UI ==========
-local pg = LP:WaitForChild("PlayerGui")
-
--- Floating Button (kuning)
-local floatingGui = Instance.new("ScreenGui")
-floatingGui.Name = "ZHX_FloatBtn"
-floatingGui.ResetOnSpawn = false
-floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-floatingGui.Parent = pg
-pcall(function() floatingGui.DisplayOrder = 99999 end)
-
-local floatBtn = Instance.new("ImageButton")
-floatBtn.Size = UDim2.new(0, 46, 0, 46)
-floatBtn.Position = UDim2.new(0, 12, 0, 100)
-floatBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
-floatBtn.BorderSizePixel = 0
-floatBtn.Image = "rbxassetid://78392602281326"
-floatBtn.ScaleType = Enum.ScaleType.Fit
-floatBtn.ZIndex = 9999
-floatBtn.Parent = floatingGui
-Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
-Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
-
--- Main Panel
-local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHX_SafeWalk_v3.3"
-mainGui.ResetOnSpawn = false
-mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-mainGui.Parent = pg
-pcall(function() mainGui.DisplayOrder = 99999 end)
+-- ─── Buat UI ───
+local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+local sg = Instance.new("ScreenGui")
+sg.Name="ZHX_Monitor"; sg.ResetOnSpawn=false; sg.IgnoreGuiInset=true; sg.Parent=pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 420, 0, 330)
-frame.Position = UDim2.new(0.5, -210, 0.5, -165)
-frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-frame.BackgroundTransparency = 0.1
-frame.BorderSizePixel = 0
-frame.ZIndex = 9998
-frame.Visible = false
-frame.Parent = mainGui
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
-Instance.new("UIStroke", frame).Color = Color3.fromRGB(255, 200, 0)
+frame.Size=UDim2.new(0,280,0,200); frame.Position=UDim2.new(0,10,0,60)
+frame.BackgroundColor3=Color3.fromRGB(10,12,18); frame.BorderSizePixel=0; frame.Parent=sg
+Instance.new("UICorner",frame).CornerRadius=UDim.new(0,8)
+local stroke=Instance.new("UIStroke",frame); stroke.Color=Color3.fromRGB(72,210,130); stroke.Thickness=1.5
 
-floatBtn.MouseButton1Click:Connect(function()
-    frame.Visible = not frame.Visible
-end)
+local hdr=Instance.new("TextLabel"); hdr.Size=UDim2.new(1,0,0,30)
+hdr.BackgroundColor3=Color3.fromRGB(18,22,30); hdr.BorderSizePixel=0
+hdr.Text="🔬 RF MONITOR"; hdr.TextColor3=Color3.fromRGB(72,210,130)
+hdr.TextSize=12; hdr.Font=Enum.Font.GothamBold; hdr.ZIndex=2; hdr.Parent=frame
+Instance.new("UICorner",hdr).CornerRadius=UDim.new(0,8)
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 24)
-title.Position = UDim2.new(0, 10, 0, 6)
-title.BackgroundTransparency = 1
-title.Text = "📍 ZHX Safe Walk v3.3"
-title.TextColor3 = Color3.fromRGB(255, 200, 0)
-title.TextSize = 13
-title.Font = Enum.Font.GothamBold
-title.ZIndex = 101
-title.Parent = frame
+local statusLbl=Instance.new("TextLabel"); statusLbl.Size=UDim2.new(1,-12,0,20)
+statusLbl.Position=UDim2.new(0,6,0,34); statusLbl.BackgroundTransparency=1
+statusLbl.Text="Status: IDLE — belum merekam"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
+statusLbl.TextSize=10; statusLbl.Font=Enum.Font.Gotham
+statusLbl.TextXAlignment=Enum.TextXAlignment.Left; statusLbl.Parent=frame
 
--- ========== TAB BUTTONS (KIRI) ==========
-local tabFrame = Instance.new("Frame")
-tabFrame.Size = UDim2.new(0, 100, 1, -40)
-tabFrame.Position = UDim2.new(0, 8, 0, 34)
-tabFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-tabFrame.BorderSizePixel = 0
-tabFrame.ZIndex = 100
-tabFrame.Parent = frame
-Instance.new("UICorner", tabFrame).CornerRadius = UDim.new(0, 6)
+local countLbl=Instance.new("TextLabel"); countLbl.Size=UDim2.new(1,-12,0,18)
+countLbl.Position=UDim2.new(0,6,0,56); countLbl.BackgroundTransparency=1
+countLbl.Text="RF/RE tertangkap: 0"; countLbl.TextColor3=Color3.fromRGB(72,210,130)
+countLbl.TextSize=10; countLbl.Font=Enum.Font.GothamBold
+countLbl.TextXAlignment=Enum.TextXAlignment.Left; countLbl.Parent=frame
 
-local tabLayout = Instance.new("UIListLayout")
-tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabLayout.Padding = UDim.new(0, 4)
-tabLayout.Parent = tabFrame
+-- Tombol START
+local startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(1,-12,0,30)
+startBtn.Position=UDim2.new(0,6,0,80); startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
+startBtn.BorderSizePixel=0; startBtn.Text="▶ MULAI REKAM"
+startBtn.TextColor3=Color3.fromRGB(72,210,130); startBtn.TextSize=11
+startBtn.Font=Enum.Font.GothamBold; startBtn.AutoButtonColor=false; startBtn.Parent=frame
+Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
 
--- ========== KONTEN (KANAN) ==========
-local contentFrame = Instance.new("Frame")
-contentFrame.Size = UDim2.new(1, -116, 1, -40)
-contentFrame.Position = UDim2.new(0, 112, 0, 34)
-contentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-contentFrame.BorderSizePixel = 0
-contentFrame.ZIndex = 100
-contentFrame.Parent = frame
-Instance.new("UICorner", contentFrame).CornerRadius = UDim.new(0, 6)
+-- Tombol STOP + KIRIM
+local stopBtn=Instance.new("TextButton"); stopBtn.Size=UDim2.new(1,-12,0,30)
+stopBtn.Position=UDim2.new(0,6,0,116); stopBtn.BackgroundColor3=Color3.fromRGB(60,20,20)
+stopBtn.BorderSizePixel=0; stopBtn.Text="⏹ STOP & KIRIM KE DISCORD"
+stopBtn.TextColor3=Color3.fromRGB(240,80,80); stopBtn.TextSize=11
+stopBtn.Font=Enum.Font.GothamBold; stopBtn.AutoButtonColor=false; stopBtn.Parent=frame
+Instance.new("UICorner",stopBtn).CornerRadius=UDim.new(0,6)
 
--- ========== FUNGSI PEMBUAT TAB ==========
-local function createTabButton(name, buildContent)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -8, 0, 30)
-    btn.Position = UDim2.new(0, 4, 0, 4)
-    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    btn.BorderSizePixel = 0
-    btn.Text = name
-    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    btn.TextSize = 12
-    btn.Font = Enum.Font.GothamBold
-    btn.ZIndex = 101
-    btn.AutoButtonColor = false
-    btn.Parent = tabFrame
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+-- Tombol RESET
+local resetBtn=Instance.new("TextButton"); resetBtn.Size=UDim2.new(1,-12,0,26)
+resetBtn.Position=UDim2.new(0,6,0,152); resetBtn.BackgroundColor3=Color3.fromRGB(30,30,30)
+resetBtn.BorderSizePixel=0; resetBtn.Text="🗑 Reset Log"
+resetBtn.TextColor3=Color3.fromRGB(150,150,150); resetBtn.TextSize=10
+resetBtn.Font=Enum.Font.Gotham; resetBtn.AutoButtonColor=false; resetBtn.Parent=frame
+Instance.new("UICorner",resetBtn).CornerRadius=UDim.new(0,6)
 
-    btn.MouseButton1Click:Connect(function()
-        for _, child in ipairs(tabFrame:GetChildren()) do
-            if child:IsA("TextButton") then
-                child.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-            end
-        end
-        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
-        for _, child in ipairs(contentFrame:GetChildren()) do
-            child:Destroy()
-        end
-        local newContent = buildContent()
-        newContent.Parent = contentFrame
-    end)
+local infoLbl=Instance.new("TextLabel"); infoLbl.Size=UDim2.new(1,-12,0,16)
+infoLbl.Position=UDim2.new(0,6,0,182); infoLbl.BackgroundTransparency=1
+infoLbl.Text="Hooks terpasang: 0"; infoLbl.TextColor3=Color3.fromRGB(100,110,105)
+infoLbl.TextSize=9; infoLbl.Font=Enum.Font.Gotham
+infoLbl.TextXAlignment=Enum.TextXAlignment.Left; infoLbl.Parent=frame
 
-    return btn
-end
-
--- ========== BUILD TAB 1: WALK TO LOCATION ==========
-local function buildTab1()
-    local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, 0, 1, 0)
-    content.BackgroundTransparency = 1
-    content.ZIndex = 101
-
-    local locScroll = Instance.new("ScrollingFrame")
-    locScroll.Size = UDim2.new(1, -10, 1, -40)
-    locScroll.Position = UDim2.new(0, 5, 0, 4)
-    locScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    locScroll.BorderSizePixel = 0
-    locScroll.ScrollBarThickness = 4
-    locScroll.ScrollBarImageColor3 = Color3.fromRGB(255, 200, 0)
-    locScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    locScroll.ZIndex = 102
-    locScroll.Parent = content
-
-    local locLayout = Instance.new("UIListLayout")
-    locLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    locLayout.Padding = UDim.new(0, 2)
-    locLayout.Parent = locScroll
-
-    local btnFrame = Instance.new("Frame")
-    btnFrame.Size = UDim2.new(1, -10, 0, 30)
-    btnFrame.Position = UDim2.new(0, 5, 1, -35)
-    btnFrame.BackgroundTransparency = 1
-    btnFrame.ZIndex = 101
-    btnFrame.Parent = content
-
-    local locGoBtn = Instance.new("TextButton")
-    locGoBtn.Size = UDim2.new(0, 70, 0, 28)
-    locGoBtn.Position = UDim2.new(0, 0, 0, 0)
-    locGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
-    locGoBtn.BorderSizePixel = 0
-    locGoBtn.Text = "▶ Go"
-    locGoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    locGoBtn.TextSize = 11
-    locGoBtn.Font = Enum.Font.GothamBold
-    locGoBtn.ZIndex = 101
-    locGoBtn.AutoButtonColor = false
-    locGoBtn.Parent = btnFrame
-    Instance.new("UICorner", locGoBtn).CornerRadius = UDim.new(0, 5)
-
-    local locStopBtn = Instance.new("TextButton")
-    locStopBtn.Size = UDim2.new(0, 40, 0, 28)
-    locStopBtn.Position = UDim2.new(0, 75, 0, 0)
-    locStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
-    locStopBtn.BorderSizePixel = 0
-    locStopBtn.Text = "⏹"
-    locStopBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-    locStopBtn.TextSize = 14
-    locStopBtn.Font = Enum.Font.GothamBold
-    locStopBtn.ZIndex = 101
-    locStopBtn.AutoButtonColor = false
-    locStopBtn.Parent = btnFrame
-    Instance.new("UICorner", locStopBtn).CornerRadius = UDim.new(0, 5)
-
-    locStopBtn.MouseButton1Click:Connect(stopWalking)
-
-    local selectedLocBtn = nil
-    local selectedLocation = nil
-    local totalLocH = 0
-    for name, cf in pairs(locations) do
-        totalLocH = totalLocH + 30
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -4, 0, 28)
-        btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-        btn.BorderSizePixel = 0
-        btn.Text = name
-        btn.TextColor3 = Color3.fromRGB(200, 220, 200)
-        btn.TextSize = 11
-        btn.Font = Enum.Font.Gotham
-        btn.TextXAlignment = Enum.TextXAlignment.Left
-        btn.ZIndex = 103
-        btn.AutoButtonColor = false
-        btn.Parent = locScroll
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-        btn.MouseEnter:Connect(function() if btn ~= selectedLocBtn then btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60) end end)
-        btn.MouseLeave:Connect(function() if btn ~= selectedLocBtn then btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end end)
-        btn.MouseButton1Click:Connect(function()
-            if selectedLocBtn then selectedLocBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end
-            selectedLocBtn = btn
-            btn.BackgroundColor3 = Color3.fromRGB(20, 80, 20)
-            selectedLocation = cf
-        end)
-    end
-    locScroll.CanvasSize = UDim2.new(0, 0, 0, totalLocH + 8)
-
-    locGoBtn.MouseButton1Click:Connect(function()
-        if selectedLocation then
-            safeWalk(selectedLocation)
-        end
-    end)
-
-    return content
-end
-
--- ========== BUILD TAB 2: WALK TO PLAYER ==========
-local function buildTab2()
-    local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, 0, 1, 0)
-    content.BackgroundTransparency = 1
-    content.ZIndex = 101
-
-    local playerScroll = Instance.new("ScrollingFrame")
-    playerScroll.Size = UDim2.new(1, -10, 1, -40)
-    playerScroll.Position = UDim2.new(0, 5, 0, 4)
-    playerScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    playerScroll.BorderSizePixel = 0
-    playerScroll.ScrollBarThickness = 4
-    playerScroll.ScrollBarImageColor3 = Color3.fromRGB(255, 200, 0)
-    playerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    playerScroll.ZIndex = 102
-    playerScroll.Parent = content
-
-    local playerLayout = Instance.new("UIListLayout")
-    playerLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    playerLayout.Padding = UDim.new(0, 2)
-    playerLayout.Parent = playerScroll
-
-    local btnFrame = Instance.new("Frame")
-    btnFrame.Size = UDim2.new(1, -10, 0, 30)
-    btnFrame.Position = UDim2.new(0, 5, 1, -35)
-    btnFrame.BackgroundTransparency = 1
-    btnFrame.ZIndex = 101
-    btnFrame.Parent = content
-
-    local refreshBtn = Instance.new("TextButton")
-    refreshBtn.Size = UDim2.new(0, 70, 0, 28)
-    refreshBtn.Position = UDim2.new(0, 0, 0, 0)
-    refreshBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    refreshBtn.BorderSizePixel = 0
-    refreshBtn.Text = "🔄 Refresh"
-    refreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    refreshBtn.TextSize = 10
-    refreshBtn.Font = Enum.Font.GothamBold
-    refreshBtn.ZIndex = 101
-    refreshBtn.AutoButtonColor = false
-    refreshBtn.Parent = btnFrame
-    Instance.new("UICorner", refreshBtn).CornerRadius = UDim.new(0, 5)
-
-    local playerGoBtn = Instance.new("TextButton")
-    playerGoBtn.Size = UDim2.new(0, 70, 0, 28)
-    playerGoBtn.Position = UDim2.new(0, 75, 0, 0)
-    playerGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
-    playerGoBtn.BorderSizePixel = 0
-    playerGoBtn.Text = "▶ Go"
-    playerGoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    playerGoBtn.TextSize = 11
-    playerGoBtn.Font = Enum.Font.GothamBold
-    playerGoBtn.ZIndex = 101
-    playerGoBtn.AutoButtonColor = false
-    playerGoBtn.Parent = btnFrame
-    Instance.new("UICorner", playerGoBtn).CornerRadius = UDim.new(0, 5)
-
-    local playerStopBtn = Instance.new("TextButton")
-    playerStopBtn.Size = UDim2.new(0, 40, 0, 28)
-    playerStopBtn.Position = UDim2.new(0, 150, 0, 0)
-    playerStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
-    playerStopBtn.BorderSizePixel = 0
-    playerStopBtn.Text = "⏹"
-    playerStopBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-    playerStopBtn.TextSize = 14
-    playerStopBtn.Font = Enum.Font.GothamBold
-    playerStopBtn.ZIndex = 101
-    playerStopBtn.AutoButtonColor = false
-    playerStopBtn.Parent = btnFrame
-    Instance.new("UICorner", playerStopBtn).CornerRadius = UDim.new(0, 5)
-
-    playerStopBtn.MouseButton1Click:Connect(stopWalking)
-
-    local selectedPlayerBtn = nil
-    local selectedPlayer = nil
-
-    local function refreshPlayerList()
-        for _, child in ipairs(playerScroll:GetChildren()) do
-            if not child:IsA("UIListLayout") then child:Destroy() end
-        end
-        selectedPlayerBtn = nil
-        selectedPlayer = nil
-        local totalH = 0
-        local players = Players:GetPlayers()
-        table.sort(players, function(a,b) return a.Name < b.Name end)
-        for _, player in ipairs(players) do
-            if player ~= LP then
-                totalH = totalH + 30
-                local btn = Instance.new("TextButton")
-                btn.Size = UDim2.new(1, -4, 0, 28)
-                btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-                btn.BorderSizePixel = 0
-                btn.Text = player.Name
-                btn.TextColor3 = Color3.fromRGB(200, 220, 200)
-                btn.TextSize = 11
-                btn.Font = Enum.Font.Gotham
-                btn.TextXAlignment = Enum.TextXAlignment.Left
-                btn.ZIndex = 103
-                btn.AutoButtonColor = false
-                btn.Parent = playerScroll
-                Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-                btn.MouseEnter:Connect(function() if btn ~= selectedPlayerBtn then btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60) end end)
-                btn.MouseLeave:Connect(function() if btn ~= selectedPlayerBtn then btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end end)
-                btn.MouseButton1Click:Connect(function()
-                    if selectedPlayerBtn then selectedPlayerBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end
-                    selectedPlayerBtn = btn
-                    btn.BackgroundColor3 = Color3.fromRGB(20, 80, 20)
-                    selectedPlayer = player
-                end)
-            end
-        end
-        playerScroll.CanvasSize = UDim2.new(0, 0, 0, totalH + 8)
-    end
-
-    refreshBtn.MouseButton1Click:Connect(refreshPlayerList)
-    refreshPlayerList()
-
-    playerGoBtn.MouseButton1Click:Connect(function()
-        if not selectedPlayer then return end
-        local char = selectedPlayer.Character
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
-        safeWalk(root.CFrame)
-    end)
-
-    return content
-end
-
--- ========== BUILD TAB 3: SAVED POSITIONS ==========
-local function buildTab3()
-    local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, 0, 1, 0)
-    content.BackgroundTransparency = 1
-    content.ZIndex = 101
-
-    -- Input nama
-    local nameInput = Instance.new("TextBox")
-    nameInput.Size = UDim2.new(1, -10, 0, 28)
-    nameInput.Position = UDim2.new(0, 5, 0, 4)
-    nameInput.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-    nameInput.BorderSizePixel = 0
-    nameInput.Text = ""
-    nameInput.PlaceholderText = "Nama posisi..."
-    nameInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-    nameInput.TextSize = 11
-    nameInput.Font = Enum.Font.Gotham
-    nameInput.ZIndex = 103
-    nameInput.Parent = content
-    Instance.new("UICorner", nameInput).CornerRadius = UDim.new(0, 4)
-    nameInput.FocusLost:Connect(function()
-        state.saveName = nameInput.Text:gsub("%s+", " ")
-    end)
-
-    -- Scroll untuk daftar posisi tersimpan
-    local savedScroll = Instance.new("ScrollingFrame")
-    savedScroll.Size = UDim2.new(1, -10, 1, -115)
-    savedScroll.Position = UDim2.new(0, 5, 0, 36)
-    savedScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    savedScroll.BorderSizePixel = 0
-    savedScroll.ScrollBarThickness = 4
-    savedScroll.ScrollBarImageColor3 = Color3.fromRGB(255, 200, 0)
-    savedScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    savedScroll.ZIndex = 102
-    savedScroll.Parent = content
-
-    local savedLayout = Instance.new("UIListLayout")
-    savedLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    savedLayout.Padding = UDim.new(0, 2)
-    savedLayout.Parent = savedScroll
-
-    -- Frame tombol bawah (fixed position)
-    local btnFrame = Instance.new("Frame")
-    btnFrame.Size = UDim2.new(1, -10, 0, 85)
-    btnFrame.Position = UDim2.new(0, 5, 1, -90)
-    btnFrame.BackgroundTransparency = 1
-    btnFrame.ZIndex = 101
-    btnFrame.Parent = content
-
-    -- Tombol Save (full width)
-    local savePosBtn = Instance.new("TextButton")
-    savePosBtn.Size = UDim2.new(1, 0, 0, 28)
-    savePosBtn.Position = UDim2.new(0, 0, 0, 0)
-    savePosBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 80)
-    savePosBtn.BorderSizePixel = 0
-    savePosBtn.Text = "💾 Save Current Position"
-    savePosBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    savePosBtn.TextSize = 11
-    savePosBtn.Font = Enum.Font.GothamBold
-    savePosBtn.ZIndex = 101
-    savePosBtn.AutoButtonColor = false
-    savePosBtn.Parent = btnFrame
-    Instance.new("UICorner", savePosBtn).CornerRadius = UDim.new(0, 5)
-
-    -- Row tombol Go, Remove, Stop
-    local actionRow = Instance.new("Frame")
-    actionRow.Size = UDim2.new(1, 0, 0, 28)
-    actionRow.Position = UDim2.new(0, 0, 0, 32)
-    actionRow.BackgroundTransparency = 1
-    actionRow.ZIndex = 101
-    actionRow.Parent = btnFrame
-
-    local savedGoBtn = Instance.new("TextButton")
-    savedGoBtn.Size = UDim2.new(0, 70, 0, 28)
-    savedGoBtn.Position = UDim2.new(0, 0, 0, 0)
-    savedGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
-    savedGoBtn.BorderSizePixel = 0
-    savedGoBtn.Text = "▶ Go"
-    savedGoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    savedGoBtn.TextSize = 11
-    savedGoBtn.Font = Enum.Font.GothamBold
-    savedGoBtn.ZIndex = 101
-    savedGoBtn.AutoButtonColor = false
-    savedGoBtn.Parent = actionRow
-    Instance.new("UICorner", savedGoBtn).CornerRadius = UDim.new(0, 5)
-
-    local savedRemoveBtn = Instance.new("TextButton")
-    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 28)
-    savedRemoveBtn.Position = UDim2.new(0, 75, 0, 0)
-    savedRemoveBtn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
-    savedRemoveBtn.BorderSizePixel = 0
-    savedRemoveBtn.Text = "🗑 Remove"
-    savedRemoveBtn.TextColor3 = Color3.fromRGB(255, 150, 150)
-    savedRemoveBtn.TextSize = 10
-    savedRemoveBtn.Font = Enum.Font.GothamBold
-    savedRemoveBtn.ZIndex = 101
-    savedRemoveBtn.AutoButtonColor = false
-    savedRemoveBtn.Parent = actionRow
-    Instance.new("UICorner", savedRemoveBtn).CornerRadius = UDim.new(0, 5)
-
-    local savedStopBtn = Instance.new("TextButton")
-    savedStopBtn.Size = UDim2.new(0, 40, 0, 28)
-    savedStopBtn.Position = UDim2.new(0, 150, 0, 0)
-    savedStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
-    savedStopBtn.BorderSizePixel = 0
-    savedStopBtn.Text = "⏹"
-    savedStopBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-    savedStopBtn.TextSize = 14
-    savedStopBtn.Font = Enum.Font.GothamBold
-    savedStopBtn.ZIndex = 101
-    savedStopBtn.AutoButtonColor = false
-    savedStopBtn.Parent = actionRow
-    Instance.new("UICorner", savedStopBtn).CornerRadius = UDim.new(0, 5)
-
-    savedStopBtn.MouseButton1Click:Connect(stopWalking)
-
-    local selectedSavedBtn = nil
-
-    local function refreshSavedList()
-        for _, child in ipairs(savedScroll:GetChildren()) do
-            if not child:IsA("UIListLayout") then child:Destroy() end
-        end
-        selectedSavedBtn = nil
-        state.selectedSavedIndex = nil
-        local totalH = 0
-        for i, saved in ipairs(state.savedPositions) do
-            totalH = totalH + 30
-            local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(1, -4, 0, 28)
-            btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-            btn.BorderSizePixel = 0
-            btn.Text = saved.name .. " (#" .. i .. ")"
-            btn.TextColor3 = Color3.fromRGB(200, 220, 200)
-            btn.TextSize = 11
-            btn.Font = Enum.Font.Gotham
-            btn.TextXAlignment = Enum.TextXAlignment.Left
-            btn.ZIndex = 103
-            btn.AutoButtonColor = false
-            btn.Parent = savedScroll
-            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-            btn.MouseEnter:Connect(function() if btn ~= selectedSavedBtn then btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60) end end)
-            btn.MouseLeave:Connect(function() if btn ~= selectedSavedBtn then btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end end)
-            btn.MouseButton1Click:Connect(function()
-                if selectedSavedBtn then selectedSavedBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end
-                selectedSavedBtn = btn
-                btn.BackgroundColor3 = Color3.fromRGB(20, 80, 20)
-                state.selectedSavedIndex = i
-            end)
-        end
-        savedScroll.CanvasSize = UDim2.new(0, 0, 0, totalH + 8)
-    end
-
-    savePosBtn.MouseButton1Click:Connect(function()
-        local char = LP.Character
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
-        local cf = root.CFrame
-        local pos = cf.Position
-        local name = state.saveName
-        if name == "" then
-            name = "Pos " .. string.format("%.0f,%.0f,%.0f", pos.X, pos.Y, pos.Z)
-        end
-        table.insert(state.savedPositions, {name = name, cf = cf})
-        state.saveName = ""
-        nameInput.Text = ""
-        refreshSavedList()
-    end)
-
-    savedGoBtn.MouseButton1Click:Connect(function()
-        if state.selectedSavedIndex and state.savedPositions[state.selectedSavedIndex] then
-            safeWalk(state.savedPositions[state.selectedSavedIndex].cf)
-        end
-    end)
-
-    savedRemoveBtn.MouseButton1Click:Connect(function()
-        if state.selectedSavedIndex then
-            table.remove(state.savedPositions, state.selectedSavedIndex)
-            refreshSavedList()
-        end
-    end)
-
-    refreshSavedList()
-    return content
-end
-
--- ========== BUAT TAB ==========
-createTabButton("Walk to Location", buildTab1)
-createTabButton("Walk to Player", buildTab2)
-createTabButton("Saved Positions", buildTab3)
-
--- Aktifkan tab pertama
-for _, child in ipairs(tabFrame:GetChildren()) do
-    if child:IsA("TextButton") then
-        child.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
-        pcall(function() child.MouseButton1Click:Fire() end)
-        break
-    end
-end
-
--- ========== DRAG FLOATING BUTTON ==========
-local floatDragging, floatDragStart, floatStartPos = false, nil, nil
-floatBtn.InputBegan:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-        floatDragging = true; floatDragStart = inp.Position; floatStartPos = floatBtn.Position
-    end
-end)
-UIS.InputChanged:Connect(function(inp)
-    if floatDragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-        local delta = inp.Position - floatDragStart
-        local vp = workspace.CurrentCamera.ViewportSize
-        floatBtn.Position = UDim2.new(0, math.clamp(floatStartPos.X.Offset + delta.X, 0, vp.X - 46), 0, math.clamp(floatStartPos.Y.Offset + delta.Y, 0, vp.Y - 46))
-    end
-end)
-UIS.InputEnded:Connect(function(inp) floatDragging = false end)
-
--- ========== DRAG MAIN PANEL ==========
-local dragging, dragStart, startPos = false, nil, nil
+-- Drag
+local UIS=game:GetService("UserInputService")
+local drag2=false; local ds2,sp2
 frame.InputBegan:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-        dragging = true; dragStart = inp.Position; startPos = frame.Position
+    if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
+        drag2=true; ds2=inp.Position; sp2=frame.Position
+        inp.Changed:Connect(function() if inp.UserInputState==Enum.UserInputState.End then drag2=false end end)
     end
 end)
 UIS.InputChanged:Connect(function(inp)
-    if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-        local delta = inp.Position - dragStart
-        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    if drag2 and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then
+        local d=inp.Position-ds2; local vp=workspace.CurrentCamera.ViewportSize
+        frame.Position=UDim2.new(0,math.clamp(sp2.X.Offset+d.X,0,vp.X-280),
+            0,math.clamp(sp2.Y.Offset+d.Y,0,vp.Y-200))
     end
 end)
-UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHX Safe Walk v3.3 siap. Layout fixed, auto diving gear dengan UUID, damage protect.")
+-- ─── Pasang semua hook saat script jalan ───
+task.spawn(function()
+    hookAll()
+    local hookedCount=0
+    for _ in pairs(hooks) do hookedCount=hookedCount+1 end
+    infoLbl.Text="Hooks terpasang: "..hookedCount
+    send("✅ Monitor Aktif","Hooks terpasang: **"..hookedCount.."**\n\nTekan **MULAI REKAM** lalu lakukan aksi manual (contoh: equip Advanced Diving Gear).\nTekan **STOP & KIRIM** setelah selesai.",3066993)
+end)
+
+-- Update counter setiap detik
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        countLbl.Text="RF/RE tertangkap: "..logCount
+    end
+end)
+
+-- ─── Event tombol ───
+startBtn.MouseButton1Click:Connect(function()
+    firedLog={}; logCount=0; monitoring=true
+    statusLbl.Text="Status: ● MEREKAM..."; statusLbl.TextColor3=Color3.fromRGB(240,80,80)
+    startBtn.BackgroundColor3=Color3.fromRGB(10,35,20)
+    send("▶ Rekam Dimulai","Lakukan aksi manual sekarang!\nContoh: klik equip Advanced Diving Gear di hotbar.",16776960)
+end)
+
+stopBtn.MouseButton1Click:Connect(function()
+    monitoring=false
+    statusLbl.Text="Status: STOP — mengirim hasil..."; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
+    startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
+
+    if #firedLog==0 then
+        send("⚠ Tidak Ada Yang Tertangkap","Tidak ada RF/RE yang fired selama rekam.\nPastikan aksi dilakukan SAAT tombol MULAI REKAM aktif.",16776960)
+        return
+    end
+
+    -- Kirim hasil ke Discord
+    send("⏹ Rekam Selesai","Total tertangkap: **"..#firedLog.."** RF/RE\nDetail dikirim di bawah...",3066993)
+    task.wait(0.3)
+
+    -- Kirim per chunk agar tidak melebihi limit Discord
+    local lines={}
+    for i,entry in ipairs(firedLog) do
+        local line=string.format("[%d] **%s** `%s`\nArgs: `%s`",
+            i, entry.type, entry.name, entry.args~="" and entry.args or "(kosong)")
+        table.insert(lines,line)
+    end
+
+    local chunk=""; local msgNum=0
+    for _,line in ipairs(lines) do
+        if #chunk+#line+2 > 1800 then
+            msgNum=msgNum+1
+            send("📋 Log #"..msgNum, chunk, 3447003)
+            task.wait(0.4)
+            chunk=line.."\n\n"
+        else
+            chunk=chunk..line.."\n\n"
+        end
+    end
+    if chunk~="" then
+        msgNum=msgNum+1
+        send("📋 Log #"..msgNum, chunk, 3447003)
+    end
+
+    -- Kirim juga rangkuman nama RF saja (lebih mudah dibaca)
+    task.wait(0.3)
+    local names={}; local seen={}
+    for _,entry in ipairs(firedLog) do
+        if not seen[entry.name] then
+            seen[entry.name]=true
+            table.insert(names,"• `"..entry.name.."` ("..entry.type..")")
+        end
+    end
+    send("📌 Rangkuman RF/RE Unik yang Fired",table.concat(names,"\n"),16776960)
+end)
+
+resetBtn.MouseButton1Click:Connect(function()
+    firedLog={}; logCount=0; monitoring=false
+    statusLbl.Text="Status: IDLE — belum merekam"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
+    startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
+    send("🗑 Log Direset","Siap rekam ulang.",3066993)
+end)
