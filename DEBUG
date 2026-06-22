@@ -1,9 +1,4 @@
--- ═══════════════════════════════════════════════════════
---  MONITOR RF/RE — Rekam semua RF/RE yang fired saat
---  aksi manual dilakukan (contoh: equip diving gear)
---  Hasil dikirim ke Discord webhook
--- ═══════════════════════════════════════════════════════
-local RS      = game:GetService("ReplicatedStorage")
+-- MONITOR v2 — hookmetamethod __namecall, tangkap semua network call
 local HS      = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
@@ -15,255 +10,212 @@ local function send(title, desc, color)
             Url=WEBHOOK, Method="POST",
             Headers={["Content-Type"]="application/json"},
             Body=HS:JSONEncode({
-                username="🔬 ZHX RF Monitor",
-                embeds={{title=title, description=desc, color=color or 3066993,
-                    footer={text="Monitor • "..os.date("%H:%M:%S")}}}
+                username="🔬 ZHX Monitor v2",
+                embeds={{title=title,description=desc,color=color or 3066993,
+                    footer={text="v2 • "..os.date("%H:%M:%S")}}}
             })
         })
     end)
 end
 
 while not Players.LocalPlayer do task.wait() end
+local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
 
--- ─── Hook semua RemoteFunction & RemoteEvent di game ───
-local hooks      = {}
 local firedLog   = {}
 local monitoring = false
 local logCount   = 0
 
-local function hookAll()
-    -- Scan semua RF dan RE di seluruh game secara rekursif
-    local function scanDescendants(parent)
-        for _, obj in ipairs(parent:GetDescendants()) do
-            if (obj:IsA("RemoteFunction") or obj:IsA("RemoteEvent")) and not hooks[obj] then
-                hooks[obj] = true
+-- Keyword filter — hanya tangkap yang relevan dengan equip/gear/item/hotbar
+-- Kosongkan table ini untuk tangkap SEMUA (lebih banyak noise)
+local FILTER_KEYWORDS = {
+    "equip", "gear", "diving", "item", "hotbar", "wear",
+    "oxygen", "tank", "tool", "use", "consume", "activate"
+}
 
-                if obj:IsA("RemoteFunction") then
-                    -- Hook InvokeServer
-                    local ok = pcall(function()
-                        local orig = obj.InvokeServer
-                        obj.InvokeServer = function(self, ...)
-                            if monitoring then
-                                local args = {...}
-                                local argStr = ""
-                                pcall(function()
-                                    argStr = HS:JSONEncode(args):sub(1, 200)
-                                end)
-                                logCount = logCount + 1
-                                table.insert(firedLog, {
-                                    type = "RF:Invoke",
-                                    name = obj.Name,
-                                    path = obj:GetFullName(),
-                                    args = argStr,
-                                    t    = os.date("%H:%M:%S")
-                                })
-                            end
-                            return orig(self, ...)
-                        end
-                    end)
-                    if not ok then
-                        -- Fallback: hook via hookfunction jika tersedia
-                        pcall(function()
-                            hookfunction(obj.InvokeServer, function(self, ...)
-                                if monitoring then
-                                    local args = {...}
-                                    local argStr = ""
-                                    pcall(function() argStr = HS:JSONEncode(args):sub(1,200) end)
-                                    logCount = logCount + 1
-                                    table.insert(firedLog, {
-                                        type="RF:Invoke", name=obj.Name,
-                                        path=obj:GetFullName(), args=argStr, t=os.date("%H:%M:%S")
-                                    })
-                                end
-                            end)
-                        end)
-                    end
-
-                elseif obj:IsA("RemoteEvent") then
-                    -- Connect listener ke FireServer
-                    pcall(function()
-                        obj.OnClientEvent:Connect(function(...)
-                            -- Ini dari server ke client, bukan yang kita butuhkan
-                        end)
-                    end)
-                    -- Hook FireServer
-                    pcall(function()
-                        hookfunction(obj.FireServer, function(self, ...)
-                            if monitoring then
-                                local args={...}
-                                local argStr=""
-                                pcall(function() argStr=HS:JSONEncode(args):sub(1,200) end)
-                                logCount=logCount+1
-                                table.insert(firedLog,{
-                                    type="RE:Fire", name=obj.Name,
-                                    path=obj:GetFullName(), args=argStr, t=os.date("%H:%M:%S")
-                                })
-                            end
-                        end)
-                    end)
-                end
-            end
-        end
+local function matchesFilter(name, argStr)
+    if #FILTER_KEYWORDS == 0 then return true end
+    local combined = (name..argStr):lower()
+    for _, kw in ipairs(FILTER_KEYWORDS) do
+        if combined:find(kw, 1, true) then return true end
     end
-
-    scanDescendants(RS)
-    scanDescendants(game:GetService("Workspace"))
+    return false
 end
 
--- ─── Buat UI ───
-local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+-- ─── hookmetamethod __namecall — tangkap FireServer & InvokeServer ───
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    if monitoring and (method == "FireServer" or method == "InvokeServer" or method == "Fire") then
+        local args    = {...}
+        local argStr  = ""
+        pcall(function() argStr = HS:JSONEncode(args):sub(1, 300) end)
+        local name    = ""
+        pcall(function() name = tostring(self.Name) end)
+        local path    = ""
+        pcall(function() path = tostring(self:GetFullName()) end)
+
+        -- Filter noise GameAnalytics dan sejenisnya
+        if name ~= "GameAnalyticsError" and name ~= "GameAnalyticsInit"
+        and not name:find("Analytics") and not name:find("Heartbeat") then
+            logCount = logCount + 1
+            table.insert(firedLog, {
+                method = method,
+                name   = name,
+                path   = path,
+                args   = argStr,
+                t      = os.date("%H:%M:%S")
+            })
+        end
+    end
+    return oldNamecall(self, ...)
+end)
+
+-- ─── UI ───
 local sg = Instance.new("ScreenGui")
-sg.Name="ZHX_Monitor"; sg.ResetOnSpawn=false; sg.IgnoreGuiInset=true; sg.Parent=pg
+sg.Name="ZHX_Monitor2"; sg.ResetOnSpawn=false; sg.IgnoreGuiInset=true; sg.Parent=pg
 
 local frame = Instance.new("Frame")
-frame.Size=UDim2.new(0,280,0,200); frame.Position=UDim2.new(0,10,0,60)
+frame.Size=UDim2.new(0,280,0,210); frame.Position=UDim2.new(0,10,0,60)
 frame.BackgroundColor3=Color3.fromRGB(10,12,18); frame.BorderSizePixel=0; frame.Parent=sg
 Instance.new("UICorner",frame).CornerRadius=UDim.new(0,8)
 local stroke=Instance.new("UIStroke",frame); stroke.Color=Color3.fromRGB(72,210,130); stroke.Thickness=1.5
 
 local hdr=Instance.new("TextLabel"); hdr.Size=UDim2.new(1,0,0,30)
 hdr.BackgroundColor3=Color3.fromRGB(18,22,30); hdr.BorderSizePixel=0
-hdr.Text="🔬 RF MONITOR PRO"; hdr.TextColor3=Color3.fromRGB(72,210,130)
-hdr.TextSize=12; hdr.Font=Enum.Font.GothamBold; hdr.ZIndex=2; hdr.Parent=frame
+hdr.Text="🔬 RF MONITOR v2 (namecall)"; hdr.TextColor3=Color3.fromRGB(72,210,130)
+hdr.TextSize=11; hdr.Font=Enum.Font.GothamBold; hdr.ZIndex=2; hdr.Parent=frame
 Instance.new("UICorner",hdr).CornerRadius=UDim.new(0,8)
 
 local statusLbl=Instance.new("TextLabel"); statusLbl.Size=UDim2.new(1,-12,0,20)
 statusLbl.Position=UDim2.new(0,6,0,34); statusLbl.BackgroundTransparency=1
-statusLbl.Text="Status: IDLE — belum merekam"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
+statusLbl.Text="Status: IDLE"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
 statusLbl.TextSize=10; statusLbl.Font=Enum.Font.Gotham
 statusLbl.TextXAlignment=Enum.TextXAlignment.Left; statusLbl.Parent=frame
 
 local countLbl=Instance.new("TextLabel"); countLbl.Size=UDim2.new(1,-12,0,18)
 countLbl.Position=UDim2.new(0,6,0,56); countLbl.BackgroundTransparency=1
-countLbl.Text="RF/RE tertangkap: 0"; countLbl.TextColor3=Color3.fromRGB(72,210,130)
+countLbl.Text="Tertangkap: 0"; countLbl.TextColor3=Color3.fromRGB(72,210,130)
 countLbl.TextSize=10; countLbl.Font=Enum.Font.GothamBold
 countLbl.TextXAlignment=Enum.TextXAlignment.Left; countLbl.Parent=frame
 
--- Tombol START
+local filterLbl=Instance.new("TextLabel"); filterLbl.Size=UDim2.new(1,-12,0,16)
+filterLbl.Position=UDim2.new(0,6,0,76); filterLbl.BackgroundTransparency=1
+filterLbl.Text="Filter: equip/gear/item/hotbar/oxygen/tool"
+filterLbl.TextColor3=Color3.fromRGB(100,110,105); filterLbl.TextSize=8
+filterLbl.Font=Enum.Font.Gotham; filterLbl.TextXAlignment=Enum.TextXAlignment.Left; filterLbl.Parent=frame
+
 local startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(1,-12,0,30)
-startBtn.Position=UDim2.new(0,6,0,80); startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
+startBtn.Position=UDim2.new(0,6,0,96); startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
 startBtn.BorderSizePixel=0; startBtn.Text="▶ MULAI REKAM"
 startBtn.TextColor3=Color3.fromRGB(72,210,130); startBtn.TextSize=11
 startBtn.Font=Enum.Font.GothamBold; startBtn.AutoButtonColor=false; startBtn.Parent=frame
 Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
 
--- Tombol STOP + KIRIM
 local stopBtn=Instance.new("TextButton"); stopBtn.Size=UDim2.new(1,-12,0,30)
-stopBtn.Position=UDim2.new(0,6,0,116); stopBtn.BackgroundColor3=Color3.fromRGB(60,20,20)
-stopBtn.BorderSizePixel=0; stopBtn.Text="⏹ STOP & KIRIM KE DISCORD"
+stopBtn.Position=UDim2.new(0,6,0,132); stopBtn.BackgroundColor3=Color3.fromRGB(60,20,20)
+stopBtn.BorderSizePixel=0; stopBtn.Text="⏹ STOP & KIRIM"
 stopBtn.TextColor3=Color3.fromRGB(240,80,80); stopBtn.TextSize=11
 stopBtn.Font=Enum.Font.GothamBold; stopBtn.AutoButtonColor=false; stopBtn.Parent=frame
 Instance.new("UICorner",stopBtn).CornerRadius=UDim.new(0,6)
 
--- Tombol RESET
-local resetBtn=Instance.new("TextButton"); resetBtn.Size=UDim2.new(1,-12,0,26)
-resetBtn.Position=UDim2.new(0,6,0,152); resetBtn.BackgroundColor3=Color3.fromRGB(30,30,30)
-resetBtn.BorderSizePixel=0; resetBtn.Text="🗑 Reset Log"
-resetBtn.TextColor3=Color3.fromRGB(150,150,150); resetBtn.TextSize=10
-resetBtn.Font=Enum.Font.Gotham; resetBtn.AutoButtonColor=false; resetBtn.Parent=frame
-Instance.new("UICorner",resetBtn).CornerRadius=UDim.new(0,6)
+-- Tombol TANGKAP SEMUA (nonaktifkan filter)
+local allBtn=Instance.new("TextButton"); allBtn.Size=UDim2.new(1,-12,0,24)
+allBtn.Position=UDim2.new(0,6,0,168); allBtn.BackgroundColor3=Color3.fromRGB(40,30,10)
+allBtn.BorderSizePixel=0; allBtn.Text="⚠ Mode: Tangkap SEMUA (no filter)"
+allBtn.TextColor3=Color3.fromRGB(255,200,50); allBtn.TextSize=9
+allBtn.Font=Enum.Font.GothamBold; allBtn.AutoButtonColor=false; allBtn.Parent=frame
+Instance.new("UICorner",allBtn).CornerRadius=UDim.new(0,5)
 
-local infoLbl=Instance.new("TextLabel"); infoLbl.Size=UDim2.new(1,-12,0,16)
-infoLbl.Position=UDim2.new(0,6,0,182); infoLbl.BackgroundTransparency=1
-infoLbl.Text="Hooks terpasang: 0"; infoLbl.TextColor3=Color3.fromRGB(100,110,105)
-infoLbl.TextSize=9; infoLbl.Font=Enum.Font.Gotham
-infoLbl.TextXAlignment=Enum.TextXAlignment.Left; infoLbl.Parent=frame
+local resetBtn=Instance.new("TextButton"); resetBtn.Size=UDim2.new(1,-12,0,22)
+resetBtn.Position=UDim2.new(0,6,0,196); resetBtn.BackgroundColor3=Color3.fromRGB(25,25,25)
+resetBtn.BorderSizePixel=0; resetBtn.Text="🗑 Reset"
+resetBtn.TextColor3=Color3.fromRGB(150,150,150); resetBtn.TextSize=9
+resetBtn.Font=Enum.Font.Gotham; resetBtn.AutoButtonColor=false; resetBtn.Parent=frame
+Instance.new("UICorner",resetBtn).CornerRadius=UDim.new(0,5)
 
 -- Drag
 local UIS=game:GetService("UserInputService")
-local drag2=false; local ds2,sp2
+local drag2=false; local ds2,sp2b
 frame.InputBegan:Connect(function(inp)
     if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
-        drag2=true; ds2=inp.Position; sp2=frame.Position
+        drag2=true; ds2=inp.Position; sp2b=frame.Position
         inp.Changed:Connect(function() if inp.UserInputState==Enum.UserInputState.End then drag2=false end end)
     end
 end)
 UIS.InputChanged:Connect(function(inp)
     if drag2 and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then
         local d=inp.Position-ds2; local vp=workspace.CurrentCamera.ViewportSize
-        frame.Position=UDim2.new(0,math.clamp(sp2.X.Offset+d.X,0,vp.X-280),
-            0,math.clamp(sp2.Y.Offset+d.Y,0,vp.Y-200))
+        frame.Position=UDim2.new(0,math.clamp(sp2b.X.Offset+d.X,0,vp.X-280),
+            0,math.clamp(sp2b.Y.Offset+d.Y,0,vp.Y-210))
     end
 end)
 
--- ─── Pasang semua hook saat script jalan ───
 task.spawn(function()
-    hookAll()
-    local hookedCount=0
-    for _ in pairs(hooks) do hookedCount=hookedCount+1 end
-    infoLbl.Text="Hooks terpasang: "..hookedCount
-    send("✅ Monitor Aktif","Hooks terpasang: **"..hookedCount.."**\n\nTekan **MULAI REKAM** lalu lakukan aksi manual (contoh: equip Advanced Diving Gear).\nTekan **STOP & KIRIM** setelah selesai.",3066993)
+    task.wait(0.5)
+    countLbl.Text="Tertangkap: 0"
+    send("✅ Monitor v2 Aktif","`hookmetamethod __namecall` terpasang.\n\nTekan **MULAI REKAM** lalu equip Advanced Diving Gear secara manual.",3066993)
 end)
 
--- Update counter setiap detik
 task.spawn(function()
-    while true do
-        task.wait(0.5)
-        countLbl.Text="RF/RE tertangkap: "..logCount
-    end
+    while true do task.wait(0.5); countLbl.Text="Tertangkap: "..logCount end
 end)
 
--- ─── Event tombol ───
+local filterActive = true
+
 startBtn.MouseButton1Click:Connect(function()
     firedLog={}; logCount=0; monitoring=true
-    statusLbl.Text="Status: ● MEREKAM..."; statusLbl.TextColor3=Color3.fromRGB(240,80,80)
+    statusLbl.Text="● MEREKAM..."; statusLbl.TextColor3=Color3.fromRGB(240,80,80)
     startBtn.BackgroundColor3=Color3.fromRGB(10,35,20)
-    send("▶ Rekam Dimulai","Lakukan aksi manual sekarang!\nContoh: klik equip Advanced Diving Gear di hotbar.",16776960)
+    send("▶ Rekam Dimulai","Filter: "..(filterActive and "ON (equip/gear/item/oxygen)" or "OFF (semua)"),16776960)
 end)
 
 stopBtn.MouseButton1Click:Connect(function()
     monitoring=false
-    statusLbl.Text="Status: STOP — mengirim hasil..."; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
+    statusLbl.Text="STOP"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
     startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
-
     if #firedLog==0 then
-        send("⚠ Tidak Ada Yang Tertangkap","Tidak ada RF/RE yang fired selama rekam.\nPastikan aksi dilakukan SAAT tombol MULAI REKAM aktif.",16776960)
-        return
+        send("⚠ Kosong","Tidak ada yang tertangkap.\nCoba tekan 'Tangkap SEMUA' lalu rekam ulang.",16776960); return
     end
-
-    -- Kirim hasil ke Discord
-    send("⏹ Rekam Selesai","Total tertangkap: **"..#firedLog.."** RF/RE\nDetail dikirim di bawah...",3066993)
+    send("⏹ Selesai","Total: **"..#firedLog.."**",3066993)
     task.wait(0.3)
-
-    -- Kirim per chunk agar tidak melebihi limit Discord
     local lines={}
-    for i,entry in ipairs(firedLog) do
-        local line=string.format("[%d] **%s** `%s`\nArgs: `%s`",
-            i, entry.type, entry.name, entry.args~="" and entry.args or "(kosong)")
-        table.insert(lines,line)
+    for i,e in ipairs(firedLog) do
+        table.insert(lines,string.format("[%d] **%s** `%s`\nPath: `%s`\nArgs: `%s`",
+            i,e.method,e.name,e.path:sub(1,80),e.args~="" and e.args or "(kosong)"))
     end
-
     local chunk=""; local msgNum=0
     for _,line in ipairs(lines) do
-        if #chunk+#line+2 > 1800 then
-            msgNum=msgNum+1
-            send("📋 Log #"..msgNum, chunk, 3447003)
-            task.wait(0.4)
-            chunk=line.."\n\n"
-        else
-            chunk=chunk..line.."\n\n"
-        end
+        if #chunk+#line+2>1800 then
+            msgNum=msgNum+1; send("📋 Log #"..msgNum,chunk,3447003); task.wait(0.4); chunk=line.."\n\n"
+        else chunk=chunk..line.."\n\n" end
     end
-    if chunk~="" then
-        msgNum=msgNum+1
-        send("📋 Log #"..msgNum, chunk, 3447003)
-    end
-
-    -- Kirim juga rangkuman nama RF saja (lebih mudah dibaca)
+    if chunk~="" then msgNum=msgNum+1; send("📋 Log #"..msgNum,chunk,3447003) end
     task.wait(0.3)
     local names={}; local seen={}
-    for _,entry in ipairs(firedLog) do
-        if not seen[entry.name] then
-            seen[entry.name]=true
-            table.insert(names,"• `"..entry.name.."` ("..entry.type..")")
-        end
+    for _,e in ipairs(firedLog) do
+        if not seen[e.name] then seen[e.name]=true
+            table.insert(names,"• `"..e.name.."` ("..e.method..")") end
     end
-    send("📌 Rangkuman RF/RE Unik yang Fired",table.concat(names,"\n"),16776960)
+    send("📌 Rangkuman Unik",table.concat(names,"\n"),16776960)
+end)
+
+allBtn.MouseButton1Click:Connect(function()
+    filterActive = not filterActive
+    if filterActive then
+        FILTER_KEYWORDS={"equip","gear","diving","item","hotbar","wear","oxygen","tank","tool","use","consume","activate"}
+        allBtn.Text="⚠ Mode: Tangkap SEMUA (no filter)"
+        allBtn.BackgroundColor3=Color3.fromRGB(40,30,10)
+        filterLbl.Text="Filter: ON"
+    else
+        FILTER_KEYWORDS={}
+        allBtn.Text="✅ Mode: Filter Aktif (equip/gear/dll)"
+        allBtn.BackgroundColor3=Color3.fromRGB(10,35,20)
+        filterLbl.Text="Filter: OFF — tangkap semua RF/RE"
+    end
 end)
 
 resetBtn.MouseButton1Click:Connect(function()
     firedLog={}; logCount=0; monitoring=false
-    statusLbl.Text="Status: IDLE — belum merekam"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
+    statusLbl.Text="Status: IDLE"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
     startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
-    send("🗑 Log Direset","Siap rekam ulang.",3066993)
 end)
