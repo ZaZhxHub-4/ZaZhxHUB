@@ -1,6 +1,7 @@
--- // ZHX Safe Walk v3.5 Final — Config Save/Load + Smooth Walk + Tab Default + Layout Fix
--- // Saved Positions disimpan ke file config, tab pertama aktif saat buka panel
--- // Smooth walk: Humanoid WalkSpeed tinggi + NoClip, tanpa henti
+-- // ZHX Safe Walk v3.6 — Smooth No Pause + Default Tab Active + Config Save/Load
+-- // Walk: interpolasi CFrame, speed 0.03, tanpa jeda berhenti
+-- // Tab pertama (Walk to Location) langsung aktif saat panel dibuka
+-- // Saved Positions dengan Save/Load Config
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -30,6 +31,7 @@ local state = {
     isWalking = false,
     stopRequested = false,
     noclipConn = nil,
+    speed = 0.03,  -- fixed
     savedPositions = {},
     selectedSavedIndex = nil,
     selectedLocation = nil,
@@ -126,52 +128,46 @@ local function unprotectCharacter()
     end
 end
 
--- ========== SMOOTH WALK (WALKSPEED HIGH) ==========
-local function smoothWalk(targetCF)
+-- ========== SMOOTH WALK (CFrame interpolation, NO PAUSE) ==========
+local function safeWalk(targetCF)
     if state.isWalking then return end
     local char = LP.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not root or not hum then return end
+    if not root then return end
 
     state.isWalking = true
     state.stopRequested = false
     enableNoclip()
     protectCharacter()
 
-    -- Simpan walk speed asli
-    local origWalkSpeed = hum.WalkSpeed
+    local startCF = root.CFrame
+    local distance = (targetCF.Position - startCF.Position).Magnitude
+    local stepSize = 2.5
+    local steps = math.max(1, math.ceil(distance / stepSize))
 
-    -- Set walk speed tinggi agar gerakan cepat & halus
-    hum.WalkSpeed = 50
-
-    -- Hitung jarak
-    local distance = (targetCF.Position - root.Position).Magnitude
-    local travelTime = distance / hum.WalkSpeed
-
-    -- Gerakkan karakter ke target via Humanoid:MoveTo
-    hum:MoveTo(targetCF.Position)
-
-    -- Tunggu sampai dekat atau stop diminta
-    local startTime = tick()
-    while state.isWalking and not state.stopRequested and (tick() - startTime) < travelTime + 5 do
-        if (root.Position - targetCF.Position).Magnitude < 5 then break end
-        task.wait(0.1)
+    for i = 1, steps do
+        if state.stopRequested then break end
+        local t = i / steps
+        local newCF = startCF:Lerp(targetCF, t)
+        pcall(function()
+            root.CFrame = newCF
+            root.Velocity = Vector3.zero
+            root.RotVelocity = Vector3.zero
+        end)
+        -- Hanya delay dasar, tanpa pause tambahan
+        task.wait(state.speed * (0.9 + math.random() * 0.2))
     end
 
-    -- Set posisi & rotasi akhir
     if not state.stopRequested then
         pcall(function()
             root.Anchored = true
             root.CFrame = targetCF
-            task.wait(0.2)
+            task.wait(0.3)
             root.Anchored = false
         end)
     end
 
-    -- Kembalikan walk speed
-    hum.WalkSpeed = origWalkSpeed
     unprotectCharacter()
     disableNoclip()
     state.isWalking = false
@@ -220,7 +216,7 @@ Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
 
 -- Main Panel
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHX_SafeWalk_v3.5"
+mainGui.Name = "ZHX_SafeWalk_v3.6"
 mainGui.ResetOnSpawn = false
 mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mainGui.Parent = pg
@@ -246,7 +242,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "📍 ZHX Safe Walk v3.5"
+title.Text = "📍 ZHX Safe Walk v3.6"
 title.TextColor3 = Color3.fromRGB(255, 200, 0)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -402,7 +398,7 @@ local function buildTab1()
 
     locGoBtn.MouseButton1Click:Connect(function()
         if selectedLocation then
-            smoothWalk(selectedLocation)
+            safeWalk(selectedLocation)
         end
     end)
 
@@ -533,7 +529,7 @@ local function buildTab2()
         if not char then return end
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then return end
-        smoothWalk(root.CFrame)
+        safeWalk(root.CFrame)
     end)
 
     return content
@@ -712,7 +708,7 @@ local function buildTab3()
 
     savedGoBtn.MouseButton1Click:Connect(function()
         if state.selectedSavedIndex and state.savedPositions[state.selectedSavedIndex] then
-            smoothWalk(state.savedPositions[state.selectedSavedIndex].cf)
+            safeWalk(state.savedPositions[state.selectedSavedIndex].cf)
         end
     end)
 
@@ -729,18 +725,14 @@ local function buildTab3()
 end
 
 -- ========== BUAT TAB ==========
-createTabButton("Walk to Location", buildTab1)
+local tab1Btn = createTabButton("Walk to Location", buildTab1)
 createTabButton("Walk to Player", buildTab2)
 createTabButton("Saved Positions", buildTab3)
 
--- Aktifkan tab pertama secara default
-for _, child in ipairs(tabFrame:GetChildren()) do
-    if child:IsA("TextButton") then
-        child.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
-        pcall(function() child.MouseButton1Click:Fire() end)
-        break
-    end
-end
+-- Aktifkan tab pertama secara default (konten langsung tampil)
+tab1Btn.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
+local defaultContent = buildTab1()
+defaultContent.Parent = contentFrame
 
 -- ========== DRAG FLOATING BUTTON ==========
 local floatDragging, floatDragStart, floatStartPos = false, nil, nil
@@ -773,4 +765,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHX Safe Walk v3.5 siap. Config save/load, smooth walk, tab default, layout fixed.")
+print("ZHX Safe Walk v3.6 siap. Smooth no pause, default tab active, config save/load.")
