@@ -7,7 +7,7 @@ local RS      = game:GetService("ReplicatedStorage")
 local HS      = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
-local WEBHOOK = "https://discordapp.com/api/webhooks/1450517804037046508/yi2ZuXEbsPhSQU6MaJ2fgmvm4YPGSz1G0q1oHpApUiYpRrDFCAd1-kuYC4q0sxZ8YOKY"
+local WEBHOOK = "https://discordapp.com/api/webhooks/1506044266684743801/PlopEC1wwOyfGQh-3oBQFl67_IPfoNmUYDMvEU_kjvZP6zR6v0BjfMeObTUsxhOUepqg"
 
 local function send(title, desc, color)
     pcall(function()
