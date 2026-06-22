@@ -1,8 +1,5 @@
--- // ZHX Safe Walk v4.1 — Auto Event Hunter Fix + Layout Saved Positions
--- // Auto Event: hanya monitor saat ON, simpan posisi saat event terdeteksi
--- // OFF = langsung kembali ke posisi semula jika di event
--- // Blokir walk lain saat Auto Event aktif
--- // Saved Positions: tombol lebih turun
+-- // ZHX Safe Walk v4.1.1 — Perbaikan Kritis: Auto Event OFF langsung kembali
+-- // stopAutoEvent sekarang langsung unlock & return, tidak bergantung thread monitor
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -46,7 +43,7 @@ local state = {
     autoEventActive = false,
     selectedEvent = "Megalodon Hunt",
     eventMonitorThread = nil,
-    savedUserPosition = nil,    -- disimpan saat event pertama terdeteksi
+    savedUserPosition = nil,
     isAtEvent = false,
     eventPosition = nil,
 }
@@ -139,17 +136,19 @@ end
 
 -- ========== SMOOTH WALK ==========
 local function safeWalk(targetCF)
-    if state.isWalking then return end
-    -- Cegah walk lain jika auto event sedang di event
-    if state.autoEventActive and state.isAtEvent then return end
-    
-    local char = LP.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-
+    if state.isWalking then
+        -- Batalkan walk sebelumnya
+        state.stopRequested = true
+        task.wait(0.1)
+    end
     state.isWalking = true
     state.stopRequested = false
+
+    local char = LP.Character
+    if not char then state.isWalking = false; return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then state.isWalking = false; return end
+
     enableNoclip()
     protectCharacter()
 
@@ -215,8 +214,6 @@ end
 local function getEventPosition(eventName)
     local model = findEventModel(eventName)
     if not model then return nil end
-    
-    -- Cari part dengan nama yang sama
     for _, child in ipairs(model:GetDescendants()) do
         if child.Name == eventName and child:IsA("BasePart") then
             return child.Position + Vector3.new(0, 5, 0)
@@ -247,7 +244,6 @@ local function lockUserAtPosition(pos)
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    
     protectCharacter()
     root.Anchored = true
     state.isAtEvent = true
@@ -258,65 +254,56 @@ local function unlockUser()
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    
     root.Anchored = false
     unprotectCharacter()
     state.isAtEvent = false
 end
 
+-- Fungsi untuk kembali ke posisi semula (dipanggil langsung saat OFF)
+local function returnToSavedPosition()
+    if state.isAtEvent then
+        unlockUser()
+    end
+    if state.savedUserPosition then
+        safeWalk(state.savedUserPosition)
+        state.savedUserPosition = nil
+    end
+end
+
 local function startAutoEvent()
     if state.autoEventActive then return end
     state.autoEventActive = true
-    state.savedUserPosition = nil -- reset, baru disimpan saat event terdeteksi
-    
+    state.savedUserPosition = nil
+
     state.eventMonitorThread = task.spawn(function()
         while state.autoEventActive do
-            -- Jika sedang di event, monitor apakah event masih ada
             if state.isAtEvent then
                 if not isEventActive(state.selectedEvent) then
-                    -- Event selesai, kembali ke posisi semula
-                    unlockUser()
-                    if state.savedUserPosition then
-                        safeWalk(state.savedUserPosition)
-                    end
-                    state.savedUserPosition = nil
+                    -- Event selesai, kembali
+                    returnToSavedPosition()
                 end
             else
-                -- Monitor apakah event muncul
                 if isEventActive(state.selectedEvent) then
                     local pos = getEventPosition(state.selectedEvent)
                     if pos then
-                        -- Simpan posisi user SAAT INI (sebelum pergi ke event)
                         if not state.savedUserPosition then
                             state.savedUserPosition = getCurrentUserCFrame()
                         end
-                        -- Walk ke event
                         safeWalk(CFrame.new(pos))
                         task.wait(1)
                         lockUserAtPosition(pos)
                     end
                 end
             end
-            task.wait(3 + math.random() * 2) -- 3-5 detik
-        end
-        
-        -- Cleanup saat OFF: jika terkunci, lepaskan dan kembali
-        if state.isAtEvent then
-            unlockUser()
-            if state.savedUserPosition then
-                safeWalk(state.savedUserPosition)
-                state.savedUserPosition = nil
-            end
+            task.wait(3 + math.random() * 2)
         end
     end)
 end
 
 local function stopAutoEvent()
     state.autoEventActive = false
-    if state.eventMonitorThread then
-        task.cancel(state.eventMonitorThread)
-        state.eventMonitorThread = nil
-    end
+    -- Langsung kembalikan user, tidak tunggu thread
+    returnToSavedPosition()
 end
 
 -- ========== LOAD CONFIG SAAT STARTUP ==========
@@ -347,7 +334,7 @@ Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
 
 -- Main Panel
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHX_SafeWalk_v4.1"
+mainGui.Name = "ZHX_SafeWalk_v4.1.1"
 mainGui.ResetOnSpawn = false
 mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mainGui.Parent = pg
@@ -373,7 +360,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "📍 ZHX Safe Walk v4.1"
+title.Text = "📍 ZHX Safe Walk v4.1.1"
 title.TextColor3 = Color3.fromRGB(255, 200, 0)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -968,4 +955,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHX Safe Walk v4.1 siap. Auto Event: OFF = kembali ke posisi semula, blokir walk lain, layout fixed.")
+print("ZHX Safe Walk v4.1.1 siap. Perbaikan: OFF langsung kembali ke posisi semula.")
