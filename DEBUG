@@ -1,6 +1,7 @@
--- // ZHX Safe Walk v3.2 — Layout Fix + Nama Save + Auto Diving Gear + Damage Protect
--- // Tab UI, Stop Fix, Save/Load Position, Accurate Orientation
--- // Auto equip Advanced Diving Gear, proteksi damage (forcefield/noclip)
+-- // ZHX Safe Walk v3.3 — Auto Equip Diving Gear Fix + Layout Saved Positions
+-- // Mencari UUID Advanced Diving Gear / Diving Gear di inventory
+-- // Menggunakan remote EquipItem untuk auto-equip
+-- // Layout Saved Positions: tombol di dalam panel, tidak keluar
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -89,10 +90,48 @@ end
 
 -- ========== AUTO EQUIP DIVING GEAR ==========
 local function equipDivingGear()
-    -- Coba via remote EquipItem (biasanya pakai UUID atau ID)
-    -- Dari data sebelumnya, Diving Gear punya ID 105
-    if equipItemRE then
-        pcall(function() equipItemRE:FireServer(105) end)
+    if not equipItemRE then return end
+
+    -- Akses inventory via Replion
+    local Replion = require(RS.Packages.Replion)
+    local PlayerData = Replion.Client:WaitReplion("Data")
+    task.wait(1)
+
+    local uuidToEquip = nil
+
+    pcall(function()
+        local inv = PlayerData:Get("Inventory")
+        if inv and inv.Items then
+            -- Cari Advanced Diving Gear dulu (ID mungkin berbeda, kita cari nama)
+            for _, item in ipairs(inv.Items) do
+                -- Dapatkan data item
+                local ItemUtility = require(RS.Shared.ItemUtility)
+                local data = ItemUtility:GetItemData(item.Id)
+                if data and data.Data and data.Data.Type == "Gears" then
+                    if data.Data.Name == "Advanced Diving Gear" then
+                        uuidToEquip = item.UUID
+                        break
+                    end
+                end
+            end
+            -- Fallback ke Diving Gear biasa
+            if not uuidToEquip then
+                for _, item in ipairs(inv.Items) do
+                    local ItemUtility = require(RS.Shared.ItemUtility)
+                    local data = ItemUtility:GetItemData(item.Id)
+                    if data and data.Data and data.Data.Type == "Gears" then
+                        if data.Data.Name == "Diving Gear" then
+                            uuidToEquip = item.UUID
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    if uuidToEquip then
+        pcall(function() equipItemRE:FireServer(uuidToEquip) end)
     end
 end
 
@@ -102,9 +141,7 @@ local function protectCharacter()
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then
-        -- Set health ke sangat tinggi agar tidak mati
         pcall(function() hum.MaxHealth = 1e9; hum.Health = 1e9 end)
-        -- Nonaktifkan PlatformStand agar tidak aneh
         hum.PlatformStand = true
     end
 end
@@ -207,7 +244,7 @@ Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
 
 -- Main Panel
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHX_SafeWalk_v3.2"
+mainGui.Name = "ZHX_SafeWalk_v3.3"
 mainGui.ResetOnSpawn = false
 mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mainGui.Parent = pg
@@ -233,7 +270,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "📍 ZHX Safe Walk v3.2"
+title.Text = "📍 ZHX Safe Walk v3.3"
 title.TextColor3 = Color3.fromRGB(255, 200, 0)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -266,7 +303,6 @@ contentFrame.Parent = frame
 Instance.new("UICorner", contentFrame).CornerRadius = UDim.new(0, 6)
 
 -- ========== FUNGSI PEMBUAT TAB ==========
-local currentTabContent = nil
 local function createTabButton(name, buildContent)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -8, 0, 30)
@@ -294,7 +330,6 @@ local function createTabButton(name, buildContent)
         end
         local newContent = buildContent()
         newContent.Parent = contentFrame
-        currentTabContent = newContent
     end)
 
     return btn
@@ -553,8 +588,9 @@ local function buildTab3()
         state.saveName = nameInput.Text:gsub("%s+", " ")
     end)
 
+    -- Scroll untuk daftar posisi tersimpan
     local savedScroll = Instance.new("ScrollingFrame")
-    savedScroll.Size = UDim2.new(1, -10, 1, -120)
+    savedScroll.Size = UDim2.new(1, -10, 1, -115)
     savedScroll.Position = UDim2.new(0, 5, 0, 36)
     savedScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     savedScroll.BorderSizePixel = 0
@@ -569,17 +605,17 @@ local function buildTab3()
     savedLayout.Padding = UDim.new(0, 2)
     savedLayout.Parent = savedScroll
 
-    -- Frame tombol bawah
+    -- Frame tombol bawah (fixed position)
     local btnFrame = Instance.new("Frame")
-    btnFrame.Size = UDim2.new(1, -10, 0, 55)
-    btnFrame.Position = UDim2.new(0, 5, 1, -58)
+    btnFrame.Size = UDim2.new(1, -10, 0, 85)
+    btnFrame.Position = UDim2.new(0, 5, 1, -90)
     btnFrame.BackgroundTransparency = 1
     btnFrame.ZIndex = 101
     btnFrame.Parent = content
 
     -- Tombol Save (full width)
     local savePosBtn = Instance.new("TextButton")
-    savePosBtn.Size = UDim2.new(1, 0, 0, 26)
+    savePosBtn.Size = UDim2.new(1, 0, 0, 28)
     savePosBtn.Position = UDim2.new(0, 0, 0, 0)
     savePosBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 80)
     savePosBtn.BorderSizePixel = 0
@@ -594,14 +630,14 @@ local function buildTab3()
 
     -- Row tombol Go, Remove, Stop
     local actionRow = Instance.new("Frame")
-    actionRow.Size = UDim2.new(1, 0, 0, 26)
-    actionRow.Position = UDim2.new(0, 0, 1, 0)
+    actionRow.Size = UDim2.new(1, 0, 0, 28)
+    actionRow.Position = UDim2.new(0, 0, 0, 32)
     actionRow.BackgroundTransparency = 1
     actionRow.ZIndex = 101
     actionRow.Parent = btnFrame
 
     local savedGoBtn = Instance.new("TextButton")
-    savedGoBtn.Size = UDim2.new(0, 70, 0, 26)
+    savedGoBtn.Size = UDim2.new(0, 70, 0, 28)
     savedGoBtn.Position = UDim2.new(0, 0, 0, 0)
     savedGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
     savedGoBtn.BorderSizePixel = 0
@@ -615,7 +651,7 @@ local function buildTab3()
     Instance.new("UICorner", savedGoBtn).CornerRadius = UDim.new(0, 5)
 
     local savedRemoveBtn = Instance.new("TextButton")
-    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 26)
+    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 28)
     savedRemoveBtn.Position = UDim2.new(0, 75, 0, 0)
     savedRemoveBtn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
     savedRemoveBtn.BorderSizePixel = 0
@@ -629,7 +665,7 @@ local function buildTab3()
     Instance.new("UICorner", savedRemoveBtn).CornerRadius = UDim.new(0, 5)
 
     local savedStopBtn = Instance.new("TextButton")
-    savedStopBtn.Size = UDim2.new(0, 40, 0, 26)
+    savedStopBtn.Size = UDim2.new(0, 40, 0, 28)
     savedStopBtn.Position = UDim2.new(0, 150, 0, 0)
     savedStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
     savedStopBtn.BorderSizePixel = 0
@@ -759,4 +795,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHX Safe Walk v3.2 siap. Layout fixed, nama save, auto diving gear, damage protect.")
+print("ZHX Safe Walk v3.3 siap. Layout fixed, auto diving gear dengan UUID, damage protect.")
