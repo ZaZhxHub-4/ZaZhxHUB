@@ -1,4 +1,4 @@
--- // ZHXHub Full Project v1.7 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
+-- // ZHXHub Full Project v1.8 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
 -- // Perbaikan: panggilan OFF awal + ON-OFF bergantian + MarkAuto digunakan
 
 local RS = game:GetService("ReplicatedStorage")
@@ -303,24 +303,32 @@ local function stopWalking()
 end
 
 -- Auto Event
--- ========== RADAR AUTO EVENT (STRICT: MEGALODON HUNT) ==========
-local propsFolder = WS:FindFirstChild("Props")
+-- ========== RADAR AUTO EVENT (STRICT & DYNAMIC V1.8) ==========
+local function cleanString(str)
+    -- Membersihkan spasi tak terlihat di awal/akhir nama agar pencocokan 100% akurat
+    return string.lower(str):match("^%s*(.-)%s*$") or string.lower(str)
+end
 
 local function findEventModel(eventName)
-    if not propsFolder then return nil end
+    local targetName = cleanString(eventName)
     
-    -- Pastikan nama yang dicari huruf kecil semua agar tidak gagal karena typo kapital
-    local targetName = string.lower(eventName) 
-    
-    for _, child in ipairs(propsFolder:GetChildren()) do
-        if child:IsA("Model") then
-            -- STRICT MATCH: Hanya mendeteksi jika namanya SAMA PERSIS 100%.
-            -- "Dark Megalodon Hunt" akan DITOLAK karena tidak sama persis.
-            if string.lower(child.Name) == targetName then 
-                return child 
+    -- DINAMIS: Selalu ambil folder Props di detik ini juga, JANGAN di-cache di luar!
+    local props = WS:FindFirstChild("Props")
+    if props then
+        for _, child in ipairs(props:GetChildren()) do
+            if child:IsA("Model") and cleanString(child.Name) == targetName then
+                return child
             end
         end
     end
+    
+    -- PENGAMAN EKSTRA: Jika developer gamenya memunculkan event di luar folder Props
+    for _, child in ipairs(WS:GetChildren()) do
+        if child:IsA("Model") and cleanString(child.Name) == targetName then
+            return child
+        end
+    end
+
     return nil
 end
 
@@ -328,22 +336,28 @@ local function getEventPosition(eventName)
     local model = findEventModel(eventName)
     if not model then return nil end
     
-    -- LAPIS 1: Cari Part pijakan yang namanya persis sama dengan nama event (Berdasarkan hasil log Anda)
+    -- LAPIS 1: Cari Part pijakan yang namanya persis sama
     local mainPart = model:FindFirstChild(model.Name)
     if mainPart and mainPart:IsA("BasePart") then 
         return mainPart.Position + Vector3.new(0, 5, 0) 
     end
     
-    -- LAPIS 2: Jika game nge-lag dan part utama belum muncul, ambil PrimaryPart dari model
+    -- LAPIS 2: Gunakan PrimaryPart bawaan model
     if model.PrimaryPart then
         return model.PrimaryPart.Position + Vector3.new(0, 5, 0)
     end
     
-    -- LAPIS 3: Fallback darurat, korek isi model dan ambil BasePart apa pun yang pertama ketemu
+    -- LAPIS 3: Korek isi model dan ambil BasePart apa pun
     for _, child in ipairs(model:GetDescendants()) do
         if child:IsA("BasePart") then 
             return child.Position + Vector3.new(0, 5, 0) 
         end
+    end
+
+    -- LAPIS 4 (ANTI-GAGAL): Hitung titik tengah/BoundingBox dari 3D Model tersebut
+    local cf = model:GetBoundingBox()
+    if cf then
+        return cf.Position + Vector3.new(0, 5, 0)
     end
     
     return nil
@@ -661,7 +675,7 @@ floatBtn.MouseButton1Click:Connect(function() frame.Visible = not frame.Visible 
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,24); title.Position = UDim2.new(0,10,0,6)
-title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v1.7  ⚡"
+title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v1.8  ⚡"
 title.TextColor3 = Color3.fromRGB(72,210,130); title.TextSize = 13
 title.Font = Enum.Font.GothamBold; title.ZIndex = 101; title.Parent = frame
 
@@ -1080,4 +1094,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHXHub Full Project v1.7.")
+print("ZHXHub Full Project v1.8.")
