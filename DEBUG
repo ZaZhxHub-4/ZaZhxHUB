@@ -1,8 +1,5 @@
--- MONITOR v3 — Scan SEMUA metode: namecall + BindableEvent + LocalScript changes
-local HS      = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local RS      = game:GetService("ReplicatedStorage")
-
+-- Cek fitur executor yang tersedia
+local HS = game:GetService("HttpService")
 local WEBHOOK = "https://discordapp.com/api/webhooks/1506044266684743801/PlopEC1wwOyfGQh-3oBQFl67_IPfoNmUYDMvEU_kjvZP6zR6v0BjfMeObTUsxhOUepqg"
 
 local function send(title, desc, color)
@@ -11,262 +8,32 @@ local function send(title, desc, color)
             Url=WEBHOOK, Method="POST",
             Headers={["Content-Type"]="application/json"},
             Body=HS:JSONEncode({
-                username="🔬 Monitor v3",
-                embeds={{title=title,description=desc,color=color or 3066993,
-                    footer={text=os.date("%H:%M:%S")}}}
+                username="🔬 Exec Check",
+                embeds={{title=title,description=desc,color=color or 3066993}}
             })
         })
     end)
 end
 
-while not Players.LocalPlayer do task.wait() end
-local lp = Players.LocalPlayer
-local pg = lp:WaitForChild("PlayerGui")
+local results = {}
+local checks = {
+    {"hookmetamethod",  function() return type(hookmetamethod) == "function" end},
+    {"hookfunction",    function() return type(hookfunction) == "function" end},
+    {"getnamecallmethod", function() return type(getnamecallmethod) == "function" end},
+    {"getloadedmodules",function() return type(getloadedmodules) == "function" end},
+    {"request",         function() return type(request) == "function" end},
+    {"readfile",        function() return type(readfile) == "function" end},
+    {"writefile",       function() return type(writefile) == "function" end},
+    {"fireproximityprompt", function() return type(fireproximityprompt) == "function" end},
+    {"gethui",          function() return type(gethui) == "function" end},
+    {"getcallingscript",function() return type(getcallingscript) == "function" end},
+}
 
-local firedLog   = {}
-local monitoring = false
-local logCount   = 0
-
-local function addLog(method, name, path, args)
-    logCount = logCount + 1
-    table.insert(firedLog, {method=method, name=name, path=path:sub(1,100), args=args:sub(1,200), t=os.date("%H:%M:%S")})
+for _, check in ipairs(checks) do
+    local name = check[1]
+    local ok, result = pcall(check[2])
+    local available = ok and result == true
+    table.insert(results, (available and "✅" or "❌").." `"..name.."`")
 end
 
--- ─── 1. hookmetamethod __namecall (semua RF/RE tanpa filter) ───
-local oldNC
-oldNC = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    if monitoring then
-        if method=="FireServer" or method=="InvokeServer" or method=="Fire" or method=="InvokeClient" then
-            local argStr=""
-            pcall(function() argStr=HS:JSONEncode({...}):sub(1,200) end)
-            local name=""; pcall(function() name=tostring(self.Name) end)
-            local path=""; pcall(function() path=tostring(self:GetFullName()) end)
-            -- Skip analytics noise
-            if not name:find("Analytics") and not name:find("Heartbeat") then
-                addLog(method, name, path, argStr)
-            end
-        end
-    end
-    return oldNC(self, ...)
-end)
-
--- ─── 2. Monitor perubahan karakter (attribute/property changed) ───
--- Equip item sering trigger perubahan di character atau backpack
-local charConn = nil
-local function watchCharacter(char)
-    if not char then return end
-    -- Watch semua attribute change di character descendants
-    for _, obj in ipairs(char:GetDescendants()) do
-        pcall(function()
-            obj.AttributeChanged:Connect(function(attr)
-                if monitoring then
-                    addLog("AttrChange", obj.Name, obj:GetFullName(), "attr:"..attr.."="..tostring(obj:GetAttribute(attr)))
-                end
-            end)
-        end)
-        -- Watch property changed untuk Tool/Equipment
-        if obj:IsA("Tool") or obj.Name:lower():find("equip") or obj.Name:lower():find("gear") then
-            pcall(function()
-                obj.Changed:Connect(function(prop)
-                    if monitoring then
-                        addLog("PropChange", obj.Name, obj:GetFullName(), "prop:"..prop)
-                    end
-                end)
-            end)
-        end
-    end
-    -- Watch ChildAdded ke character (equip biasanya tambah Tool ke char)
-    char.ChildAdded:Connect(function(child)
-        if monitoring then
-            addLog("CharChildAdded", child.Name, child:GetFullName(), "class:"..child.ClassName)
-        end
-    end)
-    char.ChildRemoved:Connect(function(child)
-        if monitoring then
-            addLog("CharChildRemoved", child.Name, child:GetFullName(), "class:"..child.ClassName)
-        end
-    end)
-end
-
--- ─── 3. Watch Backpack ───
-local backpack = lp:FindFirstChildOfClass("Backpack")
-if backpack then
-    backpack.ChildAdded:Connect(function(child)
-        if monitoring then
-            addLog("BackpackAdded", child.Name, child:GetFullName(), "class:"..child.ClassName)
-        end
-    end)
-    backpack.ChildRemoved:Connect(function(child)
-        if monitoring then
-            addLog("BackpackRemoved", child.Name, child:GetFullName(), "class:"..child.ClassName)
-        end
-    end)
-end
-
--- ─── 4. Watch PlayerData via Replion (jika ada) ───
-task.spawn(function()
-    local ok, Replion = pcall(function()
-        return require(RS:WaitForChild("Packages",3):WaitForChild("Replion",3))
-    end)
-    if not ok or not Replion then return end
-    local ok2, PlayerData = pcall(function()
-        return Replion.Client:WaitReplion("Data", 5)
-    end)
-    if not ok2 or not PlayerData then return end
-
-    -- Watch semua key di PlayerData
-    pcall(function()
-        PlayerData.Changed:Connect(function(path, value)
-            if monitoring then
-                local valStr=""
-                pcall(function() valStr=HS:JSONEncode(value):sub(1,150) end)
-                addLog("PlayerDataChanged", tostring(path), "Replion/Data", valStr)
-            end
-        end)
-    end)
-end)
-
--- ─── 5. Watch BindableEvent ───
-local function hookBindables(parent)
-    pcall(function()
-        for _, obj in ipairs(parent:GetDescendants()) do
-            if obj:IsA("BindableEvent") or obj:IsA("BindableFunction") then
-                pcall(function()
-                    if obj:IsA("BindableEvent") then
-                        obj.Event:Connect(function(...)
-                            if monitoring then
-                                local argStr=""
-                                pcall(function() argStr=HS:JSONEncode({...}):sub(1,200) end)
-                                addLog("BindableEvent", obj.Name, obj:GetFullName(), argStr)
-                            end
-                        end)
-                    end
-                end)
-            end
-        end
-    end)
-end
-hookBindables(RS)
-hookBindables(game:GetService("Workspace"))
-
--- Setup character watch
-if lp.Character then watchCharacter(lp.Character) end
-lp.CharacterAdded:Connect(watchCharacter)
-
--- ─── UI ───
-local sg=Instance.new("ScreenGui"); sg.Name="ZHX_Mon3"; sg.ResetOnSpawn=false; sg.IgnoreGuiInset=true; sg.Parent=pg
-local frame=Instance.new("Frame"); frame.Size=UDim2.new(0,270,0,190); frame.Position=UDim2.new(0,10,0,60)
-frame.BackgroundColor3=Color3.fromRGB(10,12,18); frame.BorderSizePixel=0; frame.Parent=sg
-Instance.new("UICorner",frame).CornerRadius=UDim.new(0,8)
-local stroke=Instance.new("UIStroke",frame); stroke.Color=Color3.fromRGB(255,170,50); stroke.Thickness=1.5
-
-local hdr=Instance.new("TextLabel"); hdr.Size=UDim2.new(1,0,0,28)
-hdr.BackgroundColor3=Color3.fromRGB(18,14,8); hdr.BorderSizePixel=0
-hdr.Text="🔬 MONITOR v3 (FULL SCAN)"; hdr.TextColor3=Color3.fromRGB(255,170,50)
-hdr.TextSize=11; hdr.Font=Enum.Font.GothamBold; hdr.ZIndex=2; hdr.Parent=frame
-Instance.new("UICorner",hdr).CornerRadius=UDim.new(0,8)
-
-local statusLbl=Instance.new("TextLabel"); statusLbl.Size=UDim2.new(1,-12,0,18)
-statusLbl.Position=UDim2.new(0,6,0,30); statusLbl.BackgroundTransparency=1
-statusLbl.Text="IDLE"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
-statusLbl.TextSize=10; statusLbl.Font=Enum.Font.Gotham
-statusLbl.TextXAlignment=Enum.TextXAlignment.Left; statusLbl.Parent=frame
-
-local countLbl=Instance.new("TextLabel"); countLbl.Size=UDim2.new(1,-12,0,16)
-countLbl.Position=UDim2.new(0,6,0,50); countLbl.BackgroundTransparency=1
-countLbl.Text="Tertangkap: 0"; countLbl.TextColor3=Color3.fromRGB(255,170,50)
-countLbl.TextSize=10; countLbl.Font=Enum.Font.GothamBold
-countLbl.TextXAlignment=Enum.TextXAlignment.Left; countLbl.Parent=frame
-
-local modeLbl=Instance.new("TextLabel"); modeLbl.Size=UDim2.new(1,-12,0,14)
-modeLbl.Position=UDim2.new(0,6,0,68); modeLbl.BackgroundTransparency=1
-modeLbl.Text="Metode: namecall+char+backpack+replion+bindable"
-modeLbl.TextColor3=Color3.fromRGB(100,100,80); modeLbl.TextSize=8
-modeLbl.Font=Enum.Font.Gotham; modeLbl.TextXAlignment=Enum.TextXAlignment.Left; modeLbl.Parent=frame
-
-local startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(1,-12,0,28)
-startBtn.Position=UDim2.new(0,6,0,86); startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
-startBtn.BorderSizePixel=0; startBtn.Text="▶ MULAI REKAM"
-startBtn.TextColor3=Color3.fromRGB(72,210,130); startBtn.TextSize=11
-startBtn.Font=Enum.Font.GothamBold; startBtn.AutoButtonColor=false; startBtn.Parent=frame
-Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
-
-local stopBtn=Instance.new("TextButton"); stopBtn.Size=UDim2.new(1,-12,0,28)
-stopBtn.Position=UDim2.new(0,6,0,120); stopBtn.BackgroundColor3=Color3.fromRGB(60,20,20)
-stopBtn.BorderSizePixel=0; stopBtn.Text="⏹ STOP & KIRIM"
-stopBtn.TextColor3=Color3.fromRGB(240,80,80); stopBtn.TextSize=11
-stopBtn.Font=Enum.Font.GothamBold; stopBtn.AutoButtonColor=false; stopBtn.Parent=frame
-Instance.new("UICorner",stopBtn).CornerRadius=UDim.new(0,6)
-
-local resetBtn=Instance.new("TextButton"); resetBtn.Size=UDim2.new(1,-12,0,22)
-resetBtn.Position=UDim2.new(0,6,0,154); resetBtn.BackgroundColor3=Color3.fromRGB(25,25,25)
-resetBtn.BorderSizePixel=0; resetBtn.Text="🗑 Reset"
-resetBtn.TextColor3=Color3.fromRGB(150,150,150); resetBtn.TextSize=9
-resetBtn.Font=Enum.Font.Gotham; resetBtn.AutoButtonColor=false; resetBtn.Parent=frame
-Instance.new("UICorner",resetBtn).CornerRadius=UDim.new(0,5)
-
-local UIS=game:GetService("UserInputService")
-local drag3=false; local ds3,sp3
-frame.InputBegan:Connect(function(inp)
-    if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
-        drag3=true; ds3=inp.Position; sp3=frame.Position
-        inp.Changed:Connect(function() if inp.UserInputState==Enum.UserInputState.End then drag3=false end end)
-    end
-end)
-UIS.InputChanged:Connect(function(inp)
-    if drag3 and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then
-        local d=inp.Position-ds3; local vp=workspace.CurrentCamera.ViewportSize
-        frame.Position=UDim2.new(0,math.clamp(sp3.X.Offset+d.X,0,vp.X-270),
-            0,math.clamp(sp3.Y.Offset+d.Y,0,vp.Y-190))
-    end
-end)
-
-task.spawn(function()
-    while true do task.wait(0.5); countLbl.Text="Tertangkap: "..logCount end
-end)
-
-send("✅ Monitor v3 Aktif","Semua metode deteksi terpasang:\n• `hookmetamethod __namecall`\n• Character ChildAdded/Removed\n• Backpack watch\n• Replion PlayerData.Changed\n• BindableEvent\n\nTekan **MULAI REKAM** → equip Advanced Diving Gear → **STOP & KIRIM**",16776960)
-
-startBtn.MouseButton1Click:Connect(function()
-    firedLog={}; logCount=0; monitoring=true
-    statusLbl.Text="● MEREKAM..."; statusLbl.TextColor3=Color3.fromRGB(240,80,80)
-    startBtn.BackgroundColor3=Color3.fromRGB(10,35,20)
-    send("▶ Rekam v3 Dimulai","Lakukan equip Advanced Diving Gear sekarang!",16776960)
-end)
-
-stopBtn.MouseButton1Click:Connect(function()
-    monitoring=false
-    statusLbl.Text="STOP"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
-    startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
-    if #firedLog==0 then
-        send("⚠ Kosong","Tidak ada yang tertangkap sama sekali.\n\nKemungkinan sistem equip game ini sepenuhnya client-side (LocalScript only, tidak ada network call).",16776960)
-        return
-    end
-    send("⏹ v3 Selesai","Total: **"..#firedLog.."**",3066993); task.wait(0.3)
-    local lines={}
-    for i,e in ipairs(firedLog) do
-        table.insert(lines,string.format("[%d] **%s** | `%s`\n`%s`\nArgs: `%s`",
-            i,e.method,e.name,e.path,e.args~="" and e.args or "(kosong)"))
-    end
-    local chunk=""; local msgNum=0
-    for _,line in ipairs(lines) do
-        if #chunk+#line+2>1800 then
-            msgNum=msgNum+1; send("📋 #"..msgNum,chunk,3447003); task.wait(0.4); chunk=line.."\n\n"
-        else chunk=chunk..line.."\n\n" end
-    end
-    if chunk~="" then msgNum=msgNum+1; send("📋 #"..msgNum,chunk,3447003) end
-    task.wait(0.3)
-    local seen={}; local names={}
-    for _,e in ipairs(firedLog) do
-        if not seen[e.name] then seen[e.name]=true
-            table.insert(names,"• `"..e.name.."` — "..e.method) end
-    end
-    send("📌 Rangkuman",table.concat(names,"\n"),16776960)
-end)
-
-resetBtn.MouseButton1Click:Connect(function()
-    firedLog={}; logCount=0; monitoring=false
-    statusLbl.Text="IDLE"; statusLbl.TextColor3=Color3.fromRGB(160,170,165)
-    startBtn.BackgroundColor3=Color3.fromRGB(20,65,40)
-end)
+send("🔬 Executor Feature Check", table.concat(results, "\n"), 3066993)
