@@ -1,5 +1,6 @@
 -- // ZHXHub Full Project v2.0 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
 -- // Perbaikan: panggilan OFF awal + ON-OFF bergantian + MarkAuto digunakan
+-- // AUTO EVENT: Workspace-wide scan V3.0 FINAL
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -155,17 +156,16 @@ local function equipRod()
     end
 end
 
--- INI YANG DIPERBAIKI: triggerPetBug sekarang IDENTIK dengan v6.5
 local function triggerPetBug()
     if not autoStateRF then return end
-    pcall(function() autoStateRF:InvokeServer(false) end)  -- OFF dulu di awal (PENTING!)
+    pcall(function() autoStateRF:InvokeServer(false) end)
     for _ = 1, state.blapetConfig.toggleCount do
-        pcall(function() autoStateRF:InvokeServer(true) end)   -- ON
+        pcall(function() autoStateRF:InvokeServer(true) end)
         task.wait(0.02)
-        pcall(function() autoStateRF:InvokeServer(false) end)  -- OFF
+        pcall(function() autoStateRF:InvokeServer(false) end)
         task.wait(0.02)
     end
-    if markAutoRF then pcall(function() markAutoRF:InvokeServer() end) end  -- MarkAuto (PENTING!)
+    if markAutoRF then pcall(function() markAutoRF:InvokeServer() end) end
 end
 
 local function blapetFastReelCycle()
@@ -302,44 +302,28 @@ local function stopWalking()
     disableNoclip(); unprotectCharacter()
 end
 
--- Auto Event
--- ========== RADAR AUTO EVENT (STRICT MEGALODON HUNT FINAL) ==========
+-- ========== RADAR AUTO EVENT (WORKSPACE-WIDE SCAN – V3.0 FINAL) ==========
+local function findEventModel(eventName)
+    for _, obj in ipairs(WS:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:gsub("^%s+", ""):gsub("%s+$", "") == eventName then
+            return obj
+        end
+    end
+    return nil
+end
+
 local function getEventPosition(eventName)
-    local propsFolder = WS:FindFirstChild("Props")
-    if not propsFolder then return nil end
-
-    local eventModel = propsFolder:FindFirstChild(eventName)
+    local eventModel = findEventModel(eventName)
     if not eventModel then return nil end
-
-    -- Lapis 1: Cari BasePart yang namanya sama persis dengan event
-    -- (Dari scan: "Megalodon Hunt" adalah BasePart di dalam Model > TOP)
-    for _, child in ipairs(eventModel:GetDescendants()) do
-        if child:IsA("BasePart") and child.Name == eventName then
-            return child.Position + Vector3.new(0, 5, 0)
-        end
+    local ok, cf = pcall(function() return eventModel:GetBoundingBox() end)
+    if ok and cf then
+        return cf.Position + Vector3.new(0, 10, 0)
     end
-
-    -- Lapis 2: Cari RotationPoint sebagai fallback
-    for _, child in ipairs(eventModel:GetDescendants()) do
-        if child:IsA("BasePart") and child.Name == "RotationPoint" then
-            return child.Position + Vector3.new(0, 5, 0)
-        end
-    end
-
-    -- Lapis 3: BasePart apapun yang ada di dalam model
-    for _, child in ipairs(eventModel:GetDescendants()) do
-        if child:IsA("BasePart") then
-            return child.Position + Vector3.new(0, 5, 0)
-        end
-    end
-
     return nil
 end
 
 local function isEventActive(eventName)
-    local propsFolder = WS:FindFirstChild("Props")
-    if not propsFolder then return false end
-    return propsFolder:FindFirstChild(eventName) ~= nil
+    return findEventModel(eventName) ~= nil
 end
 -- ===============================================================
 
@@ -359,26 +343,18 @@ local function unlockUser()
     root.Anchored = false; unprotectCharacter(); state.isAtEvent = false
 end
 local function returnToSavedPosition()
-    -- 1. Lepaskan status lock dari event
     if state.isAtEvent then 
         unlockUser() 
     end
-    
-    -- 2. Cek apakah ada patokan posisi awal untuk pulang
     if state.savedUserPosition then 
         local homeCF = state.savedUserPosition
-        -- RESET patokan langsung di sini agar siap merekam posisi baru di event selanjutnya
         state.savedUserPosition = nil 
-        
-        -- 3. Jalan pulang ke posisi awal
         safeWalk(homeCF) 
     end
 end
 
 local function startAutoEvent()
     if state.autoEventActive then return end
-    
-    -- Inisialisasi ulang semua state Event saat tombol dinyalakan
     state.autoEventActive = true 
     state.savedUserPosition = nil
     state.isAtEvent = false
@@ -388,36 +364,26 @@ local function startAutoEvent()
             local isEventNow = isEventActive(state.selectedEvent)
 
             if state.isAtEvent then
-                -- FASE 2 (SEDANG DI EVENT): Pantau apakah Megalodon sudah hilang
                 if not isEventNow then
-                    returnToSavedPosition() -- Jika hilang, langsung jalan pulang
+                    returnToSavedPosition()
                 end
             else
-                -- FASE 1 (STANDBY): Pantau apakah Megalodon muncul
                 if isEventNow then
                     local pos = getEventPosition(state.selectedEvent)
                     if pos then
-                        -- Rekam posisi Standby SAAT INI sebagai patokan pulang
                         if not state.savedUserPosition then 
                             state.savedUserPosition = getCurrentUserCFrame() 
                         end
-                        
-                        -- Mulai jalan menuju lokasi Megalodon
                         safeWalk(CFrame.new(pos)) 
                         task.wait(0.5)
-
-                        -- VALIDASI PENTING: Cek lagi, pastikan Megalodon belum hilang saat kita tiba di lokasi
                         if isEventActive(state.selectedEvent) and state.autoEventActive then
-                            lockUserAtPosition() -- Kunci posisi (Monitor FASE 2)
+                            lockUserAtPosition()
                         else
-                            -- Kalau kita telat sampai dan Megalodon keburu hilang, putar balik!
                             returnToSavedPosition()
                         end
                     end
                 end
             end
-            
-            -- Jeda 3 detik untuk loop Standby / Monitor berikutnya
             task.wait(3 + math.random() * 2)
         end
     end)
@@ -651,7 +617,7 @@ floatBtn.MouseButton1Click:Connect(function() frame.Visible = not frame.Visible 
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,24); title.Position = UDim2.new(0,10,0,6)
-title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v2.0  ⚡"
+title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v2.1  ⚡"
 title.TextColor3 = Color3.fromRGB(72,210,130); title.TextSize = 13
 title.Font = Enum.Font.GothamBold; title.ZIndex = 101; title.Parent = frame
 
@@ -1070,4 +1036,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHXHub Full Project v2.0.")
+print("ZHXHub Full Project v2.0 — Auto Event Workspace Scan Ready.")
