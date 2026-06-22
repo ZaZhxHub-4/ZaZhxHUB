@@ -1,7 +1,6 @@
--- // ZHX Safe Walk v3.4 Final — Tab UI + Save/Load Position + Stop Fix + Damage Protect
--- // Tidak ada auto equip diving gear (user equip manual)
--- // Walk to Location, Walk to Player, Saved Positions dengan input nama
--- // Floating button kuning, panel tengah, arah hadap akurat
+-- // ZHX Safe Walk v3.5 Final — Config Save/Load + Smooth Walk + Tab Default + Layout Fix
+-- // Saved Positions disimpan ke file config, tab pertama aktif saat buka panel
+-- // Smooth walk: Humanoid WalkSpeed tinggi + NoClip, tanpa henti
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -31,7 +30,6 @@ local state = {
     isWalking = false,
     stopRequested = false,
     noclipConn = nil,
-    speed = 0.03,
     savedPositions = {},
     selectedSavedIndex = nil,
     selectedLocation = nil,
@@ -41,6 +39,50 @@ local state = {
     selectedSavedBtn = nil,
     saveName = "",
 }
+
+-- ========== SAVE / LOAD CONFIG FOR SAVED POSITIONS ==========
+local CONFIG_FOLDER = "ZHX_Configs"
+local CONFIG_FILE   = CONFIG_FOLDER .. "/SafeWalkSavedPositions.json"
+
+local function ensureFolder()
+    if not isfolder or not makefolder then return false end
+    if not isfolder(CONFIG_FOLDER) then
+        pcall(function() makefolder(CONFIG_FOLDER) end)
+    end
+    return isfolder(CONFIG_FOLDER)
+end
+
+local function saveSavedPositions()
+    if not writefile or not ensureFolder() then return end
+    local data = {}
+    for _, saved in ipairs(state.savedPositions) do
+        local cf = saved.cf
+        table.insert(data, {
+            name = saved.name,
+            x = cf.X, y = cf.Y, z = cf.Z,
+            r00 = cf.RightVector.X, r01 = cf.RightVector.Y, r02 = cf.RightVector.Z,
+            r10 = cf.UpVector.X, r11 = cf.UpVector.Y, r12 = cf.UpVector.Z,
+            r20 = -cf.LookVector.X, r21 = -cf.LookVector.Y, r22 = -cf.LookVector.Z,
+        })
+    end
+    pcall(function()
+        writefile(CONFIG_FILE, game:GetService("HttpService"):JSONEncode(data))
+    end)
+end
+
+local function loadSavedPositions()
+    if not readfile or not isfile or not isfile(CONFIG_FILE) then return end
+    pcall(function()
+        local data = game:GetService("HttpService"):JSONDecode(readfile(CONFIG_FILE))
+        state.savedPositions = {}
+        for _, item in ipairs(data) do
+            table.insert(state.savedPositions, {
+                name = item.name,
+                cf = CFrame.new(item.x, item.y, item.z, item.r00, item.r01, item.r02, item.r10, item.r11, item.r12, item.r20, item.r21, item.r22)
+            })
+        end
+    end)
+end
 
 -- ========== NOKLIP AGRESIF ==========
 local function enableNoclip()
@@ -84,48 +126,52 @@ local function unprotectCharacter()
     end
 end
 
--- ========== SAFE WALK CORE ==========
-local function safeWalk(targetCF)
+-- ========== SMOOTH WALK (WALKSPEED HIGH) ==========
+local function smoothWalk(targetCF)
     if state.isWalking then return end
     local char = LP.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum then return end
 
     state.isWalking = true
     state.stopRequested = false
     enableNoclip()
     protectCharacter()
 
-    local startCF = root.CFrame
-    local distance = (targetCF.Position - startCF.Position).Magnitude
-    local stepSize = 2.5
-    local steps = math.max(1, math.ceil(distance / stepSize))
+    -- Simpan walk speed asli
+    local origWalkSpeed = hum.WalkSpeed
 
-    for i = 1, steps do
-        if state.stopRequested then break end
-        local t = i / steps
-        local newCF = startCF:Lerp(targetCF, t)
-        pcall(function()
-            root.CFrame = newCF
-            root.Velocity = Vector3.zero
-            root.RotVelocity = Vector3.zero
-        end)
-        task.wait(state.speed * (0.8 + math.random() * 0.4))
-        if i % math.random(5, 8) == 0 then
-            task.wait(0.05 + math.random() * 0.1)
-        end
+    -- Set walk speed tinggi agar gerakan cepat & halus
+    hum.WalkSpeed = 50
+
+    -- Hitung jarak
+    local distance = (targetCF.Position - root.Position).Magnitude
+    local travelTime = distance / hum.WalkSpeed
+
+    -- Gerakkan karakter ke target via Humanoid:MoveTo
+    hum:MoveTo(targetCF.Position)
+
+    -- Tunggu sampai dekat atau stop diminta
+    local startTime = tick()
+    while state.isWalking and not state.stopRequested and (tick() - startTime) < travelTime + 5 do
+        if (root.Position - targetCF.Position).Magnitude < 5 then break end
+        task.wait(0.1)
     end
 
+    -- Set posisi & rotasi akhir
     if not state.stopRequested then
         pcall(function()
             root.Anchored = true
             root.CFrame = targetCF
-            task.wait(0.3)
+            task.wait(0.2)
             root.Anchored = false
         end)
     end
 
+    -- Kembalikan walk speed
+    hum.WalkSpeed = origWalkSpeed
     unprotectCharacter()
     disableNoclip()
     state.isWalking = false
@@ -145,6 +191,9 @@ LP.CharacterAdded:Connect(function()
     disableNoclip()
     unprotectCharacter()
 end)
+
+-- ========== LOAD CONFIG SAAT STARTUP ==========
+loadSavedPositions()
 
 -- ========== UI ==========
 local pg = LP:WaitForChild("PlayerGui")
@@ -171,7 +220,7 @@ Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
 
 -- Main Panel
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHX_SafeWalk_v3.4_Final"
+mainGui.Name = "ZHX_SafeWalk_v3.5"
 mainGui.ResetOnSpawn = false
 mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mainGui.Parent = pg
@@ -197,7 +246,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "📍 ZHX Safe Walk v3.4 Final"
+title.Text = "📍 ZHX Safe Walk v3.5"
 title.TextColor3 = Color3.fromRGB(255, 200, 0)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -353,7 +402,7 @@ local function buildTab1()
 
     locGoBtn.MouseButton1Click:Connect(function()
         if selectedLocation then
-            safeWalk(selectedLocation)
+            smoothWalk(selectedLocation)
         end
     end)
 
@@ -484,7 +533,7 @@ local function buildTab2()
         if not char then return end
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then return end
-        safeWalk(root.CFrame)
+        smoothWalk(root.CFrame)
     end)
 
     return content
@@ -499,7 +548,7 @@ local function buildTab3()
 
     -- Input nama
     local nameInput = Instance.new("TextBox")
-    nameInput.Size = UDim2.new(1, -10, 0, 28)
+    nameInput.Size = UDim2.new(1, -10, 0, 26)
     nameInput.Position = UDim2.new(0, 5, 0, 4)
     nameInput.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
     nameInput.BorderSizePixel = 0
@@ -517,8 +566,8 @@ local function buildTab3()
 
     -- Scroll untuk daftar posisi tersimpan
     local savedScroll = Instance.new("ScrollingFrame")
-    savedScroll.Size = UDim2.new(1, -10, 1, -115)
-    savedScroll.Position = UDim2.new(0, 5, 0, 36)
+    savedScroll.Size = UDim2.new(1, -10, 1, -100)
+    savedScroll.Position = UDim2.new(0, 5, 0, 34)
     savedScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     savedScroll.BorderSizePixel = 0
     savedScroll.ScrollBarThickness = 4
@@ -534,15 +583,15 @@ local function buildTab3()
 
     -- Frame tombol bawah (fixed position)
     local btnFrame = Instance.new("Frame")
-    btnFrame.Size = UDim2.new(1, -10, 0, 85)
-    btnFrame.Position = UDim2.new(0, 5, 1, -90)
+    btnFrame.Size = UDim2.new(1, -10, 0, 80)
+    btnFrame.Position = UDim2.new(0, 5, 1, -85)
     btnFrame.BackgroundTransparency = 1
     btnFrame.ZIndex = 101
     btnFrame.Parent = content
 
     -- Tombol Save (full width)
     local savePosBtn = Instance.new("TextButton")
-    savePosBtn.Size = UDim2.new(1, 0, 0, 28)
+    savePosBtn.Size = UDim2.new(1, 0, 0, 26)
     savePosBtn.Position = UDim2.new(0, 0, 0, 0)
     savePosBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 80)
     savePosBtn.BorderSizePixel = 0
@@ -557,14 +606,14 @@ local function buildTab3()
 
     -- Row tombol Go, Remove, Stop
     local actionRow = Instance.new("Frame")
-    actionRow.Size = UDim2.new(1, 0, 0, 28)
-    actionRow.Position = UDim2.new(0, 0, 0, 32)
+    actionRow.Size = UDim2.new(1, 0, 0, 26)
+    actionRow.Position = UDim2.new(0, 0, 0, 30)
     actionRow.BackgroundTransparency = 1
     actionRow.ZIndex = 101
     actionRow.Parent = btnFrame
 
     local savedGoBtn = Instance.new("TextButton")
-    savedGoBtn.Size = UDim2.new(0, 70, 0, 28)
+    savedGoBtn.Size = UDim2.new(0, 70, 0, 26)
     savedGoBtn.Position = UDim2.new(0, 0, 0, 0)
     savedGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
     savedGoBtn.BorderSizePixel = 0
@@ -578,7 +627,7 @@ local function buildTab3()
     Instance.new("UICorner", savedGoBtn).CornerRadius = UDim.new(0, 5)
 
     local savedRemoveBtn = Instance.new("TextButton")
-    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 28)
+    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 26)
     savedRemoveBtn.Position = UDim2.new(0, 75, 0, 0)
     savedRemoveBtn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
     savedRemoveBtn.BorderSizePixel = 0
@@ -592,7 +641,7 @@ local function buildTab3()
     Instance.new("UICorner", savedRemoveBtn).CornerRadius = UDim.new(0, 5)
 
     local savedStopBtn = Instance.new("TextButton")
-    savedStopBtn.Size = UDim2.new(0, 40, 0, 28)
+    savedStopBtn.Size = UDim2.new(0, 40, 0, 26)
     savedStopBtn.Position = UDim2.new(0, 150, 0, 0)
     savedStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
     savedStopBtn.BorderSizePixel = 0
@@ -657,18 +706,20 @@ local function buildTab3()
         table.insert(state.savedPositions, {name = name, cf = cf})
         state.saveName = ""
         nameInput.Text = ""
+        saveSavedPositions()
         refreshSavedList()
     end)
 
     savedGoBtn.MouseButton1Click:Connect(function()
         if state.selectedSavedIndex and state.savedPositions[state.selectedSavedIndex] then
-            safeWalk(state.savedPositions[state.selectedSavedIndex].cf)
+            smoothWalk(state.savedPositions[state.selectedSavedIndex].cf)
         end
     end)
 
     savedRemoveBtn.MouseButton1Click:Connect(function()
         if state.selectedSavedIndex then
             table.remove(state.savedPositions, state.selectedSavedIndex)
+            saveSavedPositions()
             refreshSavedList()
         end
     end)
@@ -682,7 +733,7 @@ createTabButton("Walk to Location", buildTab1)
 createTabButton("Walk to Player", buildTab2)
 createTabButton("Saved Positions", buildTab3)
 
--- Aktifkan tab pertama
+-- Aktifkan tab pertama secara default
 for _, child in ipairs(tabFrame:GetChildren()) do
     if child:IsA("TextButton") then
         child.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
@@ -722,4 +773,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHX Safe Walk v3.4 Final siap. Tab UI, save posisi dengan nama, stop fix, damage protect.")
+print("ZHX Safe Walk v3.5 siap. Config save/load, smooth walk, tab default, layout fixed.")
