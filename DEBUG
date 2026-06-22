@@ -1,11 +1,9 @@
--- // ZHX Auto Event - Phase 5: Debug Walk Test
--- // Cek setiap langkah, kirim log ke Discord
+-- // ZHX Auto Event - Phase 6: Deep Inspect Megalodon Hunt Model
+-- // Cari struktur dalam model, dapatkan posisi dari Part "Megalodon Hunt"
 
 local webhook = "https://discord.com/api/webhooks/1506044266684743801/PlopEC1wwOyfGQh-3oBQFl67_IPfoNmUYDMvEU_kjvZP6zR6v0BjfMeObTUsxhOUepqg"
 local HS = game:GetService("HttpService")
 local WS = game:GetService("Workspace")
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
 
 local function send(msg)
     pcall(function()
@@ -17,98 +15,37 @@ local function send(msg)
     end)
 end
 
-send("🔍 Phase 5: Debug Walk Test dimulai...")
+send("🔍 Phase 6: Deep Inspect Megalodon Hunt Model...")
 
 local propsFolder = WS:FindFirstChild("Props")
-if not propsFolder then
-    send("❌ Folder Props tidak ditemukan")
-    return
-end
+if not propsFolder then send("❌ Props tidak ditemukan"); return end
 
-send("✅ Folder Props ditemukan. Isi Props:")
-for _, child in ipairs(propsFolder:GetChildren()) do
-    send("  - " .. child.Name .. " (" .. child.ClassName .. ")")
-end
-
--- Cek model Megalodon Hunt
 local model = propsFolder:FindFirstChild("Megalodon Hunt")
-if not model then
-    send("❌ Model Megalodon Hunt TIDAK ditemukan di Props")
-    -- Coba cari di seluruh workspace
-    send("🔍 Mencari di seluruh Workspace...")
-    for _, obj in ipairs(WS:GetDescendants()) do
-        if obj.Name == "Megalodon Hunt" then
-            send("🎯 Ditemukan di: " .. obj:GetFullName() .. " (" .. obj.ClassName .. ")")
-        end
+if not model then send("❌ Model Megalodon Hunt tidak ditemukan"); return end
+
+send("📁 Model: " .. model.Name .. " (" .. model.ClassName .. ")")
+send("  Children: " .. #model:GetChildren() .. " anak")
+
+-- Cari semua anak dan turunannya
+for _, child in ipairs(model:GetDescendants()) do
+    if child:IsA("BasePart") then
+        send("  🧱 Part: " .. child.Name .. " | Posisi: " .. tostring(child.Position) .. " | Size: " .. tostring(child.Size))
     end
-    return
-end
-
-send("✅ Model Megalodon Hunt ditemukan! Class: " .. model.ClassName)
-
--- Cari PrimaryPart
-local primary = model.PrimaryPart
-if primary then
-    send("✅ PrimaryPart: " .. primary.Name .. " | Posisi: " .. tostring(primary.Position))
-else
-    send("⚠️ Tidak ada PrimaryPart. Mencari BasePart...")
-    local part = model:FindFirstChildOfClass("BasePart")
-    if part then
-        send("✅ BasePart ditemukan: " .. part.Name .. " | Posisi: " .. tostring(part.Position))
-    else
-        send("❌ Tidak ada BasePart di dalam model. Mencari semua descendants...")
-        for _, obj in ipairs(model:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                send("  🧱 " .. obj.Name .. " | Posisi: " .. tostring(obj.Position))
+    if child:IsA("BillboardGui") or child:IsA("SurfaceGui") then
+        local text = ""
+        for _, guiChild in ipairs(child:GetDescendants()) do
+            if guiChild:IsA("TextLabel") and guiChild.Text ~= "" then
+                text = text .. guiChild.Text .. " | "
             end
         end
+        send("  📝 GUI: " .. child.Name .. " | Text: " .. text:sub(1, 200))
     end
 end
 
--- Ambil posisi event
-local eventPos = nil
-local targetPart = model.PrimaryPart or model:FindFirstChildOfClass("BasePart") or model:FindFirstChildWhichIsA("BasePart")
-if targetPart then
-    eventPos = targetPart.Position
-    send("📍 Posisi event: " .. tostring(eventPos))
-else
-    -- Coba ambil dari part pertama
-    for _, obj in ipairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            eventPos = obj.Position
-            send("📍 Posisi event (dari descendant): " .. tostring(eventPos))
-            break
-        end
-    end
+-- Cari part bernama "Megalodon Hunt" langsung
+local targetPart = model:FindFirstChild("Megalodon Hunt")
+if targetPart and targetPart:IsA("BasePart") then
+    send("🎯 Target Part 'Megalodon Hunt': Posisi = " .. tostring(targetPart.Position))
 end
 
--- Jika posisi ditemukan, coba walk
-if eventPos then
-    local char = LP.Character
-    if not char then
-        send("❌ Karakter tidak ditemukan")
-        return
-    end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then
-        send("❌ HumanoidRootPart tidak ditemukan")
-        return
-    end
-
-    send("🚶 Memulai walk ke event...")
-    local targetCF = CFrame.new(eventPos + Vector3.new(0, 5, 0)) -- sedikit di atas air
-    
-    -- Walk sederhana tanpa noclip (hanya untuk test)
-    local distance = (targetCF.Position - root.Position).Magnitude
-    send("📏 Jarak: " .. string.format("%.0f", distance) .. " studs")
-    
-    -- Coba pindahkan langsung untuk test
-    pcall(function()
-        root.CFrame = targetCF
-    end)
-    send("✅ User dipindahkan ke posisi event! Cek apakah berhasil.")
-else
-    send("❌ Tidak bisa mendapatkan posisi event")
-end
-
-send("✅ Phase 5 selesai.")
+send("✅ Phase 6 selesai.")
