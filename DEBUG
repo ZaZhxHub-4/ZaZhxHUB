@@ -1,11 +1,11 @@
--- // ZHX Safe Walk v3.3 Final — Full Fix: Auto Equip Diving Gear + Tab UI + Save/Load + Damage Protect
--- // Remote hash finder, UI dua panel (kiri tab, kanan konten)
--- // Auto equip Advanced Diving Gear / Diving Gear, proteksi damage, noclip agresif
+-- // ZHX Safe Walk v3.4 Final — Tab UI + Save/Load Position + Stop Fix + Damage Protect
+-- // Tidak ada auto equip diving gear (user equip manual)
+-- // Walk to Location, Walk to Player, Saved Positions dengan input nama
+-- // Floating button kuning, panel tengah, arah hadap akurat
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 
 -- ========== DAFTAR LOKASI HARDCODED ==========
@@ -25,30 +25,6 @@ local locations = {
     ["Crystal Depths"] = CFrame.new(5735.092285, -901.842957, 15324.312500, -0.999445, -0.000000, -0.033315, -0.000000, 1.000000, -0.000000, 0.033315, 0.000000, -0.999445),
     ["Stingray Shores"] = CFrame.new(-2133.558594, 18.656778, -771.773926, 0.998903, -0.000000, 0.046831, 0.000000, 1.000000, 0.000000, -0.046831, -0.000000, 0.998903),
 }
-
--- ========== REMOTE HASH FINDER ==========
-local function findRemoteByLabel(label)
-    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
-    local children = net:GetChildren()
-    for i, child in ipairs(children) do
-        if child.Name == label then
-            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
-            if inside then
-                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
-                if h and #h == 64 then return inside end
-            end
-            local nxt = children[i+1]
-            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
-                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
-                if h and #h == 64 then return nxt end
-            end
-            break
-        end
-    end
-    return nil
-end
-
-local equipItemRE = findRemoteByLabel("RE/EquipItem")
 
 -- ========== STATE ==========
 local state = {
@@ -87,37 +63,6 @@ local function disableNoclip()
     end
 end
 
--- ========== AUTO EQUIP DIVING GEAR (UUID METHOD) ==========
-local function equipDivingGear()
-    if not equipItemRE then return end
-    local Replion = require(RS.Packages.Replion)
-    local PlayerData = Replion.Client:WaitReplion("Data")
-    local ItemUtility = require(RS.Shared.ItemUtility)
-    task.wait(1)
-
-    local targetUUID = nil
-    pcall(function()
-        local inv = PlayerData:Get("Inventory")
-        if inv and inv.Items then
-            for _, item in ipairs(inv.Items) do
-                local data = ItemUtility:GetItemData(item.Id)
-                if data and data.Data and data.Data.Type == "Gears" then
-                    if data.Data.Name == "Advanced Diving Gear" then
-                        targetUUID = item.UUID
-                        break
-                    elseif data.Data.Name == "Diving Gear" and not targetUUID then
-                        targetUUID = item.UUID
-                    end
-                end
-            end
-        end
-    end)
-
-    if targetUUID then
-        pcall(function() equipItemRE:FireServer(targetUUID) end)
-    end
-end
-
 -- ========== DAMAGE PROTECTION ==========
 local function protectCharacter()
     local char = LP.Character
@@ -150,7 +95,6 @@ local function safeWalk(targetCF)
     state.isWalking = true
     state.stopRequested = false
     enableNoclip()
-    equipDivingGear()
     protectCharacter()
 
     local startCF = root.CFrame
@@ -227,7 +171,7 @@ Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
 
 -- Main Panel
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHX_SafeWalk_v3.3_Final"
+mainGui.Name = "ZHX_SafeWalk_v3.4_Final"
 mainGui.ResetOnSpawn = false
 mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mainGui.Parent = pg
@@ -253,7 +197,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "📍 ZHX Safe Walk v3.3 Final"
+title.Text = "📍 ZHX Safe Walk v3.4 Final"
 title.TextColor3 = Color3.fromRGB(255, 200, 0)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -778,4 +722,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHX Safe Walk v3.3 Final siap. Auto equip diving gear, tab UI, save posisi dengan nama, stop fix.")
+print("ZHX Safe Walk v3.4 Final siap. Tab UI, save posisi dengan nama, stop fix, damage protect.")
