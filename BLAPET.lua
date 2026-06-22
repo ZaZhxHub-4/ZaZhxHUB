@@ -1,4 +1,4 @@
--- // ZHXHub Full Project v1.9 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
+-- // ZHXHub Full Project v2.0 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
 -- // Perbaikan: panggilan OFF awal + ON-OFF bergantian + MarkAuto digunakan
 
 local RS = game:GetService("ReplicatedStorage")
@@ -305,42 +305,44 @@ end
 -- Auto Event
 -- ========== RADAR AUTO EVENT (STRICT MEGALODON HUNT FINAL) ==========
 local function getEventPosition(eventName)
-    -- Ambil folder Props secara dinamis setiap kali fungsi dipanggil
     local propsFolder = WS:FindFirstChild("Props")
     if not propsFolder then return nil end
 
-    -- STRICT MATCH: Cari Model yang namanya persis 100% "Megalodon Hunt" (Abaikan "Dark Megalodon Hunt" dll)
     local eventModel = propsFolder:FindFirstChild(eventName)
-    if eventModel and eventModel:IsA("Model") then
-        -- Lapis 1: Cari part pijakan di dalamnya yang namanya sama persis (Berdasarkan log Anda)
-        local mainPart = eventModel:FindFirstChild(eventName)
-        if mainPart and mainPart:IsA("BasePart") then
-            return mainPart.Position + Vector3.new(0, 5, 0)
-        end
-        
-        -- Lapis 2: Cek WW_Part (Water Walk Part) khusus milik Megalodon ini
-        local wwPart = eventModel:FindFirstChild("WW_Part")
-        if wwPart and wwPart:IsA("BasePart") then
-            return wwPart.Position + Vector3.new(0, 5, 0)
-        end
-        
-        -- Lapis 3: Fallback darurat, cari part apa saja di dalam modelnya
-        for _, child in ipairs(eventModel:GetDescendants()) do
-            if child:IsA("BasePart") then
-                return child.Position + Vector3.new(0, 5, 0)
-            end
+    if not eventModel then return nil end
+
+    -- Lapis 1: Cari BasePart yang namanya sama persis dengan event
+    -- (Dari scan: "Megalodon Hunt" adalah BasePart di dalam Model > TOP)
+    for _, child in ipairs(eventModel:GetDescendants()) do
+        if child:IsA("BasePart") and child.Name == eventName then
+            return child.Position + Vector3.new(0, 5, 0)
         end
     end
+
+    -- Lapis 2: Cari RotationPoint sebagai fallback
+    for _, child in ipairs(eventModel:GetDescendants()) do
+        if child:IsA("BasePart") and child.Name == "RotationPoint" then
+            return child.Position + Vector3.new(0, 5, 0)
+        end
+    end
+
+    -- Lapis 3: BasePart apapun yang ada di dalam model
+    for _, child in ipairs(eventModel:GetDescendants()) do
+        if child:IsA("BasePart") then
+            return child.Position + Vector3.new(0, 5, 0)
+        end
+    end
+
     return nil
 end
 
 local function isEventActive(eventName)
     local propsFolder = WS:FindFirstChild("Props")
     if not propsFolder then return false end
-    -- Return true HANYA jika event dengan nama SAMA PERSIS ditemukan
     return propsFolder:FindFirstChild(eventName) ~= nil
 end
 -- ===============================================================
+
 local function getCurrentUserCFrame()
     local char = LP.Character; if not char then return nil end
     local root = char:FindFirstChild("HumanoidRootPart"); if not root then return nil end
@@ -649,7 +651,7 @@ floatBtn.MouseButton1Click:Connect(function() frame.Visible = not frame.Visible 
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,24); title.Position = UDim2.new(0,10,0,6)
-title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v1.9  ⚡"
+title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v2.0  ⚡"
 title.TextColor3 = Color3.fromRGB(72,210,130); title.TextSize = 13
 title.Font = Enum.Font.GothamBold; title.ZIndex = 101; title.Parent = frame
 
@@ -1068,4 +1070,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHXHub Full Project v1.9.")
+print("ZHXHub Full Project v2.0.")
