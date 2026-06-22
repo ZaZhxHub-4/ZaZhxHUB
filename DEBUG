@@ -123,7 +123,7 @@ local stroke=Instance.new("UIStroke",frame); stroke.Color=Color3.fromRGB(72,210,
 
 local hdr=Instance.new("TextLabel"); hdr.Size=UDim2.new(1,0,0,30)
 hdr.BackgroundColor3=Color3.fromRGB(18,22,30); hdr.BorderSizePixel=0
-hdr.Text="🔬 RF MONITOR"; hdr.TextColor3=Color3.fromRGB(72,210,130)
+hdr.Text="🔬 RF MONITOR PRO"; hdr.TextColor3=Color3.fromRGB(72,210,130)
 hdr.TextSize=12; hdr.Font=Enum.Font.GothamBold; hdr.ZIndex=2; hdr.Parent=frame
 Instance.new("UICorner",hdr).CornerRadius=UDim.new(0,8)
 
