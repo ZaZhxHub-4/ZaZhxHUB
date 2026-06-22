@@ -1,208 +1,114 @@
-local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+-- // ZHX Auto Event - Phase 5: Debug Walk Test
+-- // Cek setiap langkah, kirim log ke Discord
+
+local webhook = "https://discord.com/api/webhooks/1506044266684743801/PlopEC1wwOyfGQh-3oBQFl67_IPfoNmUYDMvEU_kjvZP6zR6v0BjfMeObTUsxhOUepqg"
+local HS = game:GetService("HttpService")
 local WS = game:GetService("Workspace")
+local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 
-local eventNames = {"Megalodon Hunt", "Dark Megalodon Hunt", "Thunderzilla Hunt"}
+local function send(msg)
+    pcall(function()
+        local body = HS:JSONEncode({content = msg:sub(1, 1900)})
+        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        end
+    end)
+end
+
+send("🔍 Phase 5: Debug Walk Test dimulai...")
+
 local propsFolder = WS:FindFirstChild("Props")
-
--- ========== SAFE WALK (COPY FROM V3.7) ==========
-local state = {
-isWalking = false,
-stopRequested = false,
-noclipConn = nil,
-speed = 0.03,
-}
-
-local function enableNoclip()
-if state.noclipConn then return end
-state.noclipConn = RunService.Stepped:Connect(function()
-local char = LP.Character
-if not char then return end
-for _, part in ipairs(char:GetDescendants()) do
-if part:IsA("BasePart") then pcall(function() part.CanCollide = false end) end
-end
-end)
-end
-local function disableNoclip()
-if state.noclipConn then state.noclipConn:Disconnect(); state.noclipConn = nil end
-end
-local function protectCharacter()
-local char = LP.Character
-if not char then return end
-local hum = char:FindFirstChildOfClass("Humanoid")
-if hum then pcall(function() hum.MaxHealth = 1e9; hum.Health = 1e9 end); hum.PlatformStand = true end
-end
-local function unprotectCharacter()
-local char = LP.Character
-if not char then return end
-local hum = char:FindFirstChildOfClass("Humanoid")
-if hum then pcall(function() hum.MaxHealth = 100; hum.Health = 100 end); hum.PlatformStand = false end
-end
-
-local function safeWalk(targetCF)
-if state.isWalking then return end
-local char = LP.Character
-if not char then return end
-local root = char:FindFirstChild("HumanoidRootPart")
-if not root then return end
-
-state.isWalking = true
-state.stopRequested = false
-enableNoclip()
-protectCharacter()
-
-local startCF = root.CFrame
-local distance = (targetCF.Position - startCF.Position).Magnitude
-local stepSize = 2.5
-local steps = math.max(1, math.ceil(distance / stepSize))
-
-for i = 1, steps do
-if state.stopRequested then break end
-local t = i / steps
-local newCF = startCF:Lerp(targetCF, t)
-pcall(function() root.CFrame = newCF; root.Velocity = Vector3.zero; root.RotVelocity = Vector3.zero end)
-task.wait(state.speed * (0.9 + math.random() * 0.2))
-end
-
-if not state.stopRequested then
-pcall(function() root.Anchored = true; root.CFrame = targetCF; task.wait(0.3); root.Anchored = false end)
-end
-
-unprotectCharacter()
-disableNoclip()
-state.isWalking = false
-state.stopRequested = false
-end
-
-local function stopWalking()
-state.stopRequested = true
-disableNoclip()
-unprotectCharacter()
-end
-
--- ========== UI ==========
-local pg = LP:WaitForChild("PlayerGui")
-local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_EventTest"
-sg.ResetOnSpawn = false
-sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-sg.Parent = pg
-pcall(function() sg.DisplayOrder = 99999 end)
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 250, 0, 250)
-frame.Position = UDim2.new(0.5, -125, 0.5, -125)
-frame.BackgroundColor3 = Color3.fromRGB(15,15,20)
-frame.BackgroundTransparency = 0.1
-frame.BorderSizePixel = 0
-frame.ZIndex = 9998
-frame.Parent = sg
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
-Instance.new("UIStroke", frame).Color = Color3.fromRGB(255,200,0)
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1,0,0,24)
-title.Position = UDim2.new(0,10,0,4)
-title.BackgroundTransparency = 1
-title.Text = "🧪 Event Walk Test"
-title.TextColor3 = Color3.fromRGB(255,200,0)
-title.TextSize = 13
-title.Font = Enum.Font.GothamBold
-title.ZIndex = 101
-title.Parent = frame
-
--- Status
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1,-10,0,20)
-statusLabel.Position = UDim2.new(0,5,0,34)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: ..."
-statusLabel.TextColor3 = Color3.fromRGB(200,200,200)
-statusLabel.TextSize = 11
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.ZIndex = 101
-statusLabel.Parent = frame
-
--- Tombol untuk setiap event
-local btnY = 58
-for _, eventName in ipairs(eventNames) do
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(1,-20,0,30)
-btn.Position = UDim2.new(0,10,0, btnY)
-btn.BackgroundColor3 = Color3.fromRGB(30,30,35)
-btn.BorderSizePixel = 0
-btn.Text = eventName
-btn.TextColor3 = Color3.fromRGB(200,220,200)
-btn.TextSize = 12
-btn.Font = Enum.Font.GothamBold
-btn.ZIndex = 101
-btn.AutoButtonColor = false
-btn.Parent = frame
-Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
-
-btn.MouseButton1Click:Connect(function()
 if not propsFolder then
-statusLabel.Text = "Props folder not found"
-return
+    send("❌ Folder Props tidak ditemukan")
+    return
 end
-local model = propsFolder:FindFirstChild(eventName)
+
+send("✅ Folder Props ditemukan. Isi Props:")
+for _, child in ipairs(propsFolder:GetChildren()) do
+    send("  - " .. child.Name .. " (" .. child.ClassName .. ")")
+end
+
+-- Cek model Megalodon Hunt
+local model = propsFolder:FindFirstChild("Megalodon Hunt")
 if not model then
-statusLabel.Text = "Event " .. eventName .. " tidak aktif"
-return
+    send("❌ Model Megalodon Hunt TIDAK ditemukan di Props")
+    -- Coba cari di seluruh workspace
+    send("🔍 Mencari di seluruh Workspace...")
+    for _, obj in ipairs(WS:GetDescendants()) do
+        if obj.Name == "Megalodon Hunt" then
+            send("🎯 Ditemukan di: " .. obj:GetFullName() .. " (" .. obj.ClassName .. ")")
+        end
+    end
+    return
 end
+
+send("✅ Model Megalodon Hunt ditemukan! Class: " .. model.ClassName)
+
+-- Cari PrimaryPart
 local primary = model.PrimaryPart
-if not primary then
--- coba cari part pertama
-for _, obj in ipairs(model:GetDescendants()) do
-if obj:IsA("BasePart") then
-primary = obj
-break
-end
-end
-end
-if not primary then
-statusLabel.Text = "Tidak bisa dapat posisi event"
-return
-end
-local pos = primary.Position
-statusLabel.Text = "Walk ke " .. eventName .. " (" .. tostring(pos) .. ")"
-safeWalk(CFrame.new(pos))
-end)
-
-btnY = btnY + 36
+if primary then
+    send("✅ PrimaryPart: " .. primary.Name .. " | Posisi: " .. tostring(primary.Position))
+else
+    send("⚠️ Tidak ada PrimaryPart. Mencari BasePart...")
+    local part = model:FindFirstChildOfClass("BasePart")
+    if part then
+        send("✅ BasePart ditemukan: " .. part.Name .. " | Posisi: " .. tostring(part.Position))
+    else
+        send("❌ Tidak ada BasePart di dalam model. Mencari semua descendants...")
+        for _, obj in ipairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                send("  🧱 " .. obj.Name .. " | Posisi: " .. tostring(obj.Position))
+            end
+        end
+    end
 end
 
--- Tombol Stop
-local stopBtn = Instance.new("TextButton")
-stopBtn.Size = UDim2.new(1,-20,0,30)
-stopBtn.Position = UDim2.new(0,10,0, btnY+10)
-stopBtn.BackgroundColor3 = Color3.fromRGB(60,20,20)
-stopBtn.BorderSizePixel = 0
-stopBtn.Text = "⏹ Stop"
-stopBtn.TextColor3 = Color3.fromRGB(255,100,100)
-stopBtn.TextSize = 12
-stopBtn.Font = Enum.Font.GothamBold
-stopBtn.ZIndex = 101
-stopBtn.AutoButtonColor = false
-stopBtn.Parent = frame
-Instance.new("UICorner", stopBtn).CornerRadius = UDim.new(0,5)
-stopBtn.MouseButton1Click:Connect(stopWalking)
-
--- Drag
-local dragging, dragStart, startPos = false, nil, nil
-frame.InputBegan:Connect(function(inp)
-if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-dragging = true; dragStart = inp.Position; startPos = frame.Position
+-- Ambil posisi event
+local eventPos = nil
+local targetPart = model.PrimaryPart or model:FindFirstChildOfClass("BasePart") or model:FindFirstChildWhichIsA("BasePart")
+if targetPart then
+    eventPos = targetPart.Position
+    send("📍 Posisi event: " .. tostring(eventPos))
+else
+    -- Coba ambil dari part pertama
+    for _, obj in ipairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            eventPos = obj.Position
+            send("📍 Posisi event (dari descendant): " .. tostring(eventPos))
+            break
+        end
+    end
 end
-end)
-UIS.InputChanged:Connect(function(inp)
-if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-local delta = inp.Position - dragStart
-frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
-end)
-UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("Event Walk Test siap. Klik nama event untuk test walk.")
+-- Jika posisi ditemukan, coba walk
+if eventPos then
+    local char = LP.Character
+    if not char then
+        send("❌ Karakter tidak ditemukan")
+        return
+    end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then
+        send("❌ HumanoidRootPart tidak ditemukan")
+        return
+    end
+
+    send("🚶 Memulai walk ke event...")
+    local targetCF = CFrame.new(eventPos + Vector3.new(0, 5, 0)) -- sedikit di atas air
+    
+    -- Walk sederhana tanpa noclip (hanya untuk test)
+    local distance = (targetCF.Position - root.Position).Magnitude
+    send("📏 Jarak: " .. string.format("%.0f", distance) .. " studs")
+    
+    -- Coba pindahkan langsung untuk test
+    pcall(function()
+        root.CFrame = targetCF
+    end)
+    send("✅ User dipindahkan ke posisi event! Cek apakah berhasil.")
+else
+    send("❌ Tidak bisa mendapatkan posisi event")
+end
+
+send("✅ Phase 5 selesai.")
