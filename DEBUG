@@ -1,6 +1,6 @@
--- // ZHX Auto Event - Phase 11: Walk, Lock & Safe Return Test
--- // Menggunakan fungsi safeWalk yang sama seperti di Safe Walk utama
--- // Saat kembali, interpolasi CFrame + anchored di akhir, tidak jatuh
+-- // ZHX Safe Walk v4.0 — Auto Event Hunter (Megalodon Hunt)
+-- // Tab ke-4: Auto Event — Monitor & Auto Walk ke Megalodon Hunt
+-- // Fitur: Toggle ON/OFF, monitor otomatis, walk ke event + offset Y, lock, kembali
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -8,15 +8,95 @@ local RunService = game:GetService("RunService")
 local WS = game:GetService("Workspace")
 local LP = Players.LocalPlayer
 
+-- ========== DAFTAR LOKASI HARDCODED ==========
+local locations = {
+    ["Fisherman Island"] = CFrame.new(258.659760, 18.206026, 2899.733154, 0.255222, 0.000000, 0.966882, -0.000000, 1.000000, -0.000000, -0.966882, -0.000000, 0.255222),
+    ["Kohana"] = CFrame.new(-748.334473, 2.744811, 759.022461, 0.015873, 0.000000, 0.999874, 0.000000, 1.000000, -0.000000, -0.999874, 0.000000, 0.015873),
+    ["Ocean"] = CFrame.new(122, 5, 2550, 0.669631, -0.637290, 0.381387, 0, 0.513518, 0.858079, -0.742694, -0.574596, 0.343867),
+    ["Treasure Room"] = CFrame.new(-3556.727295, -266.274231, -1600.418823, 0.685607, 0.000000, -0.727972, -0.000000, 1.000000, 0.000000, 0.727972, 0.000000, 0.685607),
+    ["Coral Reefs"] = CFrame.new(-2762.703857, 4.010764, 2174.476562, -0.679231, -0.000000, -0.733925, -0.000000, 1.000000, -0.000000, 0.733925, -0.000000, -0.679231),
+    ["Crater Island"] = CFrame.new(978.970764, 47.517365, 5086.510254, -0.574029, -0.000000, -0.818835, -0.000000, 1.000000, -0.000000, 0.818835, -0.000000, -0.574029),
+    ["Copper Canyon"] = CFrame.new(-4179.353027, 8.227109, 500.384735, 0.990358, -0.000000, -0.138529, 0.000000, 1.000000, 0.000000, 0.138529, -0.000000, 0.990358),
+    ["Canyon Mines"] = CFrame.new(-4039.090332, -538.592163, 551.931458, 0.754494, -0.000000, -0.656307, 0.000000, 1.000000, -0.000000, 0.656307, -0.000000, 0.754494),
+    ["Lava Basin"] = CFrame.new(950.205383, 84.801346, -10198.104492, -0.018971, -0.000000, -0.999820, 0.000000, 1.000000, -0.000000, 0.999820, -0.000000, -0.018971),
+    ["Underwater City"] = CFrame.new(-3307.890137, -640.492737, -10507.622070, 0.055548, -0.000000, -0.998456, 0.000000, 1.000000, -0.000000, 0.998456, -0.000000, 0.055548),
+    ["Pirate Cove"] = CFrame.new(3409.220459, 4.192971, 3499.211670, 0.663150, -0.000000, 0.748486, 0.000000, 1.000000, 0.000000, -0.748486, -0.000000, 0.663150),
+    ["Ancient Ruin"] = CFrame.new(6085.055176, -585.924255, 4635.187500, -0.711615, 0.000000, -0.702570, 0.000000, 1.000000, 0.000000, 0.702570, -0.000000, -0.711615),
+    ["Crystal Depths"] = CFrame.new(5735.092285, -901.842957, 15324.312500, -0.999445, -0.000000, -0.033315, -0.000000, 1.000000, -0.000000, 0.033315, 0.000000, -0.999445),
+    ["Stingray Shores"] = CFrame.new(-2133.558594, 18.656778, -771.773926, 0.998903, -0.000000, 0.046831, 0.000000, 1.000000, 0.000000, -0.046831, -0.000000, 0.998903),
+}
+
 -- ========== STATE ==========
-local savedPosition = nil
-local isLocked = false
+local state = {
+    isWalking = false,
+    stopRequested = false,
+    noclipConn = nil,
+    speed = 0.03,
+    savedPositions = {},
+    selectedSavedIndex = nil,
+    selectedLocation = nil,
+    selectedLocBtn = nil,
+    selectedPlayer = nil,
+    selectedPlayerBtn = nil,
+    selectedSavedBtn = nil,
+    saveName = "",
+    -- Auto Event
+    autoEventActive = false,
+    selectedEvent = "Megalodon Hunt",
+    eventMonitorThread = nil,
+    savedUserPosition = nil,
+    isAtEvent = false,
+    eventPosition = nil,
+}
+
+-- ========== SAVE / LOAD CONFIG ==========
+local CONFIG_FOLDER = "ZHX_Configs"
+local CONFIG_FILE   = CONFIG_FOLDER .. "/SafeWalkSavedPositions.json"
+
+local function ensureFolder()
+    if not isfolder or not makefolder then return false end
+    if not isfolder(CONFIG_FOLDER) then
+        pcall(function() makefolder(CONFIG_FOLDER) end)
+    end
+    return isfolder(CONFIG_FOLDER)
+end
+
+local function saveSavedPositions()
+    if not writefile or not ensureFolder() then return end
+    local data = {}
+    for _, saved in ipairs(state.savedPositions) do
+        local cf = saved.cf
+        table.insert(data, {
+            name = saved.name,
+            x = cf.X, y = cf.Y, z = cf.Z,
+            r00 = cf.RightVector.X, r01 = cf.RightVector.Y, r02 = cf.RightVector.Z,
+            r10 = cf.UpVector.X, r11 = cf.UpVector.Y, r12 = cf.UpVector.Z,
+            r20 = -cf.LookVector.X, r21 = -cf.LookVector.Y, r22 = -cf.LookVector.Z,
+        })
+    end
+    pcall(function()
+        writefile(CONFIG_FILE, game:GetService("HttpService"):JSONEncode(data))
+    end)
+end
+
+local function loadSavedPositions()
+    if not readfile or not isfile or not isfile(CONFIG_FILE) then return end
+    pcall(function()
+        local data = game:GetService("HttpService"):JSONDecode(readfile(CONFIG_FILE))
+        state.savedPositions = {}
+        for _, item in ipairs(data) do
+            table.insert(state.savedPositions, {
+                name = item.name,
+                cf = CFrame.new(item.x, item.y, item.z, item.r00, item.r01, item.r02, item.r10, item.r11, item.r12, item.r20, item.r21, item.r22)
+            })
+        end
+    end)
+end
 
 -- ========== NOKLIP AGRESIF ==========
-local noclipConn = nil
 local function enableNoclip()
-    if noclipConn then return end
-    noclipConn = RunService.Stepped:Connect(function()
+    if state.noclipConn then return end
+    state.noclipConn = RunService.Stepped:Connect(function()
         local char = LP.Character
         if not char then return end
         for _, part in ipairs(char:GetDescendants()) do
@@ -26,10 +106,11 @@ local function enableNoclip()
         end
     end)
 end
+
 local function disableNoclip()
-    if noclipConn then
-        noclipConn:Disconnect()
-        noclipConn = nil
+    if state.noclipConn then
+        state.noclipConn:Disconnect()
+        state.noclipConn = nil
     end
 end
 
@@ -43,6 +124,7 @@ local function protectCharacter()
         hum.PlatformStand = true
     end
 end
+
 local function unprotectCharacter()
     local char = LP.Character
     if not char then return end
@@ -53,13 +135,16 @@ local function unprotectCharacter()
     end
 end
 
--- ========== SAFE WALK (FULL INTERPOLASI + ANCHORED DI AKHIR) ==========
+-- ========== SMOOTH WALK ==========
 local function safeWalk(targetCF)
+    if state.isWalking then return end
     local char = LP.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
+    state.isWalking = true
+    state.stopRequested = false
     enableNoclip()
     protectCharacter()
 
@@ -69,6 +154,7 @@ local function safeWalk(targetCF)
     local steps = math.max(1, math.ceil(distance / stepSize))
 
     for i = 1, steps do
+        if state.stopRequested then break end
         local t = i / steps
         local newCF = startCF:Lerp(targetCF, t)
         pcall(function()
@@ -76,26 +162,42 @@ local function safeWalk(targetCF)
             root.Velocity = Vector3.zero
             root.RotVelocity = Vector3.zero
         end)
-        task.wait(0.03 * (0.9 + math.random() * 0.2))
+        task.wait(state.speed * (0.9 + math.random() * 0.2))
     end
 
-    -- Anchored di akhir agar tidak jatuh
-    pcall(function()
-        root.Anchored = true
-        root.CFrame = targetCF
-        root.Velocity = Vector3.zero
-        root.RotVelocity = Vector3.zero
-        task.wait(0.5) -- beri waktu agar stabil
-        root.Anchored = false
-    end)
+    if not state.stopRequested then
+        pcall(function()
+            root.Anchored = true
+            root.CFrame = targetCF
+            task.wait(0.3)
+            root.Anchored = false
+        end)
+    end
 
     unprotectCharacter()
     disableNoclip()
+    state.isWalking = false
+    state.stopRequested = false
 end
 
--- ========== FUNGSI CARI MODEL EVENT ==========
+local function stopWalking()
+    state.stopRequested = true
+    state.isWalking = false
+    disableNoclip()
+    unprotectCharacter()
+end
+
+LP.CharacterAdded:Connect(function()
+    state.isWalking = false
+    state.stopRequested = false
+    disableNoclip()
+    unprotectCharacter()
+end)
+
+-- ========== AUTO EVENT FUNCTIONS ==========
+local propsFolder = WS:FindFirstChild("Props")
+
 local function findEventModel(eventName)
-    local propsFolder = WS:FindFirstChild("Props")
     if not propsFolder then return nil end
     for _, child in ipairs(propsFolder:GetChildren()) do
         if child.Name == eventName and child:IsA("Model") then
@@ -105,163 +207,752 @@ local function findEventModel(eventName)
     return nil
 end
 
--- ========== FUNGSI DAPATKAN POSISI EVENT ==========
-local function getEventPosition(model)
+local function getEventPosition(eventName)
+    local model = findEventModel(eventName)
     if not model then return nil end
+    
+    -- Cari part dengan nama yang sama
     for _, child in ipairs(model:GetDescendants()) do
-        if child.Name == model.Name and child:IsA("BasePart") then
-            return child.Position
+        if child.Name == eventName and child:IsA("BasePart") then
+            -- Naikkan sedikit ke atas agar tidak terendam air
+            return child.Position + Vector3.new(0, 5, 0)
         end
     end
+    -- Fallback: part pertama
     for _, child in ipairs(model:GetDescendants()) do
         if child:IsA("BasePart") then
-            return child.Position
+            return child.Position + Vector3.new(0, 5, 0)
         end
     end
     return nil
 end
 
--- ========== SIMPAN POSISI SAAT INI ==========
-local function saveCurrentPosition()
-    local char = LP.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    savedPosition = root.CFrame
+local function isEventActive(eventName)
+    return findEventModel(eventName) ~= nil
 end
 
--- ========== LOCK USER ==========
-local function lockUser()
+local function getCurrentUserCFrame()
+    local char = LP.Character
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    return root.CFrame
+end
+
+local function lockUserAtPosition(pos)
     local char = LP.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
     if not root then return end
+    
+    protectCharacter()
     root.Anchored = true
-    isLocked = true
+    if hum then hum.PlatformStand = true end
+    state.isAtEvent = true
 end
 
--- ========== UNLOCK USER ==========
 local function unlockUser()
     local char = LP.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
+    
     root.Anchored = false
-    isLocked = false
+    unprotectCharacter()
+    state.isAtEvent = false
 end
+
+local function startAutoEvent()
+    if state.autoEventActive then return end
+    state.autoEventActive = true
+    state.savedUserPosition = getCurrentUserCFrame()
+    
+    state.eventMonitorThread = task.spawn(function()
+        while state.autoEventActive do
+            -- Jika sedang di event, monitor apakah event masih ada
+            if state.isAtEvent then
+                if not isEventActive(state.selectedEvent) then
+                    -- Event selesai, kembali ke posisi semula
+                    unlockUser()
+                    if state.savedUserPosition then
+                        safeWalk(state.savedUserPosition)
+                        state.savedUserPosition = nil
+                    end
+                end
+            else
+                -- Monitor apakah event muncul
+                if isEventActive(state.selectedEvent) then
+                    local pos = getEventPosition(state.selectedEvent)
+                    if pos then
+                        -- Simpan posisi user jika belum
+                        if not state.savedUserPosition then
+                            state.savedUserPosition = getCurrentUserCFrame()
+                        end
+                        -- Walk ke event
+                        safeWalk(CFrame.new(pos))
+                        task.wait(1) -- tunggu sebentar sampai walk selesai
+                        lockUserAtPosition(pos)
+                    end
+                end
+            end
+            task.wait(3 + math.random() * 2) -- 3-5 detik
+        end
+        -- Cleanup saat off
+        if state.isAtEvent then
+            unlockUser()
+            if state.savedUserPosition then
+                safeWalk(state.savedUserPosition)
+                state.savedUserPosition = nil
+            end
+        end
+    end)
+end
+
+local function stopAutoEvent()
+    state.autoEventActive = false
+    if state.eventMonitorThread then
+        task.cancel(state.eventMonitorThread)
+        state.eventMonitorThread = nil
+    end
+end
+
+-- ========== LOAD CONFIG SAAT STARTUP ==========
+loadSavedPositions()
 
 -- ========== UI ==========
 local pg = LP:WaitForChild("PlayerGui")
-local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_EventLockTest_v11"
-sg.ResetOnSpawn = false
-sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-sg.Parent = pg
-pcall(function() sg.DisplayOrder = 99999 end)
+
+-- Floating Button (kuning)
+local floatingGui = Instance.new("ScreenGui")
+floatingGui.Name = "ZHX_FloatBtn"
+floatingGui.ResetOnSpawn = false
+floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+floatingGui.Parent = pg
+pcall(function() floatingGui.DisplayOrder = 99999 end)
+
+local floatBtn = Instance.new("ImageButton")
+floatBtn.Size = UDim2.new(0, 46, 0, 46)
+floatBtn.Position = UDim2.new(0, 12, 0, 100)
+floatBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
+floatBtn.BorderSizePixel = 0
+floatBtn.Image = "rbxassetid://78392602281326"
+floatBtn.ScaleType = Enum.ScaleType.Fit
+floatBtn.ZIndex = 9999
+floatBtn.Parent = floatingGui
+Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 10)
+Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
+
+-- Main Panel
+local mainGui = Instance.new("ScreenGui")
+mainGui.Name = "ZHX_SafeWalk_v4.0"
+mainGui.ResetOnSpawn = false
+mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+mainGui.Parent = pg
+pcall(function() mainGui.DisplayOrder = 99999 end)
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 150)
-frame.Position = UDim2.new(0.5, -110, 0.5, -75)
-frame.BackgroundColor3 = Color3.fromRGB(15,15,20)
+frame.Size = UDim2.new(0, 420, 0, 330)
+frame.Position = UDim2.new(0.5, -210, 0.5, -165)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
 frame.ZIndex = 9998
-frame.Parent = sg
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
-Instance.new("UIStroke", frame).Color = Color3.fromRGB(255,100,0)
+frame.Visible = false
+frame.Parent = mainGui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", frame).Color = Color3.fromRGB(255, 200, 0)
+
+floatBtn.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
+end)
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1,0,0,22)
-title.Position = UDim2.new(0,10,0,4)
+title.Size = UDim2.new(1, 0, 0, 24)
+title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "🔒 Walk & Lock v11"
-title.TextColor3 = Color3.fromRGB(255,100,0)
-title.TextSize = 12
+title.Text = "📍 ZHX Safe Walk v4.0"
+title.TextColor3 = Color3.fromRGB(255, 200, 0)
+title.TextSize = 13
 title.Font = Enum.Font.GothamBold
 title.ZIndex = 101
 title.Parent = frame
 
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1,-20,0,20)
-statusLabel.Position = UDim2.new(0,10,1,-28)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Tekan Walk & Lock"
-statusLabel.TextColor3 = Color3.fromRGB(200,200,200)
-statusLabel.TextSize = 10
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.ZIndex = 101
-statusLabel.Parent = frame
+-- ========== TAB BUTTONS (KIRI) ==========
+local tabFrame = Instance.new("Frame")
+tabFrame.Size = UDim2.new(0, 100, 1, -40)
+tabFrame.Position = UDim2.new(0, 8, 0, 34)
+tabFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+tabFrame.BorderSizePixel = 0
+tabFrame.ZIndex = 100
+tabFrame.Parent = frame
+Instance.new("UICorner", tabFrame).CornerRadius = UDim.new(0, 6)
 
--- Tombol Walk & Lock
-local walkLockBtn = Instance.new("TextButton")
-walkLockBtn.Size = UDim2.new(1,-20,0,30)
-walkLockBtn.Position = UDim2.new(0,10,0,30)
-walkLockBtn.BackgroundColor3 = Color3.fromRGB(40,40,20)
-walkLockBtn.BorderSizePixel = 0
-walkLockBtn.Text = "🔒 Walk & Lock to Event"
-walkLockBtn.TextColor3 = Color3.fromRGB(255,255,255)
-walkLockBtn.TextSize = 11
-walkLockBtn.Font = Enum.Font.GothamBold
-walkLockBtn.ZIndex = 101
-walkLockBtn.AutoButtonColor = false
-walkLockBtn.Parent = frame
-Instance.new("UICorner", walkLockBtn).CornerRadius = UDim.new(0,5)
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+tabLayout.Padding = UDim.new(0, 4)
+tabLayout.Parent = tabFrame
 
--- Tombol Unlock & Safe Return
-local unlockReturnBtn = Instance.new("TextButton")
-unlockReturnBtn.Size = UDim2.new(1,-20,0,30)
-unlockReturnBtn.Position = UDim2.new(0,10,0,68)
-unlockReturnBtn.BackgroundColor3 = Color3.fromRGB(60,30,30)
-unlockReturnBtn.BorderSizePixel = 0
-unlockReturnBtn.Text = "🔓 Unlock & Safe Return"
-unlockReturnBtn.TextColor3 = Color3.fromRGB(255,150,150)
-unlockReturnBtn.TextSize = 11
-unlockReturnBtn.Font = Enum.Font.GothamBold
-unlockReturnBtn.ZIndex = 101
-unlockReturnBtn.AutoButtonColor = false
-unlockReturnBtn.Parent = frame
-Instance.new("UICorner", unlockReturnBtn).CornerRadius = UDim.new(0,5)
+-- ========== KONTEN (KANAN) ==========
+local contentFrame = Instance.new("Frame")
+contentFrame.Size = UDim2.new(1, -116, 1, -40)
+contentFrame.Position = UDim2.new(0, 112, 0, 34)
+contentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+contentFrame.BorderSizePixel = 0
+contentFrame.ZIndex = 100
+contentFrame.Parent = frame
+Instance.new("UICorner", contentFrame).CornerRadius = UDim.new(0, 6)
 
--- Fungsi tombol
-walkLockBtn.MouseButton1Click:Connect(function()
-    saveCurrentPosition()
-    statusLabel.Text = "Mencari event..."
-    
-    local model = findEventModel("Megalodon Hunt")
-    if model then
-        local pos = getEventPosition(model)
-        if pos then
-            statusLabel.Text = "Berjalan ke event..."
-            -- Walk ke event (hanya posisi)
-            safeWalk(CFrame.new(pos))
-            lockUser()
-            statusLabel.Text = "Terkunci di lokasi event!"
-        else
-            statusLabel.Text = "Posisi tidak ditemukan"
+-- ========== FUNGSI PEMBUAT TAB ==========
+local function createTabButton(name, buildContent)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -8, 0, 30)
+    btn.Position = UDim2.new(0, 4, 0, 4)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    btn.BorderSizePixel = 0
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    btn.TextSize = 12
+    btn.Font = Enum.Font.GothamBold
+    btn.ZIndex = 101
+    btn.AutoButtonColor = false
+    btn.Parent = tabFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+
+    btn.MouseButton1Click:Connect(function()
+        for _, child in ipairs(tabFrame:GetChildren()) do
+            if child:IsA("TextButton") then
+                child.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+            end
         end
-    else
-        statusLabel.Text = "Event tidak ditemukan"
+        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
+        for _, child in ipairs(contentFrame:GetChildren()) do
+            child:Destroy()
+        end
+        local newContent = buildContent()
+        newContent.Parent = contentFrame
+    end)
+
+    return btn
+end
+
+-- ========== BUILD TAB 1: WALK TO LOCATION ==========
+local function buildTab1()
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, 0, 1, 0)
+    content.BackgroundTransparency = 1
+    content.ZIndex = 101
+
+    local locScroll = Instance.new("ScrollingFrame")
+    locScroll.Size = UDim2.new(1, -10, 1, -40)
+    locScroll.Position = UDim2.new(0, 5, 0, 4)
+    locScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    locScroll.BorderSizePixel = 0
+    locScroll.ScrollBarThickness = 4
+    locScroll.ScrollBarImageColor3 = Color3.fromRGB(255, 200, 0)
+    locScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    locScroll.ZIndex = 102
+    locScroll.Parent = content
+
+    local locLayout = Instance.new("UIListLayout")
+    locLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    locLayout.Padding = UDim.new(0, 2)
+    locLayout.Parent = locScroll
+
+    local btnFrame = Instance.new("Frame")
+    btnFrame.Size = UDim2.new(1, -10, 0, 30)
+    btnFrame.Position = UDim2.new(0, 5, 1, -35)
+    btnFrame.BackgroundTransparency = 1
+    btnFrame.ZIndex = 101
+    btnFrame.Parent = content
+
+    local locGoBtn = Instance.new("TextButton")
+    locGoBtn.Size = UDim2.new(0, 70, 0, 28)
+    locGoBtn.Position = UDim2.new(0, 0, 0, 0)
+    locGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
+    locGoBtn.BorderSizePixel = 0
+    locGoBtn.Text = "▶ Go"
+    locGoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    locGoBtn.TextSize = 11
+    locGoBtn.Font = Enum.Font.GothamBold
+    locGoBtn.ZIndex = 101
+    locGoBtn.AutoButtonColor = false
+    locGoBtn.Parent = btnFrame
+    Instance.new("UICorner", locGoBtn).CornerRadius = UDim.new(0, 5)
+
+    local locStopBtn = Instance.new("TextButton")
+    locStopBtn.Size = UDim2.new(0, 40, 0, 28)
+    locStopBtn.Position = UDim2.new(0, 75, 0, 0)
+    locStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    locStopBtn.BorderSizePixel = 0
+    locStopBtn.Text = "⏹"
+    locStopBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    locStopBtn.TextSize = 14
+    locStopBtn.Font = Enum.Font.GothamBold
+    locStopBtn.ZIndex = 101
+    locStopBtn.AutoButtonColor = false
+    locStopBtn.Parent = btnFrame
+    Instance.new("UICorner", locStopBtn).CornerRadius = UDim.new(0, 5)
+
+    locStopBtn.MouseButton1Click:Connect(stopWalking)
+
+    local selectedLocBtn = nil
+    local selectedLocation = nil
+    local totalLocH = 0
+    for name, cf in pairs(locations) do
+        totalLocH = totalLocH + 30
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -4, 0, 28)
+        btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+        btn.BorderSizePixel = 0
+        btn.Text = name
+        btn.TextColor3 = Color3.fromRGB(200, 220, 200)
+        btn.TextSize = 11
+        btn.Font = Enum.Font.Gotham
+        btn.TextXAlignment = Enum.TextXAlignment.Left
+        btn.ZIndex = 103
+        btn.AutoButtonColor = false
+        btn.Parent = locScroll
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+        btn.MouseEnter:Connect(function() if btn ~= selectedLocBtn then btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60) end end)
+        btn.MouseLeave:Connect(function() if btn ~= selectedLocBtn then btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end end)
+        btn.MouseButton1Click:Connect(function()
+            if selectedLocBtn then selectedLocBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end
+            selectedLocBtn = btn
+            btn.BackgroundColor3 = Color3.fromRGB(20, 80, 20)
+            selectedLocation = cf
+        end)
+    end
+    locScroll.CanvasSize = UDim2.new(0, 0, 0, totalLocH + 8)
+
+    locGoBtn.MouseButton1Click:Connect(function()
+        if selectedLocation then
+            safeWalk(selectedLocation)
+        end
+    end)
+
+    return content
+end
+
+-- ========== BUILD TAB 2: WALK TO PLAYER ==========
+local function buildTab2()
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, 0, 1, 0)
+    content.BackgroundTransparency = 1
+    content.ZIndex = 101
+
+    local playerScroll = Instance.new("ScrollingFrame")
+    playerScroll.Size = UDim2.new(1, -10, 1, -40)
+    playerScroll.Position = UDim2.new(0, 5, 0, 4)
+    playerScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    playerScroll.BorderSizePixel = 0
+    playerScroll.ScrollBarThickness = 4
+    playerScroll.ScrollBarImageColor3 = Color3.fromRGB(255, 200, 0)
+    playerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    playerScroll.ZIndex = 102
+    playerScroll.Parent = content
+
+    local playerLayout = Instance.new("UIListLayout")
+    playerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    playerLayout.Padding = UDim.new(0, 2)
+    playerLayout.Parent = playerScroll
+
+    local btnFrame = Instance.new("Frame")
+    btnFrame.Size = UDim2.new(1, -10, 0, 30)
+    btnFrame.Position = UDim2.new(0, 5, 1, -35)
+    btnFrame.BackgroundTransparency = 1
+    btnFrame.ZIndex = 101
+    btnFrame.Parent = content
+
+    local refreshBtn = Instance.new("TextButton")
+    refreshBtn.Size = UDim2.new(0, 70, 0, 28)
+    refreshBtn.Position = UDim2.new(0, 0, 0, 0)
+    refreshBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    refreshBtn.BorderSizePixel = 0
+    refreshBtn.Text = "🔄 Refresh"
+    refreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    refreshBtn.TextSize = 10
+    refreshBtn.Font = Enum.Font.GothamBold
+    refreshBtn.ZIndex = 101
+    refreshBtn.AutoButtonColor = false
+    refreshBtn.Parent = btnFrame
+    Instance.new("UICorner", refreshBtn).CornerRadius = UDim.new(0, 5)
+
+    local playerGoBtn = Instance.new("TextButton")
+    playerGoBtn.Size = UDim2.new(0, 70, 0, 28)
+    playerGoBtn.Position = UDim2.new(0, 75, 0, 0)
+    playerGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
+    playerGoBtn.BorderSizePixel = 0
+    playerGoBtn.Text = "▶ Go"
+    playerGoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    playerGoBtn.TextSize = 11
+    playerGoBtn.Font = Enum.Font.GothamBold
+    playerGoBtn.ZIndex = 101
+    playerGoBtn.AutoButtonColor = false
+    playerGoBtn.Parent = btnFrame
+    Instance.new("UICorner", playerGoBtn).CornerRadius = UDim.new(0, 5)
+
+    local playerStopBtn = Instance.new("TextButton")
+    playerStopBtn.Size = UDim2.new(0, 40, 0, 28)
+    playerStopBtn.Position = UDim2.new(0, 150, 0, 0)
+    playerStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    playerStopBtn.BorderSizePixel = 0
+    playerStopBtn.Text = "⏹"
+    playerStopBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    playerStopBtn.TextSize = 14
+    playerStopBtn.Font = Enum.Font.GothamBold
+    playerStopBtn.ZIndex = 101
+    playerStopBtn.AutoButtonColor = false
+    playerStopBtn.Parent = btnFrame
+    Instance.new("UICorner", playerStopBtn).CornerRadius = UDim.new(0, 5)
+
+    playerStopBtn.MouseButton1Click:Connect(stopWalking)
+
+    local selectedPlayerBtn = nil
+    local selectedPlayer = nil
+
+    local function refreshPlayerList()
+        for _, child in ipairs(playerScroll:GetChildren()) do
+            if not child:IsA("UIListLayout") then child:Destroy() end
+        end
+        selectedPlayerBtn = nil
+        selectedPlayer = nil
+        local totalH = 0
+        local players = Players:GetPlayers()
+        table.sort(players, function(a,b) return a.Name < b.Name end)
+        for _, player in ipairs(players) do
+            if player ~= LP then
+                totalH = totalH + 30
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, -4, 0, 28)
+                btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+                btn.BorderSizePixel = 0
+                btn.Text = player.Name
+                btn.TextColor3 = Color3.fromRGB(200, 220, 200)
+                btn.TextSize = 11
+                btn.Font = Enum.Font.Gotham
+                btn.TextXAlignment = Enum.TextXAlignment.Left
+                btn.ZIndex = 103
+                btn.AutoButtonColor = false
+                btn.Parent = playerScroll
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+                btn.MouseEnter:Connect(function() if btn ~= selectedPlayerBtn then btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60) end end)
+                btn.MouseLeave:Connect(function() if btn ~= selectedPlayerBtn then btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end end)
+                btn.MouseButton1Click:Connect(function()
+                    if selectedPlayerBtn then selectedPlayerBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end
+                    selectedPlayerBtn = btn
+                    btn.BackgroundColor3 = Color3.fromRGB(20, 80, 20)
+                    selectedPlayer = player
+                end)
+            end
+        end
+        playerScroll.CanvasSize = UDim2.new(0, 0, 0, totalH + 8)
+    end
+
+    refreshBtn.MouseButton1Click:Connect(refreshPlayerList)
+    refreshPlayerList()
+
+    playerGoBtn.MouseButton1Click:Connect(function()
+        if not selectedPlayer then return end
+        local char = selectedPlayer.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        safeWalk(root.CFrame)
+    end)
+
+    return content
+end
+
+-- ========== BUILD TAB 3: SAVED POSITIONS ==========
+local function buildTab3()
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, 0, 1, 0)
+    content.BackgroundTransparency = 1
+    content.ZIndex = 101
+
+    local nameInput = Instance.new("TextBox")
+    nameInput.Size = UDim2.new(1, -10, 0, 26)
+    nameInput.Position = UDim2.new(0, 5, 0, 4)
+    nameInput.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    nameInput.BorderSizePixel = 0
+    nameInput.Text = ""
+    nameInput.PlaceholderText = "Nama posisi..."
+    nameInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameInput.TextSize = 11
+    nameInput.Font = Enum.Font.Gotham
+    nameInput.ZIndex = 103
+    nameInput.Parent = content
+    Instance.new("UICorner", nameInput).CornerRadius = UDim.new(0, 4)
+    nameInput.FocusLost:Connect(function()
+        state.saveName = nameInput.Text:gsub("%s+", " ")
+    end)
+
+    local savedScroll = Instance.new("ScrollingFrame")
+    savedScroll.Size = UDim2.new(1, -10, 1, -115)
+    savedScroll.Position = UDim2.new(0, 5, 0, 34)
+    savedScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    savedScroll.BorderSizePixel = 0
+    savedScroll.ScrollBarThickness = 4
+    savedScroll.ScrollBarImageColor3 = Color3.fromRGB(255, 200, 0)
+    savedScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    savedScroll.ZIndex = 102
+    savedScroll.Parent = content
+
+    local savedLayout = Instance.new("UIListLayout")
+    savedLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    savedLayout.Padding = UDim.new(0, 2)
+    savedLayout.Parent = savedScroll
+
+    local btnFrame = Instance.new("Frame")
+    btnFrame.Size = UDim2.new(1, -10, 0, 85)
+    btnFrame.Position = UDim2.new(0, 5, 1, -92)
+    btnFrame.BackgroundTransparency = 1
+    btnFrame.ZIndex = 101
+    btnFrame.Parent = content
+
+    local savePosBtn = Instance.new("TextButton")
+    savePosBtn.Size = UDim2.new(1, 0, 0, 28)
+    savePosBtn.Position = UDim2.new(0, 0, 0, 0)
+    savePosBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 80)
+    savePosBtn.BorderSizePixel = 0
+    savePosBtn.Text = "💾 Save Current Position"
+    savePosBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    savePosBtn.TextSize = 11
+    savePosBtn.Font = Enum.Font.GothamBold
+    savePosBtn.ZIndex = 101
+    savePosBtn.AutoButtonColor = false
+    savePosBtn.Parent = btnFrame
+    Instance.new("UICorner", savePosBtn).CornerRadius = UDim.new(0, 5)
+
+    local actionRow = Instance.new("Frame")
+    actionRow.Size = UDim2.new(1, 0, 0, 28)
+    actionRow.Position = UDim2.new(0, 0, 0, 34)
+    actionRow.BackgroundTransparency = 1
+    actionRow.ZIndex = 101
+    actionRow.Parent = btnFrame
+
+    local savedGoBtn = Instance.new("TextButton")
+    savedGoBtn.Size = UDim2.new(0, 70, 0, 28)
+    savedGoBtn.Position = UDim2.new(0, 0, 0, 0)
+    savedGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
+    savedGoBtn.BorderSizePixel = 0
+    savedGoBtn.Text = "▶ Go"
+    savedGoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    savedGoBtn.TextSize = 11
+    savedGoBtn.Font = Enum.Font.GothamBold
+    savedGoBtn.ZIndex = 101
+    savedGoBtn.AutoButtonColor = false
+    savedGoBtn.Parent = actionRow
+    Instance.new("UICorner", savedGoBtn).CornerRadius = UDim.new(0, 5)
+
+    local savedRemoveBtn = Instance.new("TextButton")
+    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 28)
+    savedRemoveBtn.Position = UDim2.new(0, 75, 0, 0)
+    savedRemoveBtn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
+    savedRemoveBtn.BorderSizePixel = 0
+    savedRemoveBtn.Text = "🗑 Remove"
+    savedRemoveBtn.TextColor3 = Color3.fromRGB(255, 150, 150)
+    savedRemoveBtn.TextSize = 10
+    savedRemoveBtn.Font = Enum.Font.GothamBold
+    savedRemoveBtn.ZIndex = 101
+    savedRemoveBtn.AutoButtonColor = false
+    savedRemoveBtn.Parent = actionRow
+    Instance.new("UICorner", savedRemoveBtn).CornerRadius = UDim.new(0, 5)
+
+    local savedStopBtn = Instance.new("TextButton")
+    savedStopBtn.Size = UDim2.new(0, 40, 0, 28)
+    savedStopBtn.Position = UDim2.new(0, 150, 0, 0)
+    savedStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    savedStopBtn.BorderSizePixel = 0
+    savedStopBtn.Text = "⏹"
+    savedStopBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    savedStopBtn.TextSize = 14
+    savedStopBtn.Font = Enum.Font.GothamBold
+    savedStopBtn.ZIndex = 101
+    savedStopBtn.AutoButtonColor = false
+    savedStopBtn.Parent = actionRow
+    Instance.new("UICorner", savedStopBtn).CornerRadius = UDim.new(0, 5)
+
+    savedStopBtn.MouseButton1Click:Connect(stopWalking)
+
+    local selectedSavedBtn = nil
+
+    local function refreshSavedList()
+        for _, child in ipairs(savedScroll:GetChildren()) do
+            if not child:IsA("UIListLayout") then child:Destroy() end
+        end
+        selectedSavedBtn = nil
+        state.selectedSavedIndex = nil
+        local totalH = 0
+        for i, saved in ipairs(state.savedPositions) do
+            totalH = totalH + 30
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, -4, 0, 28)
+            btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+            btn.BorderSizePixel = 0
+            btn.Text = saved.name .. " (#" .. i .. ")"
+            btn.TextColor3 = Color3.fromRGB(200, 220, 200)
+            btn.TextSize = 11
+            btn.Font = Enum.Font.Gotham
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.ZIndex = 103
+            btn.AutoButtonColor = false
+            btn.Parent = savedScroll
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+            btn.MouseEnter:Connect(function() if btn ~= selectedSavedBtn then btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60) end end)
+            btn.MouseLeave:Connect(function() if btn ~= selectedSavedBtn then btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end end)
+            btn.MouseButton1Click:Connect(function()
+                if selectedSavedBtn then selectedSavedBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end
+                selectedSavedBtn = btn
+                btn.BackgroundColor3 = Color3.fromRGB(20, 80, 20)
+                state.selectedSavedIndex = i
+            end)
+        end
+        savedScroll.CanvasSize = UDim2.new(0, 0, 0, totalH + 8)
+    end
+
+    savePosBtn.MouseButton1Click:Connect(function()
+        local char = LP.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        local cf = root.CFrame
+        local pos = cf.Position
+        local name = state.saveName
+        if name == "" then
+            name = "Pos " .. string.format("%.0f,%.0f,%.0f", pos.X, pos.Y, pos.Z)
+        end
+        table.insert(state.savedPositions, {name = name, cf = cf})
+        state.saveName = ""
+        nameInput.Text = ""
+        saveSavedPositions()
+        refreshSavedList()
+    end)
+
+    savedGoBtn.MouseButton1Click:Connect(function()
+        if state.selectedSavedIndex and state.savedPositions[state.selectedSavedIndex] then
+            safeWalk(state.savedPositions[state.selectedSavedIndex].cf)
+        end
+    end)
+
+    savedRemoveBtn.MouseButton1Click:Connect(function()
+        if state.selectedSavedIndex then
+            table.remove(state.savedPositions, state.selectedSavedIndex)
+            saveSavedPositions()
+            refreshSavedList()
+        end
+    end)
+
+    refreshSavedList()
+    return content
+end
+
+-- ========== BUILD TAB 4: AUTO EVENT ==========
+local function buildTab4()
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, 0, 1, 0)
+    content.BackgroundTransparency = 1
+    content.ZIndex = 101
+
+    -- Status label
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(1, -10, 0, 20)
+    statusLabel.Position = UDim2.new(0, 5, 0, 8)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "Status: Standby"
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLabel.TextSize = 11
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.ZIndex = 103
+    statusLabel.Parent = content
+
+    -- Pilihan event (hanya Megalodon Hunt untuk sekarang)
+    local eventLabel = Instance.new("TextLabel")
+    eventLabel.Size = UDim2.new(1, -10, 0, 20)
+    eventLabel.Position = UDim2.new(0, 5, 0, 34)
+    eventLabel.BackgroundTransparency = 1
+    eventLabel.Text = "Event: Megalodon Hunt"
+    eventLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    eventLabel.TextSize = 11
+    eventLabel.Font = Enum.Font.Gotham
+    eventLabel.ZIndex = 103
+    eventLabel.Parent = content
+
+    -- Toggle ON/OFF
+    local toggleBtn = Instance.new("TextButton")
+    toggleBtn.Size = UDim2.new(1, -10, 0, 34)
+    toggleBtn.Position = UDim2.new(0, 5, 1, -40)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+    toggleBtn.BorderSizePixel = 0
+    toggleBtn.Text = "▶ Aktifkan Auto Event"
+    toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleBtn.TextSize = 12
+    toggleBtn.Font = Enum.Font.GothamBold
+    toggleBtn.ZIndex = 103
+    toggleBtn.AutoButtonColor = false
+    toggleBtn.Parent = content
+    Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 5)
+
+    toggleBtn.MouseButton1Click:Connect(function()
+        if state.autoEventActive then
+            stopAutoEvent()
+            toggleBtn.Text = "▶ Aktifkan Auto Event"
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+            statusLabel.Text = "Status: Standby"
+        else
+            startAutoEvent()
+            toggleBtn.Text = "⏹ Matikan Auto Event"
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+            statusLabel.Text = "Status: Monitoring..."
+        end
+    end)
+
+    -- Update status label secara periodik
+    task.spawn(function()
+        while true do
+            if state.autoEventActive then
+                if state.isAtEvent then
+                    statusLabel.Text = "Status: Di lokasi event - Megalodon Hunt"
+                else
+                    statusLabel.Text = "Status: Monitoring... Megalodon Hunt"
+                end
+            end
+            task.wait(1)
+        end
+    end)
+
+    return content
+end
+
+-- ========== BUAT TAB ==========
+local tab1Btn = createTabButton("Walk to Location", buildTab1)
+createTabButton("Walk to Player", buildTab2)
+createTabButton("Saved Positions", buildTab3)
+createTabButton("Auto Event", buildTab4)
+
+-- Aktifkan tab pertama secara default
+tab1Btn.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
+local defaultContent = buildTab1()
+defaultContent.Parent = contentFrame
+
+-- ========== DRAG FLOATING BUTTON ==========
+local floatDragging, floatDragStart, floatStartPos = false, nil, nil
+floatBtn.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = true; floatDragStart = inp.Position; floatStartPos = floatBtn.Position
     end
 end)
-
-unlockReturnBtn.MouseButton1Click:Connect(function()
-    if not isLocked then
-        statusLabel.Text = "User tidak terkunci"
-        return
-    end
-    unlockUser()
-    if savedPosition then
-        statusLabel.Text = "Kembali ke posisi semula..."
-        -- Gunakan safeWalk yang sudah teruji (dengan interpolasi + anchored di akhir)
-        safeWalk(savedPosition)
-        statusLabel.Text = "Sampai di posisi semula!"
-        savedPosition = nil
-    else
-        statusLabel.Text = "Tidak ada posisi tersimpan"
+UIS.InputChanged:Connect(function(inp)
+    if floatDragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - floatDragStart
+        local vp = workspace.CurrentCamera.ViewportSize
+        floatBtn.Position = UDim2.new(0, math.clamp(floatStartPos.X.Offset + delta.X, 0, vp.X - 46), 0, math.clamp(floatStartPos.Y.Offset + delta.Y, 0, vp.Y - 46))
     end
 end)
+UIS.InputEnded:Connect(function(inp) floatDragging = false end)
 
--- Drag frame
+-- ========== DRAG MAIN PANEL ==========
 local dragging, dragStart, startPos = false, nil, nil
 frame.InputBegan:Connect(function(inp)
     if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
@@ -276,4 +967,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("Walk & Lock v11 siap. Uji Walk & Lock, lalu Unlock & Safe Return.")
+print("ZHX Safe Walk v4.0 siap. Tab Auto Event: aktifkan toggle untuk monitoring Megalodon Hunt otomatis.")
