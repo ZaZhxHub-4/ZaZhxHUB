@@ -1,4 +1,4 @@
--- // ZHXHub Full Project v1.8 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
+-- // ZHXHub Full Project v1.9 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
 -- // Perbaikan: panggilan OFF awal + ON-OFF bergantian + MarkAuto digunakan
 
 local RS = game:GetService("ReplicatedStorage")
@@ -303,68 +303,42 @@ local function stopWalking()
 end
 
 -- Auto Event
--- ========== RADAR AUTO EVENT (STRICT & DYNAMIC V1.8) ==========
-local function cleanString(str)
-    -- Membersihkan spasi tak terlihat di awal/akhir nama agar pencocokan 100% akurat
-    return string.lower(str):match("^%s*(.-)%s*$") or string.lower(str)
-end
+-- ========== RADAR AUTO EVENT (STRICT MEGALODON HUNT FINAL) ==========
+local function getEventPosition(eventName)
+    -- Ambil folder Props secara dinamis setiap kali fungsi dipanggil
+    local propsFolder = WS:FindFirstChild("Props")
+    if not propsFolder then return nil end
 
-local function findEventModel(eventName)
-    local targetName = cleanString(eventName)
-    
-    -- DINAMIS: Selalu ambil folder Props di detik ini juga, JANGAN di-cache di luar!
-    local props = WS:FindFirstChild("Props")
-    if props then
-        for _, child in ipairs(props:GetChildren()) do
-            if child:IsA("Model") and cleanString(child.Name) == targetName then
-                return child
+    -- STRICT MATCH: Cari Model yang namanya persis 100% "Megalodon Hunt" (Abaikan "Dark Megalodon Hunt" dll)
+    local eventModel = propsFolder:FindFirstChild(eventName)
+    if eventModel and eventModel:IsA("Model") then
+        -- Lapis 1: Cari part pijakan di dalamnya yang namanya sama persis (Berdasarkan log Anda)
+        local mainPart = eventModel:FindFirstChild(eventName)
+        if mainPart and mainPart:IsA("BasePart") then
+            return mainPart.Position + Vector3.new(0, 5, 0)
+        end
+        
+        -- Lapis 2: Cek WW_Part (Water Walk Part) khusus milik Megalodon ini
+        local wwPart = eventModel:FindFirstChild("WW_Part")
+        if wwPart and wwPart:IsA("BasePart") then
+            return wwPart.Position + Vector3.new(0, 5, 0)
+        end
+        
+        -- Lapis 3: Fallback darurat, cari part apa saja di dalam modelnya
+        for _, child in ipairs(eventModel:GetDescendants()) do
+            if child:IsA("BasePart") then
+                return child.Position + Vector3.new(0, 5, 0)
             end
         end
     end
-    
-    -- PENGAMAN EKSTRA: Jika developer gamenya memunculkan event di luar folder Props
-    for _, child in ipairs(WS:GetChildren()) do
-        if child:IsA("Model") and cleanString(child.Name) == targetName then
-            return child
-        end
-    end
-
     return nil
 end
 
-local function getEventPosition(eventName)
-    local model = findEventModel(eventName)
-    if not model then return nil end
-    
-    -- LAPIS 1: Cari Part pijakan yang namanya persis sama
-    local mainPart = model:FindFirstChild(model.Name)
-    if mainPart and mainPart:IsA("BasePart") then 
-        return mainPart.Position + Vector3.new(0, 5, 0) 
-    end
-    
-    -- LAPIS 2: Gunakan PrimaryPart bawaan model
-    if model.PrimaryPart then
-        return model.PrimaryPart.Position + Vector3.new(0, 5, 0)
-    end
-    
-    -- LAPIS 3: Korek isi model dan ambil BasePart apa pun
-    for _, child in ipairs(model:GetDescendants()) do
-        if child:IsA("BasePart") then 
-            return child.Position + Vector3.new(0, 5, 0) 
-        end
-    end
-
-    -- LAPIS 4 (ANTI-GAGAL): Hitung titik tengah/BoundingBox dari 3D Model tersebut
-    local cf = model:GetBoundingBox()
-    if cf then
-        return cf.Position + Vector3.new(0, 5, 0)
-    end
-    
-    return nil
-end
-
-local function isEventActive(eventName) 
-    return findEventModel(eventName) ~= nil 
+local function isEventActive(eventName)
+    local propsFolder = WS:FindFirstChild("Props")
+    if not propsFolder then return false end
+    -- Return true HANYA jika event dengan nama SAMA PERSIS ditemukan
+    return propsFolder:FindFirstChild(eventName) ~= nil
 end
 -- ===============================================================
 local function getCurrentUserCFrame()
@@ -675,7 +649,7 @@ floatBtn.MouseButton1Click:Connect(function() frame.Visible = not frame.Visible 
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,24); title.Position = UDim2.new(0,10,0,6)
-title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v1.8  ⚡"
+title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v1.9  ⚡"
 title.TextColor3 = Color3.fromRGB(72,210,130); title.TextSize = 13
 title.Font = Enum.Font.GothamBold; title.ZIndex = 101; title.Parent = frame
 
@@ -1094,4 +1068,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHXHub Full Project v1.8.")
+print("ZHXHub Full Project v1.9.")
