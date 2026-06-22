@@ -1,250 +1,35 @@
--- MONITOR v4 — Bersih, hanya hookmetamethod + backpack/char watch
--- Tanpa Replion/BindableEvent yang bisa crash
-local HS      = game:GetService("HttpService")
-local Players = game:GetService("Players")
-
+-- Test minimal — cek hookmetamethod crash atau tidak
+local HS = game:GetService("HttpService")
 local WEBHOOK = "https://discordapp.com/api/webhooks/1506044266684743801/PlopEC1wwOyfGQh-3oBQFl67_IPfoNmUYDMvEU_kjvZP6zR6v0BjfMeObTUsxhOUepqg"
+local function send(t,d) pcall(function() request({Url=WEBHOOK,Method="POST",Headers={["Content-Type"]="application/json"},Body=HS:JSONEncode({username="Test",embeds={{title=t,description=d}}})}) end) end
 
-local function send(title, desc, color)
-    pcall(function()
-        request({
-            Url=WEBHOOK, Method="POST",
-            Headers={["Content-Type"]="application/json"},
-            Body=HS:JSONEncode({
-                username="🔬 Monitor v4",
-                embeds={{title=title,description=desc,color=color or 3066993,
-                    footer={text=os.date("%H:%M:%S")}}}
-            })
-        })
-    end)
-end
+send("Step 1","Script mulai jalan")
 
-while not Players.LocalPlayer do task.wait() end
-local lp = Players.LocalPlayer
-local pg = lp:WaitForChild("PlayerGui")
-
-local firedLog = {}
-local monitoring = false
-local logCount = 0
-
-local function addLog(method, name, path, args)
-    logCount = logCount + 1
-    table.insert(firedLog, {
-        method = method,
-        name   = name,
-        path   = (path or ""):sub(1, 100),
-        args   = (args or ""):sub(1, 200)
-    })
-end
-
--- 1. hookmetamethod — tangkap SEMUA FireServer/InvokeServer
-local oldNC
-oldNC = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    if monitoring then
-        if method == "FireServer" or method == "InvokeServer" then
-            local argStr = ""
-            pcall(function() argStr = HS:JSONEncode({...}):sub(1, 200) end)
-            local name = ""; pcall(function() name = tostring(self.Name) end)
-            local path = ""; pcall(function() path = tostring(self:GetFullName()) end)
-            if not name:find("Analytics") then
-                addLog(method, name, path, argStr)
-            end
-        end
-    end
-    return oldNC(self, ...)
-end)
-
--- 2. Watch backpack
-pcall(function()
-    local bp = lp:FindFirstChildOfClass("Backpack")
-    if bp then
-        bp.ChildAdded:Connect(function(c)
-            if monitoring then addLog("BackpackAdd", c.Name, c:GetFullName(), c.ClassName) end
-        end)
-        bp.ChildRemoved:Connect(function(c)
-            if monitoring then addLog("BackpackRemove", c.Name, c:GetFullName(), c.ClassName) end
-        end)
-    end
-end)
-
--- 3. Watch character
-pcall(function()
-    local function watchChar(char)
-        if not char then return end
-        char.ChildAdded:Connect(function(c)
-            if monitoring then addLog("CharAdd", c.Name, c:GetFullName(), c.ClassName) end
-        end)
-        char.ChildRemoved:Connect(function(c)
-            if monitoring then addLog("CharRemove", c.Name, c:GetFullName(), c.ClassName) end
-        end)
-    end
-    if lp.Character then watchChar(lp.Character) end
-    lp.CharacterAdded:Connect(watchChar)
-end)
-
--- 4. Watch PlayerData via Replion (wrapped aman)
-task.spawn(function()
-    pcall(function()
-        local RS = game:GetService("ReplicatedStorage")
-        local Replion = require(RS.Packages.Replion)
-        local PlayerData = Replion.Client:WaitReplion("Data", 5)
-        if not PlayerData then return end
-        PlayerData.Changed:Connect(function(path, value)
-            if monitoring then
-                local valStr = ""
-                pcall(function() valStr = HS:JSONEncode(value):sub(1, 150) end)
-                addLog("DataChanged", tostring(path), "Replion", valStr)
-            end
-        end)
+local ok1, err1 = pcall(function()
+    local old
+    old = hookmetamethod(game, "__namecall", function(self, ...)
+        return old(self, ...)
     end)
 end)
 
--- ─── UI ───
-local sg = Instance.new("ScreenGui")
-sg.Name = "ZHX_Mon4"; sg.ResetOnSpawn = false
-sg.IgnoreGuiInset = true; sg.Parent = pg
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 260, 0, 170)
-frame.Position = UDim2.new(0, 10, 0, 60)
-frame.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
-frame.BorderSizePixel = 0; frame.Parent = sg
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
-local st = Instance.new("UIStroke", frame)
-st.Color = Color3.fromRGB(255, 170, 50); st.Thickness = 1.5
-
-local hdr = Instance.new("TextLabel")
-hdr.Size = UDim2.new(1, 0, 0, 28)
-hdr.BackgroundColor3 = Color3.fromRGB(20, 16, 8)
-hdr.BorderSizePixel = 0; hdr.ZIndex = 2; hdr.Parent = frame
-hdr.Text = "🔬 MONITOR v4"; hdr.TextSize = 12
-hdr.Font = Enum.Font.GothamBold
-hdr.TextColor3 = Color3.fromRGB(255, 170, 50)
-Instance.new("UICorner", hdr).CornerRadius = UDim.new(0, 8)
-
-local statusLbl = Instance.new("TextLabel")
-statusLbl.Size = UDim2.new(1, -12, 0, 18)
-statusLbl.Position = UDim2.new(0, 6, 0, 30)
-statusLbl.BackgroundTransparency = 1
-statusLbl.Text = "IDLE"; statusLbl.TextSize = 10
-statusLbl.Font = Enum.Font.Gotham
-statusLbl.TextColor3 = Color3.fromRGB(160, 170, 165)
-statusLbl.TextXAlignment = Enum.TextXAlignment.Left
-statusLbl.Parent = frame
-
-local countLbl = Instance.new("TextLabel")
-countLbl.Size = UDim2.new(1, -12, 0, 16)
-countLbl.Position = UDim2.new(0, 6, 0, 50)
-countLbl.BackgroundTransparency = 1
-countLbl.Text = "Tertangkap: 0"; countLbl.TextSize = 10
-countLbl.Font = Enum.Font.GothamBold
-countLbl.TextColor3 = Color3.fromRGB(255, 170, 50)
-countLbl.TextXAlignment = Enum.TextXAlignment.Left
-countLbl.Parent = frame
-
-local function makeBtn(text, ypos, bg, tc)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, -12, 0, 28)
-    b.Position = UDim2.new(0, 6, 0, ypos)
-    b.BackgroundColor3 = bg; b.BorderSizePixel = 0
-    b.Text = text; b.TextSize = 11
-    b.Font = Enum.Font.GothamBold
-    b.TextColor3 = tc; b.AutoButtonColor = false
-    b.Parent = frame
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
-    return b
+if ok1 then
+    send("Step 2 ✅","hookmetamethod berhasil dipasang")
+else
+    send("Step 2 ❌","hookmetamethod CRASH: "..tostring(err1))
 end
 
-local startBtn = makeBtn("▶ MULAI REKAM", 70, Color3.fromRGB(20,65,40), Color3.fromRGB(72,210,130))
-local stopBtn  = makeBtn("⏹ STOP & KIRIM", 104, Color3.fromRGB(60,20,20), Color3.fromRGB(240,80,80))
-local resetBtn = makeBtn("🗑 Reset", 138, Color3.fromRGB(25,25,25), Color3.fromRGB(150,150,150))
-
--- Drag
-local UIS = game:GetService("UserInputService")
-local drag4 = false; local ds4, sp4
-frame.InputBegan:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-        drag4 = true; ds4 = inp.Position; sp4 = frame.Position
-        inp.Changed:Connect(function()
-            if inp.UserInputState == Enum.UserInputState.End then drag4 = false end
-        end)
-    end
-end)
-UIS.InputChanged:Connect(function(inp)
-    if drag4 and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-        local d = inp.Position - ds4
-        local vp = workspace.CurrentCamera.ViewportSize
-        frame.Position = UDim2.new(0, math.clamp(sp4.X.Offset+d.X, 0, vp.X-260),
-            0, math.clamp(sp4.Y.Offset+d.Y, 0, vp.Y-170))
-    end
+-- Coba buat UI sederhana
+local ok2, err2 = pcall(function()
+    local pg = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    local sg = Instance.new("ScreenGui"); sg.Parent = pg
+    local f = Instance.new("Frame"); f.Size = UDim2.new(0,200,0,50); f.Parent = sg
+    local l = Instance.new("TextLabel"); l.Text = "TEST OK"; l.Size = UDim2.new(1,0,1,0); l.Parent = f
 end)
 
-task.spawn(function()
-    while true do task.wait(0.5)
-        countLbl.Text = "Tertangkap: "..logCount
-    end
-end)
+if ok2 then
+    send("Step 3 ✅","UI berhasil dibuat — cek in-game")
+else
+    send("Step 3 ❌","UI CRASH: "..tostring(err2))
+end
 
-send("✅ Monitor v4 Aktif", "Tekan **MULAI REKAM** → equip Advanced Diving Gear → **STOP & KIRIM**", 3066993)
-
-startBtn.MouseButton1Click:Connect(function()
-    firedLog = {}; logCount = 0; monitoring = true
-    statusLbl.Text = "● MEREKAM..."
-    statusLbl.TextColor3 = Color3.fromRGB(240, 80, 80)
-    startBtn.BackgroundColor3 = Color3.fromRGB(10, 35, 20)
-    send("▶ Mulai", "Equip sekarang!", 16776960)
-end)
-
-stopBtn.MouseButton1Click:Connect(function()
-    monitoring = false
-    statusLbl.Text = "STOP"
-    statusLbl.TextColor3 = Color3.fromRGB(160, 170, 165)
-    startBtn.BackgroundColor3 = Color3.fromRGB(20, 65, 40)
-
-    if #firedLog == 0 then
-        send("⚠ Kosong", "Tidak ada yang tertangkap. Kemungkinan sistem equip sepenuhnya client-side.", 16776960)
-        return
-    end
-
-    send("⏹ Selesai", "Total: **"..#firedLog.."**", 3066993)
-    task.wait(0.3)
-
-    local lines = {}
-    for i, e in ipairs(firedLog) do
-        table.insert(lines, string.format("[%d] **%s** `%s`\n`%s`\nArgs: `%s`",
-            i, e.method, e.name, e.path, e.args ~= "" and e.args or "(kosong)"))
-    end
-
-    local chunk = ""; local msgNum = 0
-    for _, line in ipairs(lines) do
-        if #chunk + #line + 2 > 1800 then
-            msgNum = msgNum + 1
-            send("📋 #"..msgNum, chunk, 3447003)
-            task.wait(0.4); chunk = line.."\n\n"
-        else
-            chunk = chunk..line.."\n\n"
-        end
-    end
-    if chunk ~= "" then
-        msgNum = msgNum + 1
-        send("📋 #"..msgNum, chunk, 3447003)
-    end
-
-    task.wait(0.3)
-    local seen = {}; local names = {}
-    for _, e in ipairs(firedLog) do
-        if not seen[e.name] then
-            seen[e.name] = true
-            table.insert(names, "• `"..e.name.."` — "..e.method)
-        end
-    end
-    send("📌 Rangkuman", table.concat(names, "\n"), 16776960)
-end)
-
-resetBtn.MouseButton1Click:Connect(function()
-    firedLog = {}; logCount = 0; monitoring = false
-    statusLbl.Text = "IDLE"
-    statusLbl.TextColor3 = Color3.fromRGB(160, 170, 165)
-    startBtn.BackgroundColor3 = Color3.fromRGB(20, 65, 40)
-end)
+send("Step 4","Script selesai jalan")
