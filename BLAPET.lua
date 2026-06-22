@@ -674,7 +674,7 @@ floatBtn.MouseButton1Click:Connect(function() frame.Visible = not frame.Visible 
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,24); title.Position = UDim2.new(0,10,0,6)
-title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v1.5  ⚡"
+title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [BETA] v1.6  ⚡"
 title.TextColor3 = Color3.fromRGB(72,210,130); title.TextSize = 13
 title.Font = Enum.Font.GothamBold; title.ZIndex = 101; title.Parent = frame
 
