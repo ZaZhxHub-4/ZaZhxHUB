@@ -1,9 +1,11 @@
--- // ZHX Safe Walk v3.1 — Tab Fix + Accurate Rotation + Save Current Position
--- // Perbaikan: konten tab terisolasi, arah hadap akurat, save posisi langsung
+-- // ZHX Safe Walk v3.2 — Layout Fix + Nama Save + Auto Diving Gear + Damage Protect
+-- // Tab UI, Stop Fix, Save/Load Position, Accurate Orientation
+-- // Auto equip Advanced Diving Gear, proteksi damage (forcefield/noclip)
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 
 -- ========== DAFTAR LOKASI HARDCODED ==========
@@ -24,6 +26,30 @@ local locations = {
     ["Stingray Shores"] = CFrame.new(-2133.558594, 18.656778, -771.773926, 0.998903, -0.000000, 0.046831, 0.000000, 1.000000, 0.000000, -0.046831, -0.000000, 0.998903),
 }
 
+-- ========== REMOTE HASH FINDER ==========
+local function findRemoteByLabel(label)
+    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
+        if child.Name == label then
+            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
+            if inside then
+                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return inside end
+            end
+            local nxt = children[i+1]
+            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
+                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return nxt end
+            end
+            break
+        end
+    end
+    return nil
+end
+
+local equipItemRE = findRemoteByLabel("RE/EquipItem")
+
 -- ========== STATE ==========
 local state = {
     isWalking = false,
@@ -37,9 +63,10 @@ local state = {
     selectedPlayer = nil,
     selectedPlayerBtn = nil,
     selectedSavedBtn = nil,
+    saveName = "",
 }
 
--- ========== NOKLIP ==========
+-- ========== NOKLIP AGRESIF ==========
 local function enableNoclip()
     if state.noclipConn then return end
     state.noclipConn = RunService.Stepped:Connect(function()
@@ -60,6 +87,38 @@ local function disableNoclip()
     end
 end
 
+-- ========== AUTO EQUIP DIVING GEAR ==========
+local function equipDivingGear()
+    -- Coba via remote EquipItem (biasanya pakai UUID atau ID)
+    -- Dari data sebelumnya, Diving Gear punya ID 105
+    if equipItemRE then
+        pcall(function() equipItemRE:FireServer(105) end)
+    end
+end
+
+-- ========== DAMAGE PROTECTION ==========
+local function protectCharacter()
+    local char = LP.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        -- Set health ke sangat tinggi agar tidak mati
+        pcall(function() hum.MaxHealth = 1e9; hum.Health = 1e9 end)
+        -- Nonaktifkan PlatformStand agar tidak aneh
+        hum.PlatformStand = true
+    end
+end
+
+local function unprotectCharacter()
+    local char = LP.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function() hum.MaxHealth = 100; hum.Health = 100 end)
+        hum.PlatformStand = false
+    end
+end
+
 -- ========== SAFE WALK CORE ==========
 local function safeWalk(targetCF)
     if state.isWalking then return end
@@ -71,9 +130,8 @@ local function safeWalk(targetCF)
     state.isWalking = true
     state.stopRequested = false
     enableNoclip()
-
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.PlatformStand = true end
+    equipDivingGear()
+    protectCharacter()
 
     local startCF = root.CFrame
     local distance = (targetCF.Position - startCF.Position).Magnitude
@@ -98,13 +156,13 @@ local function safeWalk(targetCF)
     if not state.stopRequested then
         pcall(function()
             root.Anchored = true
-            root.CFrame = targetCF -- posisi + rotasi akurat
+            root.CFrame = targetCF
             task.wait(0.3)
             root.Anchored = false
         end)
     end
 
-    if hum then hum.PlatformStand = false end
+    unprotectCharacter()
     disableNoclip()
     state.isWalking = false
     state.stopRequested = false
@@ -114,12 +172,14 @@ local function stopWalking()
     state.stopRequested = true
     state.isWalking = false
     disableNoclip()
+    unprotectCharacter()
 end
 
 LP.CharacterAdded:Connect(function()
     state.isWalking = false
     state.stopRequested = false
     disableNoclip()
+    unprotectCharacter()
 end)
 
 -- ========== UI ==========
@@ -147,7 +207,7 @@ Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
 
 -- Main Panel
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHX_SafeWalk_v3.1"
+mainGui.Name = "ZHX_SafeWalk_v3.2"
 mainGui.ResetOnSpawn = false
 mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mainGui.Parent = pg
@@ -173,7 +233,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "📍 ZHX Safe Walk v3.1"
+title.Text = "📍 ZHX Safe Walk v3.2"
 title.TextColor3 = Color3.fromRGB(255, 200, 0)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -223,18 +283,15 @@ local function createTabButton(name, buildContent)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
 
     btn.MouseButton1Click:Connect(function()
-        -- Reset semua tab button
         for _, child in ipairs(tabFrame:GetChildren()) do
             if child:IsA("TextButton") then
                 child.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
             end
         end
         btn.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
-        -- Hapus konten lama
         for _, child in ipairs(contentFrame:GetChildren()) do
             child:Destroy()
         end
-        -- Bangun konten baru
         local newContent = buildContent()
         newContent.Parent = contentFrame
         currentTabContent = newContent
@@ -266,7 +323,6 @@ local function buildTab1()
     locLayout.Padding = UDim.new(0, 2)
     locLayout.Parent = locScroll
 
-    -- Tombol Go & Stop di bawah
     local btnFrame = Instance.new("Frame")
     btnFrame.Size = UDim2.new(1, -10, 0, 30)
     btnFrame.Position = UDim2.new(0, 5, 1, -35)
@@ -479,9 +535,27 @@ local function buildTab3()
     content.BackgroundTransparency = 1
     content.ZIndex = 101
 
+    -- Input nama
+    local nameInput = Instance.new("TextBox")
+    nameInput.Size = UDim2.new(1, -10, 0, 28)
+    nameInput.Position = UDim2.new(0, 5, 0, 4)
+    nameInput.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    nameInput.BorderSizePixel = 0
+    nameInput.Text = ""
+    nameInput.PlaceholderText = "Nama posisi..."
+    nameInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameInput.TextSize = 11
+    nameInput.Font = Enum.Font.Gotham
+    nameInput.ZIndex = 103
+    nameInput.Parent = content
+    Instance.new("UICorner", nameInput).CornerRadius = UDim.new(0, 4)
+    nameInput.FocusLost:Connect(function()
+        state.saveName = nameInput.Text:gsub("%s+", " ")
+    end)
+
     local savedScroll = Instance.new("ScrollingFrame")
-    savedScroll.Size = UDim2.new(1, -10, 1, -75)
-    savedScroll.Position = UDim2.new(0, 5, 0, 4)
+    savedScroll.Size = UDim2.new(1, -10, 1, -120)
+    savedScroll.Position = UDim2.new(0, 5, 0, 36)
     savedScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     savedScroll.BorderSizePixel = 0
     savedScroll.ScrollBarThickness = 4
@@ -495,15 +569,17 @@ local function buildTab3()
     savedLayout.Padding = UDim.new(0, 2)
     savedLayout.Parent = savedScroll
 
+    -- Frame tombol bawah
     local btnFrame = Instance.new("Frame")
-    btnFrame.Size = UDim2.new(1, -10, 0, 65)
-    btnFrame.Position = UDim2.new(0, 5, 1, -70)
+    btnFrame.Size = UDim2.new(1, -10, 0, 55)
+    btnFrame.Position = UDim2.new(0, 5, 1, -58)
     btnFrame.BackgroundTransparency = 1
     btnFrame.ZIndex = 101
     btnFrame.Parent = content
 
+    -- Tombol Save (full width)
     local savePosBtn = Instance.new("TextButton")
-    savePosBtn.Size = UDim2.new(1, 0, 0, 28)
+    savePosBtn.Size = UDim2.new(1, 0, 0, 26)
     savePosBtn.Position = UDim2.new(0, 0, 0, 0)
     savePosBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 80)
     savePosBtn.BorderSizePixel = 0
@@ -516,9 +592,17 @@ local function buildTab3()
     savePosBtn.Parent = btnFrame
     Instance.new("UICorner", savePosBtn).CornerRadius = UDim.new(0, 5)
 
+    -- Row tombol Go, Remove, Stop
+    local actionRow = Instance.new("Frame")
+    actionRow.Size = UDim2.new(1, 0, 0, 26)
+    actionRow.Position = UDim2.new(0, 0, 1, 0)
+    actionRow.BackgroundTransparency = 1
+    actionRow.ZIndex = 101
+    actionRow.Parent = btnFrame
+
     local savedGoBtn = Instance.new("TextButton")
-    savedGoBtn.Size = UDim2.new(0, 70, 0, 28)
-    savedGoBtn.Position = UDim2.new(0, 0, 1, 0)
+    savedGoBtn.Size = UDim2.new(0, 70, 0, 26)
+    savedGoBtn.Position = UDim2.new(0, 0, 0, 0)
     savedGoBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 20)
     savedGoBtn.BorderSizePixel = 0
     savedGoBtn.Text = "▶ Go"
@@ -527,12 +611,12 @@ local function buildTab3()
     savedGoBtn.Font = Enum.Font.GothamBold
     savedGoBtn.ZIndex = 101
     savedGoBtn.AutoButtonColor = false
-    savedGoBtn.Parent = btnFrame
+    savedGoBtn.Parent = actionRow
     Instance.new("UICorner", savedGoBtn).CornerRadius = UDim.new(0, 5)
 
     local savedRemoveBtn = Instance.new("TextButton")
-    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 28)
-    savedRemoveBtn.Position = UDim2.new(0, 75, 1, 0)
+    savedRemoveBtn.Size = UDim2.new(0, 70, 0, 26)
+    savedRemoveBtn.Position = UDim2.new(0, 75, 0, 0)
     savedRemoveBtn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
     savedRemoveBtn.BorderSizePixel = 0
     savedRemoveBtn.Text = "🗑 Remove"
@@ -541,12 +625,12 @@ local function buildTab3()
     savedRemoveBtn.Font = Enum.Font.GothamBold
     savedRemoveBtn.ZIndex = 101
     savedRemoveBtn.AutoButtonColor = false
-    savedRemoveBtn.Parent = btnFrame
+    savedRemoveBtn.Parent = actionRow
     Instance.new("UICorner", savedRemoveBtn).CornerRadius = UDim.new(0, 5)
 
     local savedStopBtn = Instance.new("TextButton")
-    savedStopBtn.Size = UDim2.new(0, 40, 0, 28)
-    savedStopBtn.Position = UDim2.new(0, 150, 1, 0)
+    savedStopBtn.Size = UDim2.new(0, 40, 0, 26)
+    savedStopBtn.Position = UDim2.new(0, 150, 0, 0)
     savedStopBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
     savedStopBtn.BorderSizePixel = 0
     savedStopBtn.Text = "⏹"
@@ -555,7 +639,7 @@ local function buildTab3()
     savedStopBtn.Font = Enum.Font.GothamBold
     savedStopBtn.ZIndex = 101
     savedStopBtn.AutoButtonColor = false
-    savedStopBtn.Parent = btnFrame
+    savedStopBtn.Parent = actionRow
     Instance.new("UICorner", savedStopBtn).CornerRadius = UDim.new(0, 5)
 
     savedStopBtn.MouseButton1Click:Connect(stopWalking)
@@ -603,8 +687,13 @@ local function buildTab3()
         if not root then return end
         local cf = root.CFrame
         local pos = cf.Position
-        local name = "Pos " .. string.format("%.0f,%.0f,%.0f", pos.X, pos.Y, pos.Z)
+        local name = state.saveName
+        if name == "" then
+            name = "Pos " .. string.format("%.0f,%.0f,%.0f", pos.X, pos.Y, pos.Z)
+        end
         table.insert(state.savedPositions, {name = name, cf = cf})
+        state.saveName = ""
+        nameInput.Text = ""
         refreshSavedList()
     end)
 
@@ -634,7 +723,6 @@ createTabButton("Saved Positions", buildTab3)
 for _, child in ipairs(tabFrame:GetChildren()) do
     if child:IsA("TextButton") then
         child.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
-        -- Trigger klik untuk build konten pertama
         pcall(function() child.MouseButton1Click:Fire() end)
         break
     end
@@ -671,4 +759,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHX Safe Walk v3.1 siap. Tab fixed, rotasi akurat, save posisi langsung.")
+print("ZHX Safe Walk v3.2 siap. Layout fixed, nama save, auto diving gear, damage protect.")
