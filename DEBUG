@@ -1,1 +1,131 @@
+-- // ZHX Adaptive Limiter Test - Phase 1
+-- // Mengukur response time remote RF/UpdateAutoFishingState
+-- // Kirim hasil ke Discord
 
+local webhook = "https://discord.com/api/webhooks/1506044266684743801/PlopEC1wwOyfGQh-3oBQFl67_IPfoNmUYDMvEU_kjvZP6zR6v0BjfMeObTUsxhOUepqg"
+local HS = game:GetService("HttpService")
+local RS = game:GetService("ReplicatedStorage")
+
+local function send(msg)
+    pcall(function()
+        local body = HS:JSONEncode({content = msg:sub(1, 1900)})
+        if http_request then http_request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        elseif syn and syn.request then syn.request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        else request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
+        end
+    end)
+end
+
+send("🔬 Adaptive Limiter Test dimulai...")
+
+-- Fungsi find remote (metode Blapet)
+local function findRemoteByLabel(label)
+    local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
+        if child.Name == label then
+            local inside = child:FindFirstChildOfClass("RemoteFunction") or child:FindFirstChildOfClass("RemoteEvent")
+            if inside then
+                local h = inside.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return inside end
+            end
+            local nxt = children[i+1]
+            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
+                local h = nxt.Name:match("^R[FE]/([a-fA-F0-9]+)$")
+                if h and #h == 64 then return nxt end
+            end
+            break
+        end
+    end
+    return nil
+end
+
+local autoStateRF = findRemoteByLabel("RF/UpdateAutoFishingState")
+if not autoStateRF then
+    send("❌ Remote UpdateAutoFishingState tidak ditemukan")
+    return
+end
+
+-- Tes pengukuran
+local function testSpam(threads, duration)
+    local startTime = tick()
+    local callCount = 0
+    local totalResponseTime = 0
+    local minResponse = math.huge
+    local maxResponse = 0
+    local errors = 0
+
+    local threadsList = {}
+    for i = 1, threads do
+        local th = task.spawn(function()
+            while tick() - startTime < duration do
+                local reqStart = tick()
+                local ok = pcall(function()
+                    autoStateRF:InvokeServer(false)
+                end)
+                if ok then
+                    local responseTime = tick() - reqStart
+                    callCount = callCount + 1
+                    totalResponseTime = totalResponseTime + responseTime
+                    if responseTime < minResponse then minResponse = responseTime end
+                    if responseTime > maxResponse then maxResponse = responseTime end
+                else
+                    errors = errors + 1
+                end
+            end
+        end)
+        table.insert(threadsList, th)
+    end
+
+    -- Tunggu semua thread selesai
+    for _, th in ipairs(threadsList) do
+        task.wait(th)
+    end
+
+    local elapsed = tick() - startTime
+    local callsPerSec = callCount / elapsed
+    local avgResponse = callCount > 0 and (totalResponseTime / callCount * 1000) or 0
+    local minMs = minResponse < math.huge and (minResponse * 1000) or 0
+    local maxMs = maxResponse * 1000
+
+    return {
+        threads = threads,
+        duration = duration,
+        calls = callCount,
+        callsPerSec = callsPerSec,
+        avgMs = avgResponse,
+        minMs = minMs,
+        maxMs = maxMs,
+        errors = errors
+    }
+end
+
+-- Lakukan serangkaian tes
+local testConfigs = {
+    {threads = 1, duration = 3},
+    {threads = 5, duration = 3},
+    {threads = 10, duration = 3},
+    {threads = 20, duration = 3},
+    {threads = 50, duration = 3},
+    {threads = 100, duration = 3},
+}
+
+send("📊 Memulai pengukuran response time...")
+for _, config in ipairs(testConfigs) do
+    local result = testSpam(config.threads, config.duration)
+    local msg = string.format(
+        "🧵 Thread: %d | Durasi: %ds | 🟢 Panggilan: %d (%.0f/s) | 📶 Avg: %.2fms | Min: %.2fms | Max: %.2fms | ❌ Error: %d",
+        result.threads,
+        result.duration,
+        result.calls,
+        result.callsPerSec,
+        result.avgMs,
+        result.minMs,
+        result.maxMs,
+        result.errors
+    )
+    send(msg)
+    task.wait(1) -- jeda antar tes
+end
+
+send("✅ Tes selesai. Laporkan hasilnya.")
