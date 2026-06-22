@@ -1,6 +1,8 @@
--- // ZHX Safe Walk v4.0 — Auto Event Hunter (Megalodon Hunt)
--- // Tab ke-4: Auto Event — Monitor & Auto Walk ke Megalodon Hunt
--- // Fitur: Toggle ON/OFF, monitor otomatis, walk ke event + offset Y, lock, kembali
+-- // ZHX Safe Walk v4.1 — Auto Event Hunter Fix + Layout Saved Positions
+-- // Auto Event: hanya monitor saat ON, simpan posisi saat event terdeteksi
+-- // OFF = langsung kembali ke posisi semula jika di event
+-- // Blokir walk lain saat Auto Event aktif
+-- // Saved Positions: tombol lebih turun
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -44,7 +46,7 @@ local state = {
     autoEventActive = false,
     selectedEvent = "Megalodon Hunt",
     eventMonitorThread = nil,
-    savedUserPosition = nil,
+    savedUserPosition = nil,    -- disimpan saat event pertama terdeteksi
     isAtEvent = false,
     eventPosition = nil,
 }
@@ -138,6 +140,9 @@ end
 -- ========== SMOOTH WALK ==========
 local function safeWalk(targetCF)
     if state.isWalking then return end
+    -- Cegah walk lain jika auto event sedang di event
+    if state.autoEventActive and state.isAtEvent then return end
+    
     local char = LP.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
@@ -214,11 +219,9 @@ local function getEventPosition(eventName)
     -- Cari part dengan nama yang sama
     for _, child in ipairs(model:GetDescendants()) do
         if child.Name == eventName and child:IsA("BasePart") then
-            -- Naikkan sedikit ke atas agar tidak terendam air
             return child.Position + Vector3.new(0, 5, 0)
         end
     end
-    -- Fallback: part pertama
     for _, child in ipairs(model:GetDescendants()) do
         if child:IsA("BasePart") then
             return child.Position + Vector3.new(0, 5, 0)
@@ -243,12 +246,10 @@ local function lockUserAtPosition(pos)
     local char = LP.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
     if not root then return end
     
     protectCharacter()
     root.Anchored = true
-    if hum then hum.PlatformStand = true end
     state.isAtEvent = true
 end
 
@@ -266,7 +267,7 @@ end
 local function startAutoEvent()
     if state.autoEventActive then return end
     state.autoEventActive = true
-    state.savedUserPosition = getCurrentUserCFrame()
+    state.savedUserPosition = nil -- reset, baru disimpan saat event terdeteksi
     
     state.eventMonitorThread = task.spawn(function()
         while state.autoEventActive do
@@ -277,28 +278,29 @@ local function startAutoEvent()
                     unlockUser()
                     if state.savedUserPosition then
                         safeWalk(state.savedUserPosition)
-                        state.savedUserPosition = nil
                     end
+                    state.savedUserPosition = nil
                 end
             else
                 -- Monitor apakah event muncul
                 if isEventActive(state.selectedEvent) then
                     local pos = getEventPosition(state.selectedEvent)
                     if pos then
-                        -- Simpan posisi user jika belum
+                        -- Simpan posisi user SAAT INI (sebelum pergi ke event)
                         if not state.savedUserPosition then
                             state.savedUserPosition = getCurrentUserCFrame()
                         end
                         -- Walk ke event
                         safeWalk(CFrame.new(pos))
-                        task.wait(1) -- tunggu sebentar sampai walk selesai
+                        task.wait(1)
                         lockUserAtPosition(pos)
                     end
                 end
             end
             task.wait(3 + math.random() * 2) -- 3-5 detik
         end
-        -- Cleanup saat off
+        
+        -- Cleanup saat OFF: jika terkunci, lepaskan dan kembali
         if state.isAtEvent then
             unlockUser()
             if state.savedUserPosition then
@@ -345,7 +347,7 @@ Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(255, 200, 0)
 
 -- Main Panel
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHX_SafeWalk_v4.0"
+mainGui.Name = "ZHX_SafeWalk_v4.1"
 mainGui.ResetOnSpawn = false
 mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mainGui.Parent = pg
@@ -371,7 +373,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "📍 ZHX Safe Walk v4.0"
+title.Text = "📍 ZHX Safe Walk v4.1"
 title.TextColor3 = Color3.fromRGB(255, 200, 0)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -526,6 +528,7 @@ local function buildTab1()
     locScroll.CanvasSize = UDim2.new(0, 0, 0, totalLocH + 8)
 
     locGoBtn.MouseButton1Click:Connect(function()
+        if state.autoEventActive then return end -- blokir jika auto event aktif
         if selectedLocation then
             safeWalk(selectedLocation)
         end
@@ -653,6 +656,7 @@ local function buildTab2()
     refreshPlayerList()
 
     playerGoBtn.MouseButton1Click:Connect(function()
+        if state.autoEventActive then return end -- blokir
         if not selectedPlayer then return end
         local char = selectedPlayer.Character
         if not char then return end
@@ -689,7 +693,7 @@ local function buildTab3()
     end)
 
     local savedScroll = Instance.new("ScrollingFrame")
-    savedScroll.Size = UDim2.new(1, -10, 1, -115)
+    savedScroll.Size = UDim2.new(1, -10, 1, -120) -- lebih pendek
     savedScroll.Position = UDim2.new(0, 5, 0, 34)
     savedScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     savedScroll.BorderSizePixel = 0
@@ -704,9 +708,10 @@ local function buildTab3()
     savedLayout.Padding = UDim.new(0, 2)
     savedLayout.Parent = savedScroll
 
+    -- Tombol frame di posisi lebih bawah
     local btnFrame = Instance.new("Frame")
     btnFrame.Size = UDim2.new(1, -10, 0, 85)
-    btnFrame.Position = UDim2.new(0, 5, 1, -92)
+    btnFrame.Position = UDim2.new(0, 5, 1, -92) -- pas di paling bawah
     btnFrame.BackgroundTransparency = 1
     btnFrame.ZIndex = 101
     btnFrame.Parent = content
@@ -831,6 +836,7 @@ local function buildTab3()
     end)
 
     savedGoBtn.MouseButton1Click:Connect(function()
+        if state.autoEventActive then return end -- blokir
         if state.selectedSavedIndex and state.savedPositions[state.selectedSavedIndex] then
             safeWalk(state.savedPositions[state.selectedSavedIndex].cf)
         end
@@ -855,7 +861,6 @@ local function buildTab4()
     content.BackgroundTransparency = 1
     content.ZIndex = 101
 
-    -- Status label
     local statusLabel = Instance.new("TextLabel")
     statusLabel.Size = UDim2.new(1, -10, 0, 20)
     statusLabel.Position = UDim2.new(0, 5, 0, 8)
@@ -867,7 +872,6 @@ local function buildTab4()
     statusLabel.ZIndex = 103
     statusLabel.Parent = content
 
-    -- Pilihan event (hanya Megalodon Hunt untuk sekarang)
     local eventLabel = Instance.new("TextLabel")
     eventLabel.Size = UDim2.new(1, -10, 0, 20)
     eventLabel.Position = UDim2.new(0, 5, 0, 34)
@@ -879,7 +883,6 @@ local function buildTab4()
     eventLabel.ZIndex = 103
     eventLabel.Parent = content
 
-    -- Toggle ON/OFF
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(1, -10, 0, 34)
     toggleBtn.Position = UDim2.new(0, 5, 1, -40)
@@ -908,14 +911,13 @@ local function buildTab4()
         end
     end)
 
-    -- Update status label secara periodik
     task.spawn(function()
         while true do
             if state.autoEventActive then
                 if state.isAtEvent then
-                    statusLabel.Text = "Status: Di lokasi event - Megalodon Hunt"
+                    statusLabel.Text = "Status: Di lokasi event"
                 else
-                    statusLabel.Text = "Status: Monitoring... Megalodon Hunt"
+                    statusLabel.Text = "Status: Monitoring..."
                 end
             end
             task.wait(1)
@@ -931,7 +933,6 @@ createTabButton("Walk to Player", buildTab2)
 createTabButton("Saved Positions", buildTab3)
 createTabButton("Auto Event", buildTab4)
 
--- Aktifkan tab pertama secara default
 tab1Btn.BackgroundColor3 = Color3.fromRGB(60, 60, 20)
 local defaultContent = buildTab1()
 defaultContent.Parent = contentFrame
@@ -967,4 +968,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHX Safe Walk v4.0 siap. Tab Auto Event: aktifkan toggle untuk monitoring Megalodon Hunt otomatis.")
+print("ZHX Safe Walk v4.1 siap. Auto Event: OFF = kembali ke posisi semula, blokir walk lain, layout fixed.")
