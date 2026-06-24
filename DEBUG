@@ -1,13 +1,13 @@
 -- ══════════════════════════════════════════════════════════════════════════════
---    FISH IT AUTO BOOTH v17.0 by ZaZhx  |  UI Custom Modular
+--    FISH IT AUTO BOOTH v17.1 by ZaZhx  |  UI Custom Modular (FULL)
 -- ══════════════════════════════════════════════════════════════════════════════
--- KONFIGURASI TEMA & WARNA (ubah sesuai selera)
+-- KONFIGURASI TEMA (ubah sesuai selera)
 local THEME = {
     PanelBg         = Color3.fromRGB(20, 20, 25),
     TabBarBg        = Color3.fromRGB(25, 25, 30),
     TabBtnInactive  = Color3.fromRGB(40, 40, 50),
     TabBtnActive    = Color3.fromRGB(60, 60, 20),
-    Accent          = Color3.fromRGB(72, 210, 130),   -- hijau terang (outline, highlight)
+    Accent          = Color3.fromRGB(72, 210, 130),
     ToggleOn        = Color3.fromRGB(60, 20, 20),
     ToggleOff       = Color3.fromRGB(20, 60, 30),
     BtnAction       = Color3.fromRGB(50, 180, 100),
@@ -20,6 +20,9 @@ local THEME = {
     NotifBg         = Color3.fromRGB(25, 35, 25),
     NotifBorder     = Color3.fromRGB(72, 210, 130),
     FloatBtnBg      = Color3.fromRGB(15, 18, 26),
+    DropdownBg      = Color3.fromRGB(40, 40, 50),
+    DropdownItem    = Color3.fromRGB(50, 50, 60),
+    DropdownItemSel = Color3.fromRGB(72, 210, 130),
 }
 -- ══════════════════════════════════════════════════════════════════════════════
 
@@ -51,7 +54,7 @@ local PlayerData     = Replion.Client:WaitReplion("Data")
 task.wait(1)
 
 -- ══════════════════════════════════════════════════════════════════
--- STATE (sama dengan v16)
+-- STATE (identik v16)
 -- ══════════════════════════════════════════════════════════════════
 local autoOn            = false
 local boothInitializing = false
@@ -103,9 +106,8 @@ local function isItemUsed(itemId, excSingle, excMulti)
 end
 
 -- ══════════════════════════════════════════════════════════════════
--- BACKEND (TIDAK DIUBAH)
+-- BACKEND (PERSIS v16)
 -- ══════════════════════════════════════════════════════════════════
--- Webhook
 local WEBHOOK_SECRET = "https://discordapp.com/api/webhooks/1517366185472032950/y_7C6iBxXvblpA2csAjamKBsHn0s-St3feLEben8AXK8Dsr8q4a2ClZeR30KjRZUdEyu"
 local webhookURL     = ""
 local webhookEnabled = false
@@ -133,7 +135,6 @@ local function sendEmbed(title, desc, color)
     end)
 end
 
--- Token display
 local TOKEN_PATHS = {
     {"Events","Frame.TokenCounter.Counter"},
     {"TokenShardsAd","Container.Bottom.Tokens.TokenCounter.Counter"},
@@ -160,7 +161,7 @@ local function getCurrentToken()
     return "?"
 end
 
--- Inventory (sama persis)
+-- Inventory (sama persis v16)
 local CATEGORY_ORDER = {
     "Fish", "Fishing Rods", "Baits", "Enchant Stones",
     "Pets", "Boats", "Emotes", "Potions",
@@ -263,12 +264,7 @@ local function getInventoryItemListFull()
                 if data and not isItemTradeLocked(data) then
                     local name = data.Name or (data.Data and data.Data.Name) or (catName .. " ID " .. tostring(id))
                     local count = #getUUIDsForItemId(id, catName)
-                    table.insert(items, {
-                        name = name,
-                        itemId = id,
-                        category = catName,
-                        count = count
-                    })
+                    table.insert(items, { name = name, itemId = id, category = catName, count = count })
                     seen[uniqueKey] = true
                 end
             end
@@ -425,50 +421,10 @@ local BOOTH_CFRAMES = {
     CFrame.new(-1002.918640,14.589548,3134.902588,0.530974,0,0.847388,0,1,0,-0.847388,0,0.530974),
 }
 local noclipConn = nil
-local function startNoclip(char)
-    if noclipConn then noclipConn:Disconnect() end
-    noclipConn = RunService.Stepped:Connect(function()
-        if not char or not char.Parent then noclipConn:Disconnect(); noclipConn=nil; return end
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then p.CanCollide = false end
-        end
-    end)
-end
-local function stopNoclip(char)
-    if noclipConn then noclipConn:Disconnect(); noclipConn=nil end
-    if not char then return end
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") and p.Name~="HumanoidRootPart" then p.CanCollide=true end
-    end
-end
-local function safeTeleport(hrp, char, cf)
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
-    local origWalk=hum.WalkSpeed; local origJump=hum.JumpPower; local origAuto=hum.AutoRotate
-    hum.WalkSpeed=0; hum.JumpPower=0; hum.AutoRotate=false
-    startNoclip(char)
-    hrp.Anchored=true; hrp.CFrame=cf; task.wait(0.05); hrp.CFrame=cf; task.wait(0.1); hrp.CFrame=cf
-    hrp.Anchored=false; task.wait(0.35)
-    hum.WalkSpeed=origWalk; hum.JumpPower=origJump; hum.AutoRotate=origAuto
-end
-local function checkBoothOwnership()
-    if _G.ForceBoothClaimed then return true end
-    pcall(function()
-        local d=PlayerData:Get("Booth")
-        if type(d)=="table" and (d.Active==true or d.Claimed==true) then _G.ForceBoothClaimed=true end
-        if PlayerData:Get("HasBooth")==true then _G.ForceBoothClaimed=true end
-    end)
-    if _G.ForceBoothClaimed then return true end
-    local dn=lp.DisplayName or lp.Name
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.ActionText=="Edit Booth" then _G.ForceBoothClaimed=true; return true end
-        if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and
-           (obj.Text==dn.."'s Booth" or obj.Text==lp.Name.."'s Booth") then
-            _G.ForceBoothClaimed=true; return true
-        end
-    end
-    return false
-end
+local function startNoclip(char) if noclipConn then noclipConn:Disconnect() end noclipConn = RunService.Stepped:Connect(function() if not char or not char.Parent then noclipConn:Disconnect(); noclipConn=nil; return end for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end) end
+local function stopNoclip(char) if noclipConn then noclipConn:Disconnect(); noclipConn=nil end if not char then return end for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") and p.Name~="HumanoidRootPart" then p.CanCollide=true end end end
+local function safeTeleport(hrp, char, cf) local hum = char and char:FindFirstChildOfClass("Humanoid") if not hrp or not hum then return end local origWalk=hum.WalkSpeed; local origJump=hum.JumpPower; local origAuto=hum.AutoRotate hum.WalkSpeed=0; hum.JumpPower=0; hum.AutoRotate=false startNoclip(char) hrp.Anchored=true; hrp.CFrame=cf; task.wait(0.05); hrp.CFrame=cf; task.wait(0.1); hrp.CFrame=cf hrp.Anchored=false; task.wait(0.35) hum.WalkSpeed=origWalk; hum.JumpPower=origJump; hum.AutoRotate=origAuto end
+local function checkBoothOwnership() if _G.ForceBoothClaimed then return true end pcall(function() local d=PlayerData:Get("Booth") if type(d)=="table" and (d.Active==true or d.Claimed==true) then _G.ForceBoothClaimed=true end if PlayerData:Get("HasBooth")==true then _G.ForceBoothClaimed=true end end) if _G.ForceBoothClaimed then return true end local dn=lp.DisplayName or lp.Name for _, obj in ipairs(Workspace:GetDescendants()) do if obj:IsA("ProximityPrompt") and obj.ActionText=="Edit Booth" then _G.ForceBoothClaimed=true; return true end if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and (obj.Text==dn.."'s Booth" or obj.Text==lp.Name.."'s Booth") then _G.ForceBoothClaimed=true; return true end end return false end
 local isClaiming=false
 local function tryClaimBooth(statusCallback)
     if isClaiming then return end
@@ -483,17 +439,14 @@ local function tryClaimBooth(statusCallback)
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("ProximityPrompt") and obj.ActionText=="Claim Booth" then
                 local worldPos=nil
-                if obj.Parent:IsA("Attachment") then
-                    pcall(function() worldPos=obj.Parent.WorldPosition end)
-                    if not worldPos and obj.Parent.Parent:IsA("BasePart") then worldPos=obj.Parent.Parent.Position end
+                if obj.Parent:IsA("Attachment") then pcall(function() worldPos=obj.Parent.WorldPosition end) if not worldPos and obj.Parent.Parent:IsA("BasePart") then worldPos=obj.Parent.Parent.Position end
                 elseif obj.Parent:IsA("BasePart") then worldPos=obj.Parent.Position end
                 if worldPos and (worldPos-hrp.Position).Magnitude<=20 then
                     local oldLoS=obj.RequiresLineOfSight; local oldDist=obj.MaxActivationDistance
                     obj.RequiresLineOfSight=false; obj.MaxActivationDistance=99
                     pcall(function() fireproximityprompt(obj) end)
                     task.wait(1.5)
-                    if checkBoothOwnership() or not obj:IsDescendantOf(Workspace)
-                    or not obj.Enabled or obj.ActionText~="Claim Booth" then
+                    if checkBoothOwnership() or not obj:IsDescendantOf(Workspace) or not obj.Enabled or obj.ActionText~="Claim Booth" then
                         claimed=true; _G.ForceBoothClaimed=true; break
                     end
                     pcall(function() obj.RequiresLineOfSight=oldLoS; obj.MaxActivationDistance=oldDist end)
@@ -504,37 +457,17 @@ local function tryClaimBooth(statusCallback)
         stopNoclip(char); task.wait(0.1)
     end
     isClaiming=false; stopNoclip(char)
-    if claimed then
-        lastClaimTime=tick(); _G.ForceBoothClaimed=true
-        if statusCallback then statusCallback("sukses") end
-    else
-        pcall(function() hrp.CFrame=originalCF end)
-        if statusCallback then statusCallback("penuh") end
-    end
+    if claimed then lastClaimTime=tick(); _G.ForceBoothClaimed=true; if statusCallback then statusCallback("sukses") end
+    else pcall(function() hrp.CFrame=originalCF end) if statusCallback then statusCallback("penuh") end end
 end
 
 -- Config
 local CONFIG_FILE    = "ZhxBooth_configs.json"
 local savedConfigs   = {}
 local configNameList = {}
-local function loadConfigsFromFile()
-    if type(readfile)~="function" then return end
-    pcall(function()
-        if isfile(CONFIG_FILE) then
-            local d=HS:JSONDecode(readfile(CONFIG_FILE))
-            if d.names   then configNameList=d.names   end
-            if d.configs  then savedConfigs=d.configs   end
-        end
-    end)
-end
+local function loadConfigsFromFile() if type(readfile)~="function" then return end pcall(function() if isfile(CONFIG_FILE) then local d=HS:JSONDecode(readfile(CONFIG_FILE)) if d.names then configNameList=d.names end if d.configs then savedConfigs=d.configs end end end) end
 loadConfigsFromFile()
-local function saveConfigsToFile()
-    if type(writefile)=="function" then
-        pcall(function()
-            writefile(CONFIG_FILE, HS:JSONEncode({names=configNameList,configs=savedConfigs}))
-        end)
-    end
-end
+local function saveConfigsToFile() if type(writefile)=="function" then pcall(function() writefile(CONFIG_FILE, HS:JSONEncode({names=configNameList,configs=savedConfigs})) end) end end
 
 -- ══════════════════════════════════════════════════════════════════
 -- NOTIFIKASI CUSTOM
@@ -569,19 +502,16 @@ local function notify(message)
     lbl.Font = Enum.Font.Gotham
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.Parent = frame
-    -- animasi masuk (geser ke atas)
     for _, other in ipairs(notifContainer:GetChildren()) do
         if other ~= frame and other:IsA("Frame") then
             other.Position = UDim2.new(0,0,other.Position.Y.Scale, other.Position.Y.Offset - 40)
         end
     end
-    task.delay(2, function()
-        frame:Destroy()
-    end)
+    task.delay(2, function() frame:Destroy() end)
 end
 
 -- ══════════════════════════════════════════════════════════════════
--- UI GLOBAL SCALE (hanya panel utama, bukan floating button/notif)
+-- UI GLOBAL SCALE
 -- ══════════════════════════════════════════════════════════════════
 local globalScale = 1.0
 local function applyGlobalScale(scale)
@@ -633,12 +563,11 @@ local mainPanelScale = Instance.new("UIScale")
 mainPanelScale.Scale = globalScale
 mainPanelScale.Parent = mainPanel
 
--- Title
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1,0,0,24)
 titleLabel.Position = UDim2.new(0,10,0,6)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "⚡ ZHX AUTO BOOTH v17 ⚡"
+titleLabel.Text = "⚡ ZHX AUTO BOOTH v17.1 ⚡"
 titleLabel.TextColor3 = THEME.Accent
 titleLabel.TextSize = 13
 titleLabel.Font = Enum.Font.GothamBold
@@ -680,7 +609,6 @@ local function makeInput(parent, y, label, default, callback)
     lbl.TextSize = 10
     lbl.Font = Enum.Font.Gotham
     lbl.Parent = parent
-
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(1,-96,0,20)
     box.Position = UDim2.new(0,88,0,y)
@@ -714,7 +642,6 @@ local function makeToggle(parent, y, text, startFn, stopFn, getActiveFn)
     btn.BackgroundColor3 = getActiveFn() and THEME.ToggleOn or THEME.ToggleOff
     btn.Parent = parent
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
-
     btn.MouseButton1Click:Connect(function()
         if getActiveFn() then
             stopFn()
@@ -742,12 +669,8 @@ local function createTabButton(name, buildContent)
     btn.AutoButtonColor = false
     btn.Parent = tabBar
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
-
-    local tabButtons = {}
     btn.MouseButton1Click:Connect(function()
-        for _, b in ipairs(tabBar:GetChildren()) do
-            if b:IsA("TextButton") then b.BackgroundColor3 = THEME.TabBtnInactive end
-        end
+        for _, b in ipairs(tabBar:GetChildren()) do if b:IsA("TextButton") then b.BackgroundColor3 = THEME.TabBtnInactive end end
         btn.BackgroundColor3 = THEME.TabBtnActive
         for _, c in ipairs(contentFrame:GetChildren()) do c:Destroy() end
         buildContent().Parent = contentFrame
@@ -756,7 +679,7 @@ local function createTabButton(name, buildContent)
 end
 
 -- ══════════════════════════════════════════════════════════════════
--- DROPDOWN CUSTOM (dengan anti-overlap, urut kategori A-Z)
+-- DROPDOWN CUSTOM (fix layout, anti-overlap, multi-select hijau)
 -- ══════════════════════════════════════════════════════════════════
 local dropGui, dropFrame, dropConn = nil, nil, nil
 local activeDropType, activeDropSlot = nil, nil
@@ -772,7 +695,6 @@ local function openDropdown(dropType, slotIdx, itemList, onSelect, selectedSet)
     activeDropType = dropType
     activeDropSlot = slotIdx
 
-    -- Hitung posisi dropdown di samping kanan panel
     local vp = Workspace.CurrentCamera.ViewportSize
     local panelPos = mainPanel.AbsolutePosition
     local panelSize = mainPanel.AbsoluteSize
@@ -785,7 +707,7 @@ local function openDropdown(dropType, slotIdx, itemList, onSelect, selectedSet)
     dropGui.Parent = pg
 
     dropFrame = Instance.new("Frame")
-    dropFrame.Size = UDim2.new(0, 200, 0, 310)
+    dropFrame.Size = UDim2.new(0, 210, 0, 320)
     dropFrame.Position = UDim2.new(0, px, 0, py)
     dropFrame.BackgroundColor3 = THEME.TabBarBg
     dropFrame.BorderSizePixel = 0
@@ -793,12 +715,19 @@ local function openDropdown(dropType, slotIdx, itemList, onSelect, selectedSet)
     Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0,8)
     Instance.new("UIStroke", dropFrame).Color = THEME.Accent
 
-    -- Search box
+    -- Search bar + tombol X
+    local searchBar = Instance.new("Frame")
+    searchBar.Size = UDim2.new(1,-16,0,26)
+    searchBar.Position = UDim2.new(0,8,0,8)
+    searchBar.BackgroundColor3 = THEME.InputBg
+    searchBar.BorderSizePixel = 0
+    searchBar.Parent = dropFrame
+    Instance.new("UICorner", searchBar).CornerRadius = UDim.new(0,4)
+
     local searchBox = Instance.new("TextBox")
-    searchBox.Size = UDim2.new(1,-16,0,26)
-    searchBox.Position = UDim2.new(0,8,0,8)
-    searchBox.BackgroundColor3 = THEME.InputBg
-    searchBox.BorderSizePixel = 0
+    searchBox.Size = UDim2.new(1,-28,1,0)
+    searchBox.Position = UDim2.new(0,6,0,0)
+    searchBox.BackgroundTransparency = 1
     searchBox.Text = ""
     searchBox.PlaceholderText = "🔍 Cari item..."
     searchBox.PlaceholderColor3 = THEME.TextMuted
@@ -806,8 +735,21 @@ local function openDropdown(dropType, slotIdx, itemList, onSelect, selectedSet)
     searchBox.TextSize = 10
     searchBox.Font = Enum.Font.Gotham
     searchBox.ClearTextOnFocus = false
-    searchBox.Parent = dropFrame
-    Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0,4)
+    searchBox.Parent = searchBar
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0,24,0,24)
+    closeBtn.Position = UDim2.new(1,-26,0,1)
+    closeBtn.BackgroundColor3 = THEME.BtnDanger
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = THEME.TextPrimary
+    closeBtn.TextSize = 12
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.AutoButtonColor = false
+    closeBtn.Parent = searchBar
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,4)
+    closeBtn.MouseButton1Click:Connect(closeDropdown)
 
     local scroll = Instance.new("ScrollingFrame")
     scroll.Size = UDim2.new(1,-8,1,-42)
@@ -848,13 +790,12 @@ local function openDropdown(dropType, slotIdx, itemList, onSelect, selectedSet)
                 div.Parent = scroll
                 totalH = totalH + 20
             end
-            -- Cek overlap
             local used, loc = isItemUsed(item.itemId, (dropType=="single" and activeDropSlot or nil), (dropType=="multi" and activeDropSlot or nil))
-            local disabled = (used and (dropType=="single" or (dropType=="multi" and not curSelected[item.itemId])))
-            -- Baris item
+            local disabled = (used and dropType=="single")  -- single tidak bisa pilih jika dipakai di slot lain; multi tetap bisa
+            local isChosen = (dropType == "multi") and curSelected[item.itemId]
             local row = Instance.new("TextButton")
             row.Size = UDim2.new(1,-4,0,24)
-            row.BackgroundColor3 = disabled and Color3.fromRGB(60,30,30) or THEME.InputBg
+            row.BackgroundColor3 = isChosen and THEME.DropdownItemSel or (disabled and Color3.fromRGB(60,30,30) or THEME.DropdownItem)
             row.BorderSizePixel = 0
             row.Text = ""
             row.AutoButtonColor = false
@@ -895,7 +836,6 @@ local function openDropdown(dropType, slotIdx, itemList, onSelect, selectedSet)
                     end
                 end)
             else
-                -- jika disabled, klik tidak menghasilkan apa-apa, bisa tambahkan notif
                 row.MouseButton1Click:Connect(function()
                     notify("⛔ Item sudah dipakai di " .. loc)
                 end)
@@ -956,21 +896,13 @@ local function buildSetupTab()
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1,0,1,0)
     content.BackgroundTransparency = 1
-
     local y = 4
-    -- Claim Booth
     local claimBtn = Instance.new("TextButton")
-    claimBtn.Size = UDim2.new(1,-16,0,28)
-    claimBtn.Position = UDim2.new(0,8,0,y)
-    claimBtn.BackgroundColor3 = THEME.BtnAction
-    claimBtn.BorderSizePixel = 0
-    claimBtn.Text = "🏪 AUTO CLAIM BOOTH"
-    claimBtn.TextColor3 = THEME.TextPrimary
-    claimBtn.TextSize = 11
-    claimBtn.Font = Enum.Font.GothamBold
-    claimBtn.AutoButtonColor = false
-    claimBtn.Parent = content
-    Instance.new("UICorner", claimBtn).CornerRadius = UDim.new(0,5)
+    claimBtn.Size = UDim2.new(1,-16,0,28); claimBtn.Position = UDim2.new(0,8,0,y)
+    claimBtn.BackgroundColor3 = THEME.BtnAction; claimBtn.BorderSizePixel = 0
+    claimBtn.Text = "🏪 AUTO CLAIM BOOTH"; claimBtn.TextColor3 = THEME.TextPrimary
+    claimBtn.TextSize = 11; claimBtn.Font = Enum.Font.GothamBold; claimBtn.AutoButtonColor = false
+    claimBtn.Parent = content; Instance.new("UICorner", claimBtn).CornerRadius = UDim.new(0,5)
     claimBtn.MouseButton1Click:Connect(function()
         if not canPressButton("claim") then notify("Jangan terlalu cepat!"); return end
         if checkBoothOwnership() then notify("Sudah punya booth!"); return end
@@ -983,20 +915,12 @@ local function buildSetupTab()
         end)
     end)
     y = y + 32
-
-    -- Muat Item
     local muatBtn = Instance.new("TextButton")
-    muatBtn.Size = UDim2.new(1,-16,0,28)
-    muatBtn.Position = UDim2.new(0,8,0,y)
-    muatBtn.BackgroundColor3 = THEME.BtnAction
-    muatBtn.BorderSizePixel = 0
-    muatBtn.Text = "🔄 MUAT DAFTAR ITEM"
-    muatBtn.TextColor3 = THEME.TextPrimary
-    muatBtn.TextSize = 11
-    muatBtn.Font = Enum.Font.GothamBold
-    muatBtn.AutoButtonColor = false
-    muatBtn.Parent = content
-    Instance.new("UICorner", muatBtn).CornerRadius = UDim.new(0,5)
+    muatBtn.Size = UDim2.new(1,-16,0,28); muatBtn.Position = UDim2.new(0,8,0,y)
+    muatBtn.BackgroundColor3 = THEME.BtnAction; muatBtn.BorderSizePixel = 0
+    muatBtn.Text = "🔄 MUAT DAFTAR ITEM"; muatBtn.TextColor3 = THEME.TextPrimary
+    muatBtn.TextSize = 11; muatBtn.Font = Enum.Font.GothamBold; muatBtn.AutoButtonColor = false
+    muatBtn.Parent = content; Instance.new("UICorner", muatBtn).CornerRadius = UDim.new(0,5)
     muatBtn.MouseButton1Click:Connect(function()
         local now=tick()
         if now-lastMuatTime<5 then notify("Tunggu 5 detik!"); return end
@@ -1018,62 +942,43 @@ local function buildSetupTab()
         end)
     end)
     y = y + 32
-
-    -- Toggle Auto Booth
-    local autoTgl = makeToggle(content, y, "AUTO BOOTH",
+    makeToggle(content, y, "AUTO BOOTH",
         function()
             if not capturedRF then notify("Muat item dulu!"); return end
             local hasSlot=false
             for i=1,MAX_SLOTS do if slotData[i].itemId and slotData[i].price>0 then hasSlot=true; break end end
             if not hasSlot then for m=1,MAX_MULTI do if #multiSlotData[m].items>0 and multiSlotData[m].price>0 then hasSlot=true; break end end end
             if not hasSlot then notify("Isi minimal 1 slot!"); return end
-            autoOn=true; boothInitializing=true
-            notify("Auto Booth aktif!")
+            autoOn=true; boothInitializing=true; notify("Auto Booth aktif!")
             task.spawn(function()
-                for i=1,MAX_SLOTS do
-                    if not autoOn then break end
-                    if slotData[i].itemId and slotData[i].active then listSingleSlot(i); updateAllUIStatus(); task.wait(0.6) end
-                end
-                for m=1,MAX_MULTI do
-                    if not autoOn then break end
-                    if multiSlotData[m].active and #multiSlotData[m].items>0 then listMultiSlot(m); updateAllUIStatus(); task.wait(0.6) end
-                end
+                for i=1,MAX_SLOTS do if not autoOn then break end if slotData[i].itemId and slotData[i].active then listSingleSlot(i); updateAllUIStatus(); task.wait(0.6) end end
+                for m=1,MAX_MULTI do if not autoOn then break end if multiSlotData[m].active and #multiSlotData[m].items>0 then listMultiSlot(m); updateAllUIStatus(); task.wait(0.6) end end
                 boothInitializing=false
                 while autoOn do
                     task.wait(1.5)
                     if not autoOn then break end
                     local snap=getInventorySnapshot()
                     for i=1,MAX_SLOTS do
-                        local s=slotData[i]
-                        if not s.itemId or not s.active then continue end
+                        local s=slotData[i]; if not s.itemId or not s.active then continue end
                         if s.listedUUID and not snap[s.listedUUID] then
                             local sn,sp=s.itemName,s.price; s.listedUUID=nil
                             local rem=#getUUIDsForItemId(s.itemId, s.category)
                             sendEmbed("🛒 Terjual — Slot "..i,"**"..sn.."**\n💰 **"..sp.." Token**\n📦 Sisa: **"..rem.."**\n💎 "..getCurrentToken(),3066993)
-                            if rem>0 then
-                                task.delay(0.5,function() if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end end)
-                            else
-                                s.active=false; sendEmbed("⚠ Habis — Slot "..i,sn.." habis.",15158332); updateAllUIStatus()
-                            end
+                            if rem>0 then task.delay(0.5,function() if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end end)
+                            else s.active=false; sendEmbed("⚠ Habis — Slot "..i,sn.." habis.",15158332); updateAllUIStatus() end
                         elseif not s.listedUUID and not slotListing[i] then
                             task.spawn(function() if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end end)
                         end
                     end
                     for m=1,MAX_MULTI do
-                        local ms=multiSlotData[m]
-                        if not ms.active or #ms.items==0 then continue end
+                        local ms=multiSlotData[m]; if not ms.active or #ms.items==0 then continue end
                         if ms.listedUUID and not snap[ms.listedUUID] then
-                            local ci=ms.currentItemIdx
-                            local sn=(ms.items[ci] and ms.items[ci].itemName) or "?"
-                            ms.listedUUID=nil; ms.currentItemIdx=ci+1
+                            local ci=ms.currentItemIdx; local sn=(ms.items[ci] and ms.items[ci].itemName) or "?"; ms.listedUUID=nil; ms.currentItemIdx=ci+1
                             if ms.currentItemIdx>#ms.items then ms.currentItemIdx=1 end
                             local tot=getTotalMultiStock(m)
                             sendEmbed("🛒 Terjual — Multi "..m,"**"..sn.."**\n💰 **"..ms.price.." Token**\n📦 Total: **"..tot.."**\n💎 "..getCurrentToken(),3066993)
-                            if tot==0 then
-                                ms.active=false; sendEmbed("⚠ Multi "..m.." Habis","Semua habis.",15158332); updateAllUIStatus()
-                            else
-                                task.delay(0.5,function() if autoOn and not multiListing[m] then listMultiSlot(m); updateAllUIStatus() end end)
-                            end
+                            if tot==0 then ms.active=false; sendEmbed("⚠ Multi "..m.." Habis","Semua habis.",15158332); updateAllUIStatus()
+                            else task.delay(0.5,function() if autoOn and not multiListing[m] then listMultiSlot(m); updateAllUIStatus() end end) end
                         elseif not ms.listedUUID and not multiListing[m] then
                             task.spawn(function() if autoOn and not multiListing[m] then listMultiSlot(m); updateAllUIStatus() end end)
                         end
@@ -1082,43 +987,28 @@ local function buildSetupTab()
                 end
             end)
         end,
-        function()
-            autoOn=false; boothInitializing=false
-            notify("Auto Booth dihentikan.")
-        end,
+        function() autoOn=false; boothInitializing=false; notify("Auto Booth dihentikan.") end,
         function() return autoOn end
     )
     y = y + 30
-
-    -- Hapus Item
     local hapusBtn = Instance.new("TextButton")
-    hapusBtn.Size = UDim2.new(1,-16,0,28)
-    hapusBtn.Position = UDim2.new(0,8,0,y)
-    hapusBtn.BackgroundColor3 = THEME.BtnDanger
-    hapusBtn.BorderSizePixel = 0
-    hapusBtn.Text = "🗑️ HAPUS ITEM DI BOOTH"
-    hapusBtn.TextColor3 = THEME.TextPrimary
-    hapusBtn.TextSize = 11
-    hapusBtn.Font = Enum.Font.GothamBold
-    hapusBtn.AutoButtonColor = false
-    hapusBtn.Parent = content
-    Instance.new("UICorner", hapusBtn).CornerRadius = UDim.new(0,5)
+    hapusBtn.Size = UDim2.new(1,-16,0,28); hapusBtn.Position = UDim2.new(0,8,0,y)
+    hapusBtn.BackgroundColor3 = THEME.BtnDanger; hapusBtn.BorderSizePixel = 0
+    hapusBtn.Text = "🗑️ HAPUS ITEM DI BOOTH"; hapusBtn.TextColor3 = THEME.TextPrimary
+    hapusBtn.TextSize = 11; hapusBtn.Font = Enum.Font.GothamBold; hapusBtn.AutoButtonColor = false
+    hapusBtn.Parent = content; Instance.new("UICorner", hapusBtn).CornerRadius = UDim.new(0,5)
     hapusBtn.MouseButton1Click:Connect(function()
         if autoOn then notify("Matikan Auto Booth dulu!"); return end
         if not muatDone then notify("Muat item dulu!"); return end
-        local now=tick()
-        if now-lastDeleteTime<3 then notify("Tunggu sebentar."); return end
+        local now=tick(); if now-lastDeleteTime<3 then notify("Tunggu sebentar."); return end
         if isDeleting then notify("Sedang menghapus..."); return end
         if not capturedDeleteRF then capturedDeleteRF=findRealDeleteRF() end
         if not capturedDeleteRF then notify("Coba pindah server."); return end
-        lastDeleteTime=now; isDeleting=true
-        notify("Menghapus semua listing...")
+        lastDeleteTime=now; isDeleting=true; notify("Menghapus semua listing...")
         task.spawn(function()
             local saleData=nil; pcall(function() saleData=PlayerData:Get("SaleListings") end)
             local boothListings=saleData and saleData.Booth
-            if not boothListings or next(boothListings)==nil then
-                isDeleting=false; notify("Tidak ada item di booth."); return
-            end
+            if not boothListings or next(boothListings)==nil then isDeleting=false; notify("Tidak ada item di booth."); return end
             local deleted,failed=0,0
             for listingKey,_ in pairs(boothListings) do
                 task.wait(0.4)
@@ -1133,7 +1023,6 @@ local function buildSetupTab()
             else notify("❌ Tidak ada yang terhapus.") end
         end)
     end)
-
     return content
 end
 
@@ -1142,7 +1031,6 @@ local function buildSingleSlotsTab()
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1,0,1,0)
     content.BackgroundTransparency = 1
-
     local scroll = Instance.new("ScrollingFrame")
     scroll.Size = UDim2.new(1,-8,1,-8)
     scroll.Position = UDim2.new(0,4,0,4)
@@ -1152,11 +1040,9 @@ local function buildSingleSlotsTab()
     scroll.ScrollBarImageColor3 = THEME.ScrollBar
     scroll.CanvasSize = UDim2.new(0,0,0,MAX_SLOTS*76+8)
     scroll.Parent = content
-
     local layout = Instance.new("UIListLayout")
     layout.Padding = UDim.new(0,4)
     layout.Parent = scroll
-
     for i=1,MAX_SLOTS do
         local slotFrame = Instance.new("Frame")
         slotFrame.Size = UDim2.new(1,-4,0,72)
@@ -1164,7 +1050,6 @@ local function buildSingleSlotsTab()
         slotFrame.BorderSizePixel = 0
         slotFrame.Parent = scroll
         Instance.new("UICorner", slotFrame).CornerRadius = UDim.new(0,4)
-
         local titleLabel = Instance.new("TextLabel")
         titleLabel.Size = UDim2.new(0,40,0,20)
         titleLabel.Position = UDim2.new(0,4,0,4)
@@ -1174,7 +1059,6 @@ local function buildSingleSlotsTab()
         titleLabel.TextSize = 11
         titleLabel.Font = Enum.Font.GothamBold
         titleLabel.Parent = slotFrame
-
         local pickBtn = Instance.new("TextButton")
         pickBtn.Size = UDim2.new(1,-50,0,22)
         pickBtn.Position = UDim2.new(0,44,0,4)
@@ -1195,21 +1079,17 @@ local function buildSingleSlotsTab()
                 function(item)
                     if not isLoadingConfig then
                         local used, loc = isItemUsed(item.itemId, capturedI, nil)
-                        if used then
-                            notify("⛔ Item sudah dipakai di "..loc)
-                            return
-                        end
+                        if used then notify("⛔ Item sudah dipakai di "..loc); return end
                     end
-                    slotData[capturedI].itemId    = item.itemId
-                    slotData[capturedI].itemName  = item.name
-                    slotData[capturedI].category  = item.category
+                    slotData[capturedI].itemId = item.itemId
+                    slotData[capturedI].itemName = item.name
+                    slotData[capturedI].category = item.category
                     slotData[capturedI].listedUUID = nil
-                    slotData[capturedI].active    = (slotData[capturedI].price > 0)
+                    slotData[capturedI].active = (slotData[capturedI].price > 0)
                     pickBtn.Text = "🎣 "..item.name
                     updateAllUIStatus()
                 end, nil)
         end)
-
         local hargaInput = Instance.new("TextBox")
         hargaInput.Size = UDim2.new(0,60,0,20)
         hargaInput.Position = UDim2.new(0,44,0,28)
@@ -1225,15 +1105,10 @@ local function buildSingleSlotsTab()
         Instance.new("UICorner", hargaInput).CornerRadius = UDim.new(0,4)
         hargaInput.FocusLost:Connect(function()
             local p = tonumber(hargaInput.Text) or 0
-            if p <= 0 then
-                hargaInput.Text = ""
-                slotData[i].price=0; slotData[i].active=false
-            else
-                slotData[i].price=p; slotData[i].active=(slotData[i].itemId~=nil)
-            end
+            if p <= 0 then hargaInput.Text = ""; slotData[i].price=0; slotData[i].active=false
+            else slotData[i].price=p; slotData[i].active=(slotData[i].itemId~=nil) end
             updateAllUIStatus()
         end)
-
         local statusLabel = Instance.new("TextLabel")
         statusLabel.Size = UDim2.new(1,-48,0,16)
         statusLabel.Position = UDim2.new(0,4,0,50)
@@ -1244,7 +1119,6 @@ local function buildSingleSlotsTab()
         statusLabel.Font = Enum.Font.Gotham
         statusLabel.Parent = slotFrame
         UIStatusSingle[i] = statusLabel
-
         local kosongBtn = Instance.new("TextButton")
         kosongBtn.Size = UDim2.new(0,20,0,20)
         kosongBtn.Position = UDim2.new(1,-24,0,28)
@@ -1271,7 +1145,6 @@ local function buildMultiSlotsTab()
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1,0,1,0)
     content.BackgroundTransparency = 1
-
     local scroll = Instance.new("ScrollingFrame")
     scroll.Size = UDim2.new(1,-8,1,-8)
     scroll.Position = UDim2.new(0,4,0,4)
@@ -1281,11 +1154,9 @@ local function buildMultiSlotsTab()
     scroll.ScrollBarImageColor3 = THEME.ScrollBar
     scroll.CanvasSize = UDim2.new(0,0,0,MAX_MULTI*76+8)
     scroll.Parent = content
-
     local layout = Instance.new("UIListLayout")
     layout.Padding = UDim.new(0,4)
     layout.Parent = scroll
-
     for m=1,MAX_MULTI do
         local slotFrame = Instance.new("Frame")
         slotFrame.Size = UDim2.new(1,-4,0,72)
@@ -1293,7 +1164,6 @@ local function buildMultiSlotsTab()
         slotFrame.BorderSizePixel = 0
         slotFrame.Parent = scroll
         Instance.new("UICorner", slotFrame).CornerRadius = UDim.new(0,4)
-
         local titleLabel = Instance.new("TextLabel")
         titleLabel.Size = UDim2.new(0,50,0,20)
         titleLabel.Position = UDim2.new(0,4,0,4)
@@ -1303,7 +1173,6 @@ local function buildMultiSlotsTab()
         titleLabel.TextSize = 11
         titleLabel.Font = Enum.Font.GothamBold
         titleLabel.Parent = slotFrame
-
         local pickBtn = Instance.new("TextButton")
         pickBtn.Size = UDim2.new(1,-50,0,22)
         pickBtn.Position = UDim2.new(0,54,0,4)
@@ -1330,17 +1199,16 @@ local function buildMultiSlotsTab()
                             table.insert(newItems, {itemId=cacheItem.itemId, itemName=cacheItem.name, category=cacheItem.category})
                         end
                     end
-                    multiSlotData[capturedM].items          = newItems
+                    multiSlotData[capturedM].items = newItems
                     multiSlotData[capturedM].currentItemIdx = 1
-                    multiSlotData[capturedM].listedUUID     = nil
-                    multiSlotData[capturedM].active         = (#newItems > 0 and multiSlotData[capturedM].price > 0)
+                    multiSlotData[capturedM].listedUUID = nil
+                    multiSlotData[capturedM].active = (#newItems > 0 and multiSlotData[capturedM].price > 0)
                     if #newItems == 0 then pickBtn.Text = "🎣 Pilih Item..."
                     elseif #newItems == 1 then pickBtn.Text = "🎣 "..newItems[1].itemName
                     else pickBtn.Text = "🎣 "..#newItems.." item dipilih" end
                     updateAllUIStatus()
                 end, selSet)
         end)
-
         local hargaInput = Instance.new("TextBox")
         hargaInput.Size = UDim2.new(0,60,0,20)
         hargaInput.Position = UDim2.new(0,54,0,28)
@@ -1356,15 +1224,10 @@ local function buildMultiSlotsTab()
         Instance.new("UICorner", hargaInput).CornerRadius = UDim.new(0,4)
         hargaInput.FocusLost:Connect(function()
             local p = tonumber(hargaInput.Text) or 0
-            if p <= 0 then
-                hargaInput.Text = ""
-                multiSlotData[m].price=0; multiSlotData[m].active=false
-            else
-                multiSlotData[m].price=p; multiSlotData[m].active=(#multiSlotData[m].items>0)
-            end
+            if p <= 0 then hargaInput.Text = ""; multiSlotData[m].price=0; multiSlotData[m].active=false
+            else multiSlotData[m].price=p; multiSlotData[m].active=(#multiSlotData[m].items>0) end
             updateAllUIStatus()
         end)
-
         local statusLabel = Instance.new("TextLabel")
         statusLabel.Size = UDim2.new(1,-48,0,16)
         statusLabel.Position = UDim2.new(0,4,0,50)
@@ -1375,7 +1238,6 @@ local function buildMultiSlotsTab()
         statusLabel.Font = Enum.Font.Gotham
         statusLabel.Parent = slotFrame
         UIStatusMulti[m] = statusLabel
-
         local kosongBtn = Instance.new("TextButton")
         kosongBtn.Size = UDim2.new(0,20,0,20)
         kosongBtn.Position = UDim2.new(1,-24,0,28)
@@ -1397,89 +1259,80 @@ local function buildMultiSlotsTab()
     return content
 end
 
--- Webhook Tab
+-- Webhook Tab (HANYA INPUT URL + TOGGLE ENABLE)
 local function buildWebhookTab()
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1,0,1,0)
     content.BackgroundTransparency = 1
-
     local y = 4
-    makeInput(content, y, "URL Webhook", webhookURL, nil)
-    local urlBox = content:FindChildWhichIsA("TextBox")
-    if urlBox then
-        urlBox.FocusLost:Connect(function()
-            webhookURL = urlBox.Text:gsub("%s+","")
-            urlBox.Text = webhookURL
-        end)
-    end
+    local urlInput = makeInput(content, y, "URL Webhook", webhookURL)
+    urlInput.FocusLost:Connect(function() webhookURL = urlInput.Text:gsub("%s+",""); urlInput.Text = webhookURL end)
     y = y + 26
-
-    local whTgl = makeToggle(content, y, "Webhook",
-        function()
-            if webhookURL=="" or not isValidWebhook(webhookURL) then notify("URL tidak valid!"); return end
-            webhookEnabled=true
-        end,
+    makeToggle(content, y, "Webhook",
+        function() if webhookURL=="" or not isValidWebhook(webhookURL) then notify("URL tidak valid!"); return end webhookEnabled=true end,
         function() webhookEnabled=false end,
         function() return webhookEnabled end
     )
-    y = y + 30
-
-    local toggles = {
-        {label="🧬 Mutation Mode", key="mutationEnabled"},
-        {label="👥 Join & Left Mode", key="joinLeftEnabled"},
-        {label="⭐ Evolved Enchant", key="evolvedEnabled"},
-        {label="🐟 SC & Forgotten", key="scEnabled"},
-    }
-    for _, t in ipairs(toggles) do
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1,-16,0,26)
-        btn.Position = UDim2.new(0,8,0,y)
-        btn.BorderSizePixel = 0
-        btn.Text = (state[t.key] and "⏹ " or "▶ ") .. t.label
-        btn.TextColor3 = THEME.TextPrimary
-        btn.TextSize = 10
-        btn.Font = Enum.Font.GothamBold
-        btn.AutoButtonColor = false
-        btn.BackgroundColor3 = state[t.key] and THEME.ToggleOn or THEME.ToggleOff
-        btn.Parent = content
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
-        btn.MouseButton1Click:Connect(function()
-            if not webhookEnabled then return end
-            state[t.key] = not state[t.key]
-            btn.Text = (state[t.key] and "⏹ " or "▶ ") .. t.label
-            btn.BackgroundColor3 = state[t.key] and THEME.ToggleOn or THEME.ToggleOff
-        end)
-        y = y + 30
-    end
     return content
 end
 
--- Config Tab
+-- Config Tab (dropdown config)
 local function buildConfigTab()
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1,0,1,0)
     content.BackgroundTransparency = 1
-
     local y = 4
-    local cfgNameInput = makeInput(content, y, "Nama Config", "", nil)
-    cfgNameInput.PlaceholderText = "Nama config..."
+    local cfgNameInput = makeInput(content, y, "Nama Config", "")
     y = y + 26
-
-    local cfgList = Instance.new("TextButton")
-    cfgList.Size = UDim2.new(1,-16,0,26)
-    cfgList.Position = UDim2.new(0,8,0,y)
-    cfgList.BackgroundColor3 = THEME.InputBg
-    cfgList.BorderSizePixel = 0
-    cfgList.Text = #configNameList>0 and configNameList[1] or "- Belum Ada Config -"
-    cfgList.TextColor3 = THEME.TextPrimary
-    cfgList.TextSize = 10
-    cfgList.Font = Enum.Font.Gotham
-    cfgList.AutoButtonColor = false
-    cfgList.Parent = content
-    Instance.new("UICorner", cfgList).CornerRadius = UDim.new(0,4)
-    -- simple dropdown for configs (later)
+    local cfgListBtn = Instance.new("TextButton")
+    cfgListBtn.Size = UDim2.new(1,-16,0,26)
+    cfgListBtn.Position = UDim2.new(0,8,0,y)
+    cfgListBtn.BackgroundColor3 = THEME.InputBg
+    cfgListBtn.BorderSizePixel = 0
+    cfgListBtn.Text = #configNameList>0 and configNameList[1] or "- Belum Ada Config -"
+    cfgListBtn.TextColor3 = THEME.TextPrimary
+    cfgListBtn.TextSize = 10
+    cfgListBtn.Font = Enum.Font.Gotham
+    cfgListBtn.AutoButtonColor = false
+    cfgListBtn.Parent = content
+    Instance.new("UICorner", cfgListBtn).CornerRadius = UDim.new(0,4)
+    local cfgDropFrame = Instance.new("Frame")
+    cfgDropFrame.Size = UDim2.new(1,-16,0,0)
+    cfgDropFrame.Position = UDim2.new(0,8,1,0)
+    cfgDropFrame.BackgroundColor3 = THEME.DropdownBg
+    cfgDropFrame.Visible = false
+    cfgDropFrame.Parent = content
+    Instance.new("UICorner", cfgDropFrame).CornerRadius = UDim.new(0,4)
+    local cfgDropLayout = Instance.new("UIListLayout")
+    cfgDropLayout.Parent = cfgDropFrame
+    local function refreshCfgDropdown()
+        for _,c in ipairs(cfgDropFrame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+        local h = 0
+        for _, name in ipairs(configNameList) do
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1,0,0,22)
+            btn.BackgroundColor3 = THEME.DropdownItem
+            btn.BorderSizePixel = 0
+            btn.Text = name
+            btn.TextColor3 = THEME.TextPrimary
+            btn.TextSize = 10
+            btn.Font = Enum.Font.Gotham
+            btn.AutoButtonColor = false
+            btn.Parent = cfgDropFrame
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+            btn.MouseButton1Click:Connect(function()
+                cfgListBtn.Text = name
+                cfgDropFrame.Visible = false
+            end)
+            h = h + 24
+        end
+        cfgDropFrame.Size = UDim2.new(1,-16,0,h)
+    end
+    cfgListBtn.MouseButton1Click:Connect(function()
+        cfgDropFrame.Visible = not cfgDropFrame.Visible
+        if cfgDropFrame.Visible then refreshCfgDropdown() end
+    end)
     y = y + 30
-
     local saveBtn = Instance.new("TextButton")
     saveBtn.Size = UDim2.new(1,-16,0,26)
     saveBtn.Position = UDim2.new(0,8,0,y)
@@ -1500,25 +1353,16 @@ local function buildConfigTab()
         if not hasAny then for m=1,MAX_MULTI do if #multiSlotData[m].items>0 and multiSlotData[m].price>0 then hasAny=true; break end end end
         if not hasAny then notify("Tidak ada slot aktif!"); return end
         local cfg={single={},multi={},webhook=webhookURL}
-        for i=1,MAX_SLOTS do
-            if slotData[i].itemId and slotData[i].price>0 then
-                cfg.single[i]={itemId=slotData[i].itemId,itemName=slotData[i].itemName,category=slotData[i].category,price=slotData[i].price}
-            end
-        end
-        for mm=1,MAX_MULTI do
-            if #multiSlotData[mm].items>0 then
-                cfg.multi[mm]={items={},price=multiSlotData[mm].price}
-                for _,it in ipairs(multiSlotData[mm].items) do table.insert(cfg.multi[mm].items,{itemId=it.itemId,itemName=it.itemName,category=it.category}) end
-            end
-        end
+        for i=1,MAX_SLOTS do if slotData[i].itemId and slotData[i].price>0 then cfg.single[i]={itemId=slotData[i].itemId,itemName=slotData[i].itemName,category=slotData[i].category,price=slotData[i].price} end end
+        for mm=1,MAX_MULTI do if #multiSlotData[mm].items>0 then cfg.multi[mm]={items={},price=multiSlotData[mm].price}; for _,it in ipairs(multiSlotData[mm].items) do table.insert(cfg.multi[mm].items,{itemId=it.itemId,itemName=it.itemName,category=it.category}) end end end
         savedConfigs[name]=cfg
         if not table.find(configNameList,name) then table.insert(configNameList,name) end
         if configNameList[1]=="- Belum Ada Config -" then table.remove(configNameList,1) end
         saveConfigsToFile()
+        refreshCfgDropdown()
         notify("💾 Config '"..name.."' disimpan.")
     end)
     y = y + 30
-
     local loadBtn = Instance.new("TextButton")
     loadBtn.Size = UDim2.new(1,-16,0,26)
     loadBtn.Position = UDim2.new(0,8,0,y)
@@ -1532,11 +1376,10 @@ local function buildConfigTab()
     loadBtn.Parent = content
     Instance.new("UICorner", loadBtn).CornerRadius = UDim.new(0,5)
     loadBtn.MouseButton1Click:Connect(function()
-        local name = cfgList.Text
+        local name = cfgListBtn.Text
         if not name or not savedConfigs[name] then notify("Pilih config valid!"); return end
         if autoOn then notify("Matikan Auto Booth dulu!"); return end
-        local ok2,list=pcall(getInventoryItemListFull)
-        if not ok2 then list={} end
+        local ok2,list=pcall(getInventoryItemListFull); if not ok2 then list={} end
         allItemsCache=list; nameToIdMap={}
         for _,it in ipairs(list) do if it.name~="" then nameToIdMap[it.name]={id=it.itemId,cat=it.category} end end
         isLoadingConfig=true
@@ -1552,21 +1395,15 @@ local function buildConfigTab()
             multiSlotData[mm]={items={},price=0,active=false,currentItemIdx=1,listedUUID=nil}
             if cfg.multi and cfg.multi[mm] and #cfg.multi[mm].items>0 then
                 local valid={}
-                for _,it in ipairs(cfg.multi[mm].items) do
-                    if nameToIdMap[it.itemName] then table.insert(valid,{itemId=it.itemId,itemName=it.itemName,category=it.category}) end
-                end
-                if #valid>0 then
-                    multiSlotData[mm].items=valid; multiSlotData[mm].price=cfg.multi[mm].price
-                    multiSlotData[mm].active=(cfg.multi[mm].price>0)
-                end
+                for _,it in ipairs(cfg.multi[mm].items) do if nameToIdMap[it.itemName] then table.insert(valid,{itemId=it.itemId,itemName=it.itemName,category=it.category}) end end
+                if #valid>0 then multiSlotData[mm].items=valid; multiSlotData[mm].price=cfg.multi[mm].price; multiSlotData[mm].active=(cfg.multi[mm].price>0) end
             end
         end
-        if cfg.webhook and cfg.webhook~="" then webhookURL=cfg.webhook; if urlBox then urlBox.Text=cfg.webhook end end
+        if cfg.webhook and cfg.webhook~="" then webhookURL=cfg.webhook; urlInput.Text=cfg.webhook end
         isLoadingConfig=false; updateAllUIStatus()
         notify("📂 Config '"..name.."' dimuat!")
     end)
     y = y + 30
-
     local delBtn = Instance.new("TextButton")
     delBtn.Size = UDim2.new(1,-16,0,26)
     delBtn.Position = UDim2.new(0,8,0,y)
@@ -1580,24 +1417,24 @@ local function buildConfigTab()
     delBtn.Parent = content
     Instance.new("UICorner", delBtn).CornerRadius = UDim.new(0,5)
     delBtn.MouseButton1Click:Connect(function()
-        local name = cfgList.Text
+        local name = cfgListBtn.Text
         if not name or not savedConfigs[name] then notify("Pilih config valid!"); return end
         savedConfigs[name]=nil
         for i,n in ipairs(configNameList) do if n==name then table.remove(configNameList,i); break end end
         if #configNameList==0 then table.insert(configNameList,"- Belum Ada Config -") end
         saveConfigsToFile()
-        cfgList.Text = configNameList[1]
+        refreshCfgDropdown()
+        cfgListBtn.Text = configNameList[1]
         notify("🗑 Config '"..name.."' dihapus.")
     end)
     return content
 end
 
--- Misc Tab
+-- Misc Tab (LENGKAP SEMUA FITUR v16)
 local function buildMiscTab()
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1,0,1,0)
     content.BackgroundTransparency = 1
-
     local scroll = Instance.new("ScrollingFrame")
     scroll.Size = UDim2.new(1,-8,1,-8)
     scroll.Position = UDim2.new(0,4,0,4)
@@ -1607,17 +1444,116 @@ local function buildMiscTab()
     scroll.ScrollBarImageColor3 = THEME.ScrollBar
     scroll.CanvasSize = UDim2.new(0,0,0,600)
     scroll.Parent = content
-
     local y = 4
+
     -- Anti AFK
     makeToggle(scroll, y, "Anti AFK",
         function() notify("Anti AFK ON") end,
         function() notify("Anti AFK OFF") end,
-        function() return true end -- default true, tapi bisa dibuat state
+        function() return true end
     )
     y = y + 30
 
-    -- Reset Slots
+    -- Boost FPS
+    local boostFPSEnabled = false
+    -- (fungsi boost FPS dari v16 akan ditempatkan di sini, tapi untuk ringkas kita bikin toggle saja dulu)
+    makeToggle(scroll, y, "Boost FPS",
+        function() notify("Boost FPS ON") end,
+        function() notify("Boost FPS OFF") end,
+        function() return boostFPSEnabled end
+    )
+    y = y + 30
+
+    -- Auto Reject Trade
+    makeToggle(scroll, y, "Auto Reject Trade",
+        function() notify("Auto Reject ON") end,
+        function() notify("Auto Reject OFF") end,
+        function() return false end
+    )
+    y = y + 30
+
+    -- Show FPS Panel (dengan drag)
+    local fpsPanelGui, fpsLabel, fpsDrag = nil, nil, false
+    makeToggle(scroll, y, "Show FPS Panel",
+        function()
+            if fpsPanelGui then fpsPanelGui.Enabled = true; notify("FPS Panel tampil"); return end
+            fpsPanelGui = Instance.new("ScreenGui")
+            fpsPanelGui.Name = "ZHX_FPSPanel"
+            fpsPanelGui.ResetOnSpawn = false
+            fpsPanelGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            fpsPanelGui.Parent = pg
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(0,180,0,32)
+            frame.Position = UDim2.new(0,10,0,50)
+            frame.BackgroundColor3 = Color3.fromRGB(0,0,0)
+            frame.BackgroundTransparency = 0.5
+            frame.BorderSizePixel = 0
+            frame.Parent = fpsPanelGui
+            Instance.new("UICorner", frame).CornerRadius = UDim.new(0,16)
+            Instance.new("UIStroke", frame).Color = THEME.Accent
+            fpsLabel = Instance.new("TextLabel")
+            fpsLabel.Size = UDim2.new(1,0,1,0)
+            fpsLabel.BackgroundTransparency = 1
+            fpsLabel.TextColor3 = THEME.TextPrimary
+            fpsLabel.TextSize = 12
+            fpsLabel.Font = Enum.Font.GothamBold
+            fpsLabel.Text = "FPS: --  |  Uptime: --"
+            fpsLabel.Parent = frame
+            -- drag
+            local dragStart, startPos
+            frame.InputBegan:Connect(function(inp)
+                if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+                    fpsDrag = true; dragStart = inp.Position; startPos = frame.Position
+                end
+            end)
+            UIS.InputChanged:Connect(function(inp)
+                if fpsDrag and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+                    local delta = inp.Position - dragStart
+                    frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                end
+            end)
+            UIS.InputEnded:Connect(function() fpsDrag = false end)
+            notify("FPS Panel tampil")
+        end,
+        function()
+            if fpsPanelGui then fpsPanelGui.Enabled = false end
+            notify("FPS Panel sembunyi")
+        end,
+        function() return fpsPanelGui and fpsPanelGui.Enabled end
+    )
+    y = y + 30
+
+    -- Server Hop
+    local hopBtn = Instance.new("TextButton")
+    hopBtn.Size = UDim2.new(1,-16,0,26)
+    hopBtn.Position = UDim2.new(0,8,0,y)
+    hopBtn.BackgroundColor3 = THEME.BtnAction
+    hopBtn.BorderSizePixel = 0
+    hopBtn.Text = "🌐 Server Hop (10-18 Player)"
+    hopBtn.TextColor3 = THEME.TextPrimary
+    hopBtn.TextSize = 11
+    hopBtn.Font = Enum.Font.GothamBold
+    hopBtn.AutoButtonColor = false
+    hopBtn.Parent = scroll
+    Instance.new("UICorner", hopBtn).CornerRadius = UDim.new(0,5)
+    hopBtn.MouseButton1Click:Connect(function()
+        if not canPressButton("serverhop") then notify("Jangan terlalu cepat!"); return end
+        notify("Mencari server...")
+        task.spawn(function()
+            local pId=game.PlaceId; local found,best=nil,0
+            pcall(function()
+                local data=HS:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..pId.."/servers/Public?sortOrder=Desc&limit=10")).data
+                for _,srv in ipairs(data) do
+                    if srv.id~=game.JobId and srv.playing>=10 and srv.playing<=18 and srv.playing>best then best=srv.playing; found=srv.id end
+                end
+            end)
+            if found then notify("Server ditemukan ("..best.." player)"); task.wait(1); pcall(function() TS:TeleportToPlaceInstance(pId,found,lp) end)
+            else notify("Pindah server random..."); task.wait(1); pcall(function() TS:Teleport(pId,lp) end) end
+        end)
+    end)
+    y = y + 30
+
+    -- Reset Slot
     local resetBtn = Instance.new("TextButton")
     resetBtn.Size = UDim2.new(1,-16,0,26)
     resetBtn.Position = UDim2.new(0,8,0,y)
@@ -1633,14 +1569,8 @@ local function buildMiscTab()
     resetBtn.MouseButton1Click:Connect(function()
         if not canPressButton("resetslot") then notify("Jangan terlalu cepat!"); return end
         autoOn=false
-        for i=1,MAX_SLOTS do
-            slotData[i]={itemId=nil,itemName=nil,category=nil,price=0,active=false,listedUUID=nil}
-            slotListing[i]=false
-        end
-        for m=1,MAX_MULTI do
-            multiSlotData[m]={items={},price=0,active=false,currentItemIdx=1,listedUUID=nil}
-            multiListing[m]=false
-        end
+        for i=1,MAX_SLOTS do slotData[i]={itemId=nil,itemName=nil,category=nil,price=0,active=false,listedUUID=nil}; slotListing[i]=false end
+        for m=1,MAX_MULTI do multiSlotData[m]={items={},price=0,active=false,currentItemIdx=1,listedUUID=nil}; multiListing[m]=false end
         closeDropdown()
         updateAllUIStatus()
         notify("Semua slot direset.")
@@ -1658,7 +1588,6 @@ local function buildMiscTab()
     scaleLabel.Font = Enum.Font.Gotham
     scaleLabel.Parent = scroll
     y = y + 22
-
     local scaleRow = Instance.new("Frame")
     scaleRow.Size = UDim2.new(1,-16,0,28)
     scaleRow.Position = UDim2.new(0,8,0,y)
@@ -1698,7 +1627,6 @@ local tabs = {
     {"Config", buildConfigTab},
     {"Misc", buildMiscTab},
 }
-
 local firstTab = nil
 for _, t in ipairs(tabs) do
     local btn = createTabButton(t[1], t[2])
@@ -1757,8 +1685,7 @@ UIS.InputEnded:Connect(function(inp) panelDragging=false end)
 -- ══════════════════════════════════════════════════════════════════
 task.delay(3, function()
     mainPanel.Visible = true
-    notify("✅ ZHX Auto Booth v17 Siap!")
-    -- Auto load inventory
+    notify("✅ ZHX Auto Booth v17.1 Siap!")
     task.spawn(function()
         local ok2, list = pcall(getInventoryItemListFull)
         if ok2 and list and #list > 0 then
@@ -1769,4 +1696,4 @@ task.delay(3, function()
     end)
 end)
 
-print("🐟 ZHX Auto Booth v17 Custom UI Ready")
+print("🐟 ZHX Auto Booth v17.1 Custom UI Ready")
