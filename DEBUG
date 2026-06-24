@@ -1,1 +1,31 @@
+local HS = game:GetService("HttpService")
+local webhook = "https://discordapp.com/api/webhooks/1506044266684743801/PlopEC1wwOyfGQh-3oBQFl67_IPfoNmUYDMvEU_kjvZP6zR6v0BjfMeObTUsxhOUepqg"
 
+local output = {}
+table.insert(output, "=== SCAN KEYWORD 'TOTEM' DI SELURUH GAME ===")
+local keywords = {"totem"}
+for _, obj in ipairs(game:GetDescendants()) do
+    local nameLower = string.lower(obj.Name)
+    for _, kw in ipairs(keywords) do
+        if string.find(nameLower, kw) then
+            table.insert(output, obj.ClassName .. ": " .. obj:GetFullName())
+            for _, child in ipairs(obj:GetChildren()) do
+                table.insert(output, "  -> " .. child.ClassName .. " '" .. child.Name .. "'")
+            end
+            break
+        end
+    end
+end
+
+local body = table.concat(output, "\n")
+-- Potong jika terlalu panjang (Discord limit 2000 char)
+if #body > 1900 then body = body:sub(1, 1900) .. "\n... (dipotong)" end
+
+local payload = HS:JSONEncode({
+    username = "ZHX Scanner",
+    content = "```\n" .. body .. "\n```"
+})
+pcall(function()
+    request({Url=webhook, Method="POST", Headers={["Content-Type"]="application/json"}, Body=payload})
+end)
+print("Script 2 selesai. Cek Discord.")
