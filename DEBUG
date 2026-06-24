@@ -1,8 +1,5 @@
--- // ZHXHub Full Project v0.2.5.1 — Fix: triggerPetBug identik dengan Blapet Auto v6.5
--- // Perbaikan: panggilan OFF awal + ON-OFF bergantian + MarkAuto digunakan
--- // AUTO EVENT: Workspace-wide scan V3.1 + titik pulang permanen + auto recovery posisi
--- // Mode Pantau (opsional) tetap tersedia sebagai lapisan tambahan
--- // SAFE WALK: Kecepatan dikurangi + random delay + jeda berhenti singkat (anti-detect)
+-- // ZHXHub Full Project v0.2.5.3
+
 
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -49,8 +46,10 @@ end
 -- ========== STATE GLOBAL ==========
 local state = {
     blapetConfig = {
-        reelDelay = 4, loopInterval = 0.15, timingTrigger = 4,
-        petBugInterval = 70, toggleCount = 700,
+        reelDelay = 4, loopInterval = 0.15,
+        timingTrigger = 4,  -- otomatis ikut reelDelay
+        toggleCount = 300,
+        petBugInterval = 70, -- hidden, tidak diubah
         blapetCycles = 4, blapetStuckTime = 15, blapetFinalStuck = 60, blapetIntervalHours = 5,
     },
     fastReelActive = false, petBugActive = false, blapetActive = false,
@@ -71,12 +70,11 @@ local state = {
     evolvedEnabled = false, scEnabled = false,
     localPlayerLeaving = false,
 
-    -- NEW: Mode Pantau (v0.2.4)
     monitorMode = false,
     monitorInterval = 5,
-    lastCommandTarget = nil,   -- CFrame
-    lastCommandType = "",      -- "location" / "player" / "playerLast" / "event"
-    targetPlayer = nil,        -- Player object (untuk walk to player)
+    lastCommandTarget = nil,
+    lastCommandType = "",
+    targetPlayer = nil,
     monitorThread = nil,
 }
 
@@ -118,6 +116,8 @@ local function loadBlapetConfig()
     pcall(function()
         local data = HS:JSONDecode(readfile(BLAPET_CONFIG_FILE))
         for k, v in pairs(data) do if state.blapetConfig[k] ~= nil then state.blapetConfig[k] = v end end
+        -- Pastikan timingTrigger tetap sinkron dengan reelDelay setelah load
+        state.blapetConfig.timingTrigger = state.blapetConfig.reelDelay
     end)
 end
 local function saveSavedPositions()
@@ -294,18 +294,16 @@ local function safeWalk(targetCF)
     enableNoclip(); protectCharacter()
     local startCF = root.CFrame; local distance = (targetCF.Position - startCF.Position).Magnitude
     local stepSize = 2.5; local steps = math.max(1, math.ceil(distance / stepSize))
-    local pauseAfter = math.random(5, 15)  -- akan berhenti singkat setiap 5-15 step
+    local pauseAfter = math.random(5, 15)
     for i = 1, steps do
         if state.stopRequested then break end
         local t = i / steps; local newCF = startCF:Lerp(targetCF, t)
         pcall(function() root.CFrame = newCF; root.Velocity = Vector3.zero; root.RotVelocity = Vector3.zero end)
-        -- Random delay 0.035 - 0.065 detik (rata-rata lebih lambat dari v0.2.5)
         local delay = 0.035 + math.random() * 0.03
         task.wait(delay)
-        -- Jeda berhenti singkat acak setiap pauseAfter step
         if i % pauseAfter == 0 and i < steps then
-            task.wait(0.1 + math.random() * 0.2)  -- 0.1 - 0.3 detik berhenti
-            pauseAfter = math.random(5, 15)        -- reset interval
+            task.wait(0.1 + math.random() * 0.2)
+            pauseAfter = math.random(5, 15)
         end
     end
     if not state.stopRequested then
@@ -346,7 +344,7 @@ local function getEventPosition(eventName)
     if not eventModel then return nil end
     local ok, cf = pcall(function() return eventModel:GetBoundingBox() end)
     if ok and cf then
-        return cf.Position + Vector3.new(0, -230, 0)  -- offset sesuai pengujian user
+        return cf.Position + Vector3.new(0, -230, 0)
     end
     return nil
 end
@@ -354,7 +352,6 @@ end
 local function isEventActive(eventName)
     return findEventModel(eventName) ~= nil
 end
--- ===============================================================
 
 local function getCurrentUserCFrame()
     local char = LP.Character; if not char then return nil end
@@ -372,14 +369,12 @@ local function unlockUser()
     root.Anchored = false; unprotectCharacter(); state.isAtEvent = false
 end
 
--- Hanya dipakai saat stopAutoEvent, untuk mengantar pulang jika diperlukan
 local function returnToSavedPosition()
     if state.isAtEvent then 
         unlockUser() 
     end
     if state.savedUserPosition then 
         safeWalk(state.savedUserPosition)
-        -- Titik pulang TIDAK dihapus, tetap dipertahankan
     end
 end
 
@@ -388,11 +383,10 @@ local function startAutoEvent()
     state.autoEventActive = true 
     state.isAtEvent = false
 
-    -- Ambil posisi pulang SEKALI di awal dan simpan permanen
     local startCF = getCurrentUserCFrame()
     if startCF then
         state.savedUserPosition = startCF
-        setLastCommand(startCF, "location")   -- untuk Mode Pantau jika diaktifkan
+        setLastCommand(startCF, "location")
     end
 
     state.eventMonitorThread = task.spawn(function()
@@ -400,48 +394,42 @@ local function startAutoEvent()
             local isEventNow = isEventActive(state.selectedEvent)
 
             if state.isAtEvent then
-                -- Verifikasi posisi saat terkunci di event
                 local currentCF = getCurrentUserCFrame()
                 local eventPos = getEventPosition(state.selectedEvent)
                 if eventPos and currentCF then
                     if (currentCF.Position - eventPos).Magnitude > 100 then
                         unlockUser()
                         state.isAtEvent = false
-                        -- Akan masuk ke blok else untuk berangkat lagi
                     end
                 end
                 if state.isAtEvent and not isEventNow then
-                    -- Event selesai, pulang ke titik awal
                     if state.savedUserPosition then
                         safeWalk(state.savedUserPosition)
-                        setLastCommand(state.savedUserPosition, "location") -- sinkronisasi Mode Pantau
+                        setLastCommand(state.savedUserPosition, "location")
                     end
                     unlockUser()
                     state.isAtEvent = false
                 end
             else
-                -- Tidak di event: pastikan karakter ada di titik pulang (recovery)
                 if state.savedUserPosition then
                     local currentCF = getCurrentUserCFrame()
                     if currentCF and (currentCF.Position - state.savedUserPosition.Position).Magnitude > 100 then
-                        -- Karakter tidak di posisi standby, kembalikan
                         safeWalk(state.savedUserPosition)
-                        setLastCommand(state.savedUserPosition, "location") -- sinkronisasi Mode Pantau
+                        setLastCommand(state.savedUserPosition, "location")
                     end
                 end
 
                 if isEventNow then
                     local pos = getEventPosition(state.selectedEvent)
-                    if pos and state.savedUserPosition then  -- harus punya titik pulang
+                    if pos and state.savedUserPosition then
                         setLastCommand(CFrame.new(pos), "event")
                         safeWalk(CFrame.new(pos)) 
                         task.wait(0.5)
                         if isEventActive(state.selectedEvent) and state.autoEventActive then
                             lockUserAtPosition()
                         else
-                            -- Event keburu hilang, pulang
                             safeWalk(state.savedUserPosition)
-                            setLastCommand(state.savedUserPosition, "location") -- sinkronisasi
+                            setLastCommand(state.savedUserPosition, "location")
                             unlockUser()
                         end
                     end
@@ -454,11 +442,10 @@ end
 
 local function stopAutoEvent()
     state.autoEventActive = false
-    -- Pulangkan ke titik awal jika ada, lalu hapus titik pulang
     if state.savedUserPosition then
         if state.isAtEvent then unlockUser() end
         safeWalk(state.savedUserPosition)
-        state.savedUserPosition = nil   -- hapus setelah dimatikan
+        state.savedUserPosition = nil
     end
 end
 
@@ -467,7 +454,7 @@ LP.CharacterAdded:Connect(function()
     disableNoclip(); unprotectCharacter()
 end)
 
--- ========== MODE PANTAU (v0.2.5.1 - sinkron dengan Auto Event) ==========
+-- ========== MODE PANTAU ==========
 local function startMonitor()
     if state.monitorThread then return end
     state.monitorThread = task.spawn(function()
@@ -721,7 +708,7 @@ Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0,10)
 Instance.new("UIStroke", floatBtn).Color = Color3.fromRGB(72,210,130)
 
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ZHXHub_FullProject_v2.5.1"; mainGui.ResetOnSpawn = false; mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+mainGui.Name = "ZHXHub_FullProject_v2.5.3"; mainGui.ResetOnSpawn = false; mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mainGui.Parent = pg; pcall(function() mainGui.DisplayOrder = 99999 end)
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0,420,0,340); frame.Position = UDim2.new(0.5,-210,0.5,-170)
@@ -734,7 +721,7 @@ floatBtn.MouseButton1Click:Connect(function() frame.Visible = not frame.Visible 
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,24); title.Position = UDim2.new(0,10,0,6)
-title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [v0.2.5.1] ⚡"
+title.BackgroundTransparency = 1; title.Text = "⚡ ZHX HUB PROJECT [v0.2.5.3] ⚡"
 title.TextColor3 = Color3.fromRGB(72,210,130); title.TextSize = 13
 title.Font = Enum.Font.GothamBold; title.ZIndex = 101; title.Parent = frame
 
@@ -801,7 +788,7 @@ local function makeToggle(parent, y, text, startFn, stopFn, getActiveFn)
     return btn
 end
 
--- ========== TAB BLAPET AUTO (IDENTIK DENGAN V6.5) ==========
+-- ========== TAB BLAPET AUTO (v0.2.5.3 - UI disederhanakan) ==========
 local function buildBlapetTab()
     local content = Instance.new("Frame"); content.Size = UDim2.new(1,0,1,0); content.BackgroundTransparency = 1; content.ZIndex = 101
 
@@ -810,20 +797,20 @@ local function buildBlapetTab()
     local toggleGap = 26
     local sectionGap = 28
 
-    makeInput(content, y, "Reel Delay", state.blapetConfig.reelDelay, function(v) state.blapetConfig.reelDelay = v end, "reelDelay")
+    -- Fast Reel: hanya Reel Delay dan Loop Interval
+    makeInput(content, y, "Reel Delay", state.blapetConfig.reelDelay, function(v) 
+        state.blapetConfig.reelDelay = v
+        state.blapetConfig.timingTrigger = v  -- otomatis ikut
+    end, "reelDelay")
     y = y + inputGap
     makeInput(content, y, "Loop Interval", state.blapetConfig.loopInterval, function(v) state.blapetConfig.loopInterval = v end, "loopInterval")
-    y = y + inputGap
-    makeInput(content, y, "Timing Trigger", state.blapetConfig.timingTrigger, function(v) state.blapetConfig.timingTrigger = v end, "timingTrigger")
     y = y + toggleGap
     makeToggle(content, y, "Fast Reel", startFastReel, stopFastReel, function() return state.fastReelActive end)
     y = y + sectionGap
-    makeInput(content, y, "Pet Bug Interval", state.blapetConfig.petBugInterval, function(v) state.blapetConfig.petBugInterval = math.max(10,v) end, "petBugInterval")
-    y = y + inputGap
+
+    -- Blapet Auto: Toggle Count dikembalikan
     makeInput(content, y, "Toggle Count", state.blapetConfig.toggleCount, function(v) state.blapetConfig.toggleCount = math.max(1,math.floor(v)) end, "toggleCount")
-    y = y + toggleGap
-    makeToggle(content, y, "Pet Bug (Smart)", function() state.petBugActive=true; state.lastPetBugTime=0 end, function() state.petBugActive=false end, function() return state.petBugActive end)
-    y = y + sectionGap
+    y = y + inputGap
     makeInput(content, y, "Blapet Cycles", state.blapetConfig.blapetCycles, function(v) state.blapetConfig.blapetCycles = math.max(1,math.floor(v)) end, "blapetCycles")
     y = y + inputGap
     makeInput(content, y, "Stuck Time (s)", state.blapetConfig.blapetStuckTime, function(v) state.blapetConfig.blapetStuckTime = math.max(5,v) end, "blapetStuckTime")
@@ -1121,7 +1108,7 @@ local function buildWebhookTab()
     return content
 end
 
--- ========== TAB SETTING (v0.2.5.1) ==========
+-- ========== TAB SETTING ==========
 local function buildSettingTab()
     local content = Instance.new("Frame"); content.Size = UDim2.new(1,0,1,0); content.BackgroundTransparency = 1; content.ZIndex = 101
 
@@ -1202,4 +1189,4 @@ UIS.InputChanged:Connect(function(inp)
 end)
 UIS.InputEnded:Connect(function(inp) dragging = false end)
 
-print("ZHXHub Full Project v0.2.5.1 — SafeWalk lebih lambat + random + jeda berhenti.")
+print("ZHXHub Full Project v0.2.5.3")
