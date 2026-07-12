@@ -167,7 +167,7 @@ local function getCurrentToken()
     return "?"
 end
 
--- ── INVENTORY: scan & ambil kategori asli dari data item ──
+-- ── INVENTORY: ambil data & bedakan inventory category vs listing category ──
 local function fetchItemData(category, id)
     local IU = ItemUtility
     local ok, data = false, nil
@@ -196,20 +196,17 @@ local function fetchItemData(category, id)
     return nil
 end
 
--- Fungsi untuk mendapatkan kategori asli dari data item
-local function getTrueCategory(data, fallbackCategory)
-    if not data then return fallbackCategory end
-    -- Coba properti umum
-    if data.Category and type(data.Category) == "string" then return data.Category end
-    if data.Type and type(data.Type) == "string" then return data.Type end
-    if data.ItemType and type(data.ItemType) == "string" then return data.ItemType end
-    -- Jika ada table Data di dalamnya
+local function getTrueListingCategory(data, fallback)
+    if not data then return fallback end
     if data.Data then
-        if data.Data.Category then return data.Data.Category end
         if data.Data.Type then return data.Data.Type end
+        if data.Data.Category then return data.Data.Category end
         if data.Data.ItemType then return data.Data.ItemType end
     end
-    return fallbackCategory
+    if data.Type then return data.Type end
+    if data.Category then return data.Category end
+    if data.ItemType then return data.ItemType end
+    return fallback
 end
 
 local function getInventorySnapshot()
@@ -233,27 +230,20 @@ local function getInventorySnapshot()
     return t
 end
 
-local function getUUIDsForItemId(itemId, categoryReq)
+local function getUUIDsForItemId(itemId, inventoryCategory)
     local inv = PlayerData:Get("Inventory")
     if not inv then return {} end
     local uuids = {}
-    
-    local function checkAndAdd(item, catName)
-        if type(item) == "table" and item.Id == itemId and item.UUID then
-            if not categoryReq or catName == categoryReq then
-                table.insert(uuids, item.UUID)
-            end
+    local catData = inv[inventoryCategory]
+    if not catData then return uuids end
+    local firstVal = catData[1]
+    if type(firstVal) == "table" and firstVal.Id and firstVal.UUID then
+        for _, item in ipairs(catData) do
+            if item.Id == itemId and item.UUID then table.insert(uuids, item.UUID) end
         end
-    end
-
-    for catName, catData in pairs(inv) do
-        if (not categoryReq or catName == categoryReq) and type(catData) == "table" then
-            local firstVal = catData[1]
-            if type(firstVal) == "table" and firstVal.Id and firstVal.UUID then
-                for _, item in ipairs(catData) do checkAndAdd(item, catName) end
-            else
-                for _, subItem in pairs(catData) do checkAndAdd(subItem, catName) end
-            end
+    else
+        for _, subItem in pairs(catData) do
+            if type(subItem) == "table" and subItem.Id == itemId and subItem.UUID then table.insert(uuids, subItem.UUID) end
         end
     end
     return uuids
@@ -264,48 +254,45 @@ local function getInventoryItemListFull()
     if not inv then return {} end
     
     local items = {}
-    local seen = {} 
+    local seen = {}
     
-    local function processItem(item, catName)
+    local function processItem(item, inventoryCat)
         if type(item) == "table" and item.Id and item.UUID then
             local id = item.Id
-            local uniqueKey = catName .. "_" .. tostring(id)
-            
-            if not seen[uniqueKey] then
-                local data = fetchItemData(catName, id)
+            local key = inventoryCat .. "_" .. id
+            if not seen[key] then
+                local data = fetchItemData(inventoryCat, id)
                 if data then
-                    local name = data.Name or (data.Data and data.Data.Name) or (catName .. " ID " .. tostring(id))
-                    local trueCat = getTrueCategory(data, catName)  -- Ambil kategori asli
-                    local count = #getUUIDsForItemId(id, catName)   -- Tetap cari di kategori inventory
-                    
+                    local name = data.Name or (data.Data and data.Data.Name) or (inventoryCat .. " ID " .. id)
+                    local listingCat = getTrueListingCategory(data, inventoryCat)
+                    local count = #getUUIDsForItemId(id, inventoryCat)
                     table.insert(items, {
                         name = name,
                         itemId = id,
-                        category = trueCat,
+                        category = listingCat,               -- untuk tampilan & listing
+                        inventoryCategory = inventoryCat,     -- untuk cari UUID
                         count = count
                     })
-                    seen[uniqueKey] = true
+                    seen[key] = true
                 end
             end
         end
     end
 
-    for catName, catData in pairs(inv) do
+    for inventoryCat, catData in pairs(inv) do
         if type(catData) == "table" then
             local firstVal = catData[1]
             if type(firstVal) == "table" and firstVal.Id and firstVal.UUID then
-                for _, item in ipairs(catData) do processItem(item, catName) end
+                for _, item in ipairs(catData) do processItem(item, inventoryCat) end
             else
-                for _, subItem in pairs(catData) do processItem(subItem, catName) end
+                for _, subItem in pairs(catData) do processItem(subItem, inventoryCat) end
             end
         end
     end
     
-    -- Urutkan: kategori (alfabetis), lalu nama (alfabetis)
+    -- Urutkan berdasarkan listing category lalu nama
     table.sort(items, function(a, b)
-        if a.category ~= b.category then
-            return a.category < b.category
-        end
+        if a.category ~= b.category then return a.category < b.category end
         return a.name < b.name
     end)
     
@@ -383,7 +370,7 @@ end
 local MAX_SLOTS = 8
 local slotData, slotListing = {}, {}
 for i = 1, MAX_SLOTS do
-    slotData[i]    = {itemId=nil,itemName=nil,category=nil,price=0,active=false,listedUUID=nil}
+    slotData[i]    = {itemId=nil,itemName=nil,category=nil,inventoryCategory=nil,price=0,active=false,listedUUID=nil}
     slotListing[i] = false
 end
 
@@ -556,106 +543,101 @@ local function saveConfigsToFile()
 end
 
 -- ══════════════════════════════════════════════════════════════════
--- BACKEND BOOTH (dengan kategori asli & debug return value)
+-- BACKEND BOOTH (DUAL CATEGORY)
 -- ══════════════════════════════════════════════════════════════════
-local function getAvailableUUIDForItem(itemId, category, excludeUUIDs)
-    excludeUUIDs=excludeUUIDs or {}
-    local snap=getInventorySnapshot()
-    for _, uuid in ipairs(getUUIDsForItemId(itemId, category)) do
+local function getAvailableUUIDForItem(itemId, inventoryCat, excludeUUIDs)
+    excludeUUIDs = excludeUUIDs or {}
+    local snap = getInventorySnapshot()
+    for _, uuid in ipairs(getUUIDsForItemId(itemId, inventoryCat)) do
         if snap[uuid] and not excludeUUIDs[uuid] then return uuid end
     end
     return nil
 end
+
 local function getAllUsedUUIDs(exceptType, exceptIdx)
-    local used={}
-    for i=1,MAX_SLOTS do
-        if not(exceptType=="single" and i==exceptIdx) and slotData[i].listedUUID then
-            used[slotData[i].listedUUID]=true
+    local used = {}
+    for i = 1, MAX_SLOTS do
+        if not (exceptType == "single" and i == exceptIdx) and slotData[i].listedUUID then
+            used[slotData[i].listedUUID] = true
         end
     end
-    for m=1,MAX_MULTI do
-        if not(exceptType=="multi" and m==exceptIdx) and multiSlotData[m].listedUUID then
-            used[multiSlotData[m].listedUUID]=true
+    for m = 1, MAX_MULTI do
+        if not (exceptType == "multi" and m == exceptIdx) and multiSlotData[m].listedUUID then
+            used[multiSlotData[m].listedUUID] = true
         end
     end
     return used
 end
+
 local function listSingleSlot(idx)
-    local s=slotData[idx]
+    local s = slotData[idx]
     if not s.itemId or not s.active or slotListing[idx] or not capturedRF then return false end
-    local uuid=getAvailableUUIDForItem(s.itemId, s.category, getAllUsedUUIDs("single",idx))
+    local uuid = getAvailableUUIDForItem(s.itemId, s.inventoryCategory, getAllUsedUUIDs("single", idx))
     if not uuid then
-        s.active=false
-        Notifier.new({ Title="❌ Slot "..idx, Content="Stok habis atau UUID tidak ditemukan!", Duration=3, Icon=ZHX_PNG })
-        return false,"Habis"
+        s.active = false
+        Notifier.new({ Title = "❌ Slot "..idx, Content = "Stok habis atau UUID tidak ditemukan!", Duration = 3, Icon = ZHX_PNG })
+        return false, "Habis"
     end
-    slotListing[idx]=true
+    slotListing[idx] = true
     local success, result = pcall(function()
-        return capturedRF:InvokeServer("Booth", s.category, uuid, s.price)
+        return capturedRF:InvokeServer("Booth", s.category, uuid, s.price)  -- s.category = listing category
     end)
-    slotListing[idx]=false
-    if success then
-        -- Periksa return value server (biasanya true jika sukses, atau string error)
-        if result == true or result == "Success" then
-            s.listedUUID = uuid
-            return true
-        else
-            s.listedUUID = nil
-            local msg = "Server menolak listing " .. s.itemName
-            if type(result) == "string" then msg = msg .. " (" .. result .. ")" end
-            Notifier.new({ Title="❌ Gagal Pajang", Content=msg, Duration=3, Icon=ZHX_PNG })
-            return false
-        end
+    slotListing[idx] = false
+    if success and result then
+        s.listedUUID = uuid
+        return true
     else
         s.listedUUID = nil
-        Notifier.new({ Title="❌ Error Remote", Content="Gagal memanggil server untuk "..s.itemName, Duration=3, Icon=ZHX_PNG })
+        local msg = "Server menolak " .. s.itemName
+        if type(result) == "string" then msg = msg .. " (" .. result .. ")" end
+        Notifier.new({ Title = "❌ Gagal Pajang", Content = msg, Duration = 3, Icon = ZHX_PNG })
         return false
     end
 end
+
 local function listMultiSlot(mIdx)
-    local ms=multiSlotData[mIdx]
-    if not ms.active or #ms.items==0 or multiListing[mIdx] or not capturedRF then return false end
-    local total=#ms.items; local found=false
-    for _=1,total do
-        if ms.currentItemIdx>total then ms.currentItemIdx=1 end
-        local it=ms.items[ms.currentItemIdx]
-        if it and #getUUIDsForItemId(it.itemId, it.category)>0 then found=true; break
-        else ms.currentItemIdx=ms.currentItemIdx+1 end
+    local ms = multiSlotData[mIdx]
+    if not ms.active or #ms.items == 0 or multiListing[mIdx] or not capturedRF then return false end
+    local total = #ms.items
+    local found = false
+    for _ = 1, total do
+        if ms.currentItemIdx > total then ms.currentItemIdx = 1 end
+        local it = ms.items[ms.currentItemIdx]
+        if it and #getUUIDsForItemId(it.itemId, it.inventoryCategory) > 0 then found = true; break
+        else ms.currentItemIdx = ms.currentItemIdx + 1 end
     end
-    if not found then ms.active=false; Notifier.new({ Title="❌ Multi "..mIdx, Content="Semua item habis.", Duration=3, Icon=ZHX_PNG }); return false,"Habis" end
-    local it=ms.items[ms.currentItemIdx]
-    local uuid=getAvailableUUIDForItem(it.itemId, it.category, getAllUsedUUIDs("multi",mIdx))
+    if not found then
+        ms.active = false
+        Notifier.new({ Title = "❌ Multi "..mIdx, Content = "Semua item habis.", Duration = 3, Icon = ZHX_PNG })
+        return false, "Habis"
+    end
+    local it = ms.items[ms.currentItemIdx]
+    local uuid = getAvailableUUIDForItem(it.itemId, it.inventoryCategory, getAllUsedUUIDs("multi", mIdx))
     if not uuid then
-        ms.currentItemIdx=ms.currentItemIdx+1
-        if ms.currentItemIdx>total then ms.currentItemIdx=1 end
-        Notifier.new({ Title="⚠ Multi "..mIdx, Content="UUID tidak tersedia, pindah ke item berikutnya.", Duration=3, Icon=ZHX_PNG })
+        ms.currentItemIdx = ms.currentItemIdx + 1
+        if ms.currentItemIdx > total then ms.currentItemIdx = 1 end
         return false
     end
-    multiListing[mIdx]=true
+    multiListing[mIdx] = true
     local success, result = pcall(function()
-        return capturedRF:InvokeServer("Booth", it.category, uuid, ms.price)
+        return capturedRF:InvokeServer("Booth", it.category, uuid, ms.price)  -- it.category = listing category
     end)
-    multiListing[mIdx]=false
-    if success then
-        if result == true or result == "Success" then
-            ms.listedUUID = uuid
-            return true
-        else
-            ms.listedUUID = nil
-            local msg = "Server menolak listing " .. it.itemName
-            if type(result) == "string" then msg = msg .. " (" .. result .. ")" end
-            Notifier.new({ Title="❌ Gagal Multi "..mIdx, Content=msg, Duration=3, Icon=ZHX_PNG })
-            return false
-        end
+    multiListing[mIdx] = false
+    if success and result then
+        ms.listedUUID = uuid
+        return true
     else
         ms.listedUUID = nil
-        Notifier.new({ Title="❌ Error Remote Multi", Content="Gagal memanggil server", Duration=3, Icon=ZHX_PNG })
+        local msg = "Server menolak " .. it.itemName
+        if type(result) == "string" then msg = msg .. " (" .. result .. ")" end
+        Notifier.new({ Title = "❌ Gagal Multi "..mIdx, Content = msg, Duration = 3, Icon = ZHX_PNG })
         return false
     end
 end
+
 local function getTotalMultiStock(mIdx)
-    local t=0
-    for _,it in ipairs(multiSlotData[mIdx].items) do t=t+#getUUIDsForItemId(it.itemId, it.category) end
+    local t = 0
+    for _, it in ipairs(multiSlotData[mIdx].items) do t = t + #getUUIDsForItemId(it.itemId, it.inventoryCategory) end
     return t
 end
 
@@ -666,20 +648,20 @@ local UIStatusSingle = {}
 local UIStatusMulti  = {}
 
 local function updateAllUIStatus()
-    for i=1,MAX_SLOTS do
+    for i = 1, MAX_SLOTS do
         if UIStatusSingle[i] then
             if slotData[i].itemId then
-                local cnt=#getUUIDsForItemId(slotData[i].itemId, slotData[i].category)
+                local cnt = #getUUIDsForItemId(slotData[i].itemId, slotData[i].inventoryCategory)
                 UIStatusSingle[i]:SetContent("Stok: "..cnt.." | "..(slotData[i].active and "✅ Aktif" or "⛔ Isi harga"))
             else
                 UIStatusSingle[i]:SetContent("Belum Dipilih")
             end
         end
     end
-    for m=1,MAX_MULTI do
+    for m = 1, MAX_MULTI do
         if UIStatusMulti[m] then
-            if #multiSlotData[m].items>0 then
-                local tot=getTotalMultiStock(m)
+            if #multiSlotData[m].items > 0 then
+                local tot = getTotalMultiStock(m)
                 UIStatusMulti[m]:SetContent("Stok: "..tot.." | "..#multiSlotData[m].items.." item | "..(multiSlotData[m].active and "✅" or "⛔"))
             else
                 UIStatusMulti[m]:SetContent("Antrian kosong")
@@ -1003,6 +985,7 @@ local function openCustomDropdown(dropType, slotIdx, itemList, onSelect, selecte
                 itemId   = item.itemId,
                 name     = item.name,
                 category = item.category,
+                inventoryCategory = item.inventoryCategory,
                 count    = item.count
             }
             rowBtn.MouseButton1Click:Connect(function()
@@ -1082,7 +1065,7 @@ local function refreshAllDropdownLists()
     nameToIdMap = {}
     for _, it in ipairs(allItemsCache) do
         if it.name and it.name ~= "" then
-            nameToIdMap[it.name] = {id=it.itemId, cat=it.category}
+            nameToIdMap[it.name] = {id=it.itemId, cat=it.category, invCat=it.inventoryCategory}
         end
     end
 end
@@ -1152,7 +1135,7 @@ SecSetup:AddToggle({ Name = "▶ MULAI AUTO BOOTH", Flag = "AutoBoothToggle", De
                         if not s.itemId or not s.active then continue end
                         if s.listedUUID and not snap[s.listedUUID] then
                             local sn,sp=s.itemName,s.price; s.listedUUID=nil
-                            local rem=#getUUIDsForItemId(s.itemId, s.category)
+                            local rem=#getUUIDsForItemId(s.itemId, s.inventoryCategory)
                             sendEmbed("🛒 Terjual — Slot "..i,"**"..sn.."**\n💰 **"..sp.." Token**\n📦 Sisa: **"..rem.."**\n💎 "..getCurrentToken(),3066993)
                             if rem>0 then
                                 task.delay(0.5,function() if autoOn and not slotListing[i] then listSingleSlot(i); updateAllUIStatus() end end)
@@ -1248,6 +1231,7 @@ for i = 1, MAX_SLOTS do
                     slotData[capturedI].itemId    = item.itemId
                     slotData[capturedI].itemName  = item.name
                     slotData[capturedI].category  = item.category
+                    slotData[capturedI].inventoryCategory = item.inventoryCategory
                     slotData[capturedI].listedUUID = nil
                     slotData[capturedI].active    = (slotData[capturedI].price > 0)
                     setSlotButtonText("single_"..capturedI, "🎣 "..item.name)
@@ -1261,7 +1245,7 @@ for i = 1, MAX_SLOTS do
     sec:AddButton({
         Name = "X Kosongkan Slot",
         Callback = function()
-            slotData[i] = {itemId=nil,itemName=nil,category=nil,price=slotData[i].price,active=false,listedUUID=nil}
+            slotData[i] = {itemId=nil,itemName=nil,category=nil,inventoryCategory=nil,price=slotData[i].price,active=false,listedUUID=nil}
             setSlotButtonText("single_"..i, "🎣 Pilih Item...")
             updateAllUIStatus()
         end
@@ -1304,7 +1288,12 @@ for m = 1, MAX_MULTI do
                     local newItems = {}
                     for _, cacheItem in ipairs(allItemsCache) do
                         if currentSel[cacheItem.itemId] then
-                            table.insert(newItems, {itemId=cacheItem.itemId, itemName=cacheItem.name, category=cacheItem.category})
+                            table.insert(newItems, {
+                                itemId = cacheItem.itemId,
+                                itemName = cacheItem.name,
+                                category = cacheItem.category,
+                                inventoryCategory = cacheItem.inventoryCategory
+                            })
                         end
                     end
                     multiSlotData[capturedM].items          = newItems
@@ -1384,13 +1373,26 @@ SecCfg:AddButton({ Name = "💾 SIMPAN CONFIG", Callback = function()
     local cfg={single={},multi={},webhook=webhookURL}
     for i=1,MAX_SLOTS do
         if slotData[i].itemId and slotData[i].price>0 then
-            cfg.single[i]={itemId=slotData[i].itemId,itemName=slotData[i].itemName,category=slotData[i].category,price=slotData[i].price}
+            cfg.single[i]={
+                itemId=slotData[i].itemId,
+                itemName=slotData[i].itemName,
+                category=slotData[i].category,
+                inventoryCategory=slotData[i].inventoryCategory,
+                price=slotData[i].price
+            }
         end
     end
     for mm=1,MAX_MULTI do
         if #multiSlotData[mm].items>0 then
             cfg.multi[mm]={items={},price=multiSlotData[mm].price}
-            for _,it in ipairs(multiSlotData[mm].items) do table.insert(cfg.multi[mm].items,{itemId=it.itemId,itemName=it.itemName,category=it.category}) end
+            for _,it in ipairs(multiSlotData[mm].items) do
+                table.insert(cfg.multi[mm].items,{
+                    itemId=it.itemId,
+                    itemName=it.itemName,
+                    category=it.category,
+                    inventoryCategory=it.inventoryCategory
+                })
+            end
         end
     end
     savedConfigs[name]=cfg
@@ -1408,14 +1410,25 @@ SecCfg:AddButton({ Name = "📂 LOAD CONFIG", Callback = function()
     local ok2,list=pcall(getInventoryItemListFull)
     if not ok2 then list={} end
     allItemsCache=list; nameToIdMap={}
-    for _,it in ipairs(list) do if it.name and it.name~="" then nameToIdMap[it.name]={id=it.itemId,cat=it.category} end end
+    for _,it in ipairs(list) do
+        if it.name and it.name~="" then nameToIdMap[it.name]={id=it.itemId, cat=it.category, invCat=it.inventoryCategory} end
+    end
     isLoadingConfig=true
     local cfg=savedConfigs[name]
     for i=1,MAX_SLOTS do
-        slotData[i]={itemId=nil,itemName=nil,category=nil,price=0,active=false,listedUUID=nil}
+        slotData[i]={itemId=nil,itemName=nil,category=nil,inventoryCategory=nil,price=0,active=false,listedUUID=nil}
         if cfg.single and cfg.single[i] and nameToIdMap[cfg.single[i].itemName] then
             local s=cfg.single[i]
-            slotData[i]={itemId=s.itemId,itemName=s.itemName,category=s.category,price=s.price,active=s.price>0,listedUUID=nil}
+            local map = nameToIdMap[s.itemName]
+            slotData[i]={
+                itemId=s.itemId,
+                itemName=s.itemName,
+                category=map.cat or s.category,
+                inventoryCategory=map.invCat or s.inventoryCategory,
+                price=s.price,
+                active=s.price>0,
+                listedUUID=nil
+            }
             if Compkiller.Flags["SP_"..i] then Compkiller.Flags["SP_"..i]:SetValue(tostring(s.price)) end
             setSlotButtonText("single_"..i, "🎣 "..s.itemName)
         else setSlotButtonText("single_"..i, "🎣 Pilih Item...") end
@@ -1425,10 +1438,19 @@ SecCfg:AddButton({ Name = "📂 LOAD CONFIG", Callback = function()
         if cfg.multi and cfg.multi[mm] and #cfg.multi[mm].items>0 then
             local valid={}
             for _,it in ipairs(cfg.multi[mm].items) do
-                if nameToIdMap[it.itemName] then table.insert(valid,{itemId=it.itemId,itemName=it.itemName,category=it.category}) end
+                if nameToIdMap[it.itemName] then
+                    local map = nameToIdMap[it.itemName]
+                    table.insert(valid,{
+                        itemId=it.itemId,
+                        itemName=it.itemName,
+                        category=map.cat or it.category,
+                        inventoryCategory=map.invCat or it.inventoryCategory
+                    })
+                end
             end
             if #valid>0 then
-                multiSlotData[mm].items=valid; multiSlotData[mm].price=cfg.multi[mm].price
+                multiSlotData[mm].items=valid
+                multiSlotData[mm].price=cfg.multi[mm].price
                 multiSlotData[mm].active=(cfg.multi[mm].price>0)
                 if Compkiller.Flags["MP_"..mm] then Compkiller.Flags["MP_"..mm]:SetValue(tostring(cfg.multi[mm].price)) end
                 if #valid == 1 then setSlotButtonText("multi_"..mm, "🎣 "..valid[1].itemName)
@@ -1654,7 +1676,7 @@ SecPengaturan:AddButton({ Name = "🔄 Reset Semua Slot", Callback = function()
     autoOn=false
     if Compkiller.Flags["AutoBoothToggle"] then Compkiller.Flags["AutoBoothToggle"]:SetValue(false) end
     for i=1,MAX_SLOTS do
-        slotData[i]={itemId=nil,itemName=nil,category=nil,price=0,active=false,listedUUID=nil}
+        slotData[i]={itemId=nil,itemName=nil,category=nil,inventoryCategory=nil,price=0,active=false,listedUUID=nil}
         slotListing[i]=false
         setSlotButtonText("single_"..i, "🎣 Pilih Item...")
         if Compkiller.Flags["SP_"..i] then Compkiller.Flags["SP_"..i]:SetValue("") end
@@ -1757,4 +1779,4 @@ task.spawn(function()
     end
 end)
 
-print("🐟 ZhxHub Auto Booth v16.1 [ANTI ID OVERLAP] — Custom Dropdown — "..#configNameList.." config dimuat")
+print("🐟 ZhxHub Auto Booth v16.2 [FIX DUAL CATEGORY] — "..#configNameList.." config dimuat")
