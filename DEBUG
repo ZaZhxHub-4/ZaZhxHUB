@@ -169,13 +169,11 @@ local function getCurrentToken()
 end
 
 -- ── INVENTORY: scan semua kategori ──
--- Tidak ada lagi filter TradeLocked. Semua item muncul.
+-- Tidak ada filter TradeLocked, semua item muncul.
 -- Kategori mengikuti data asli game.
-
 local function fetchItemData(category, id)
     local IU = ItemUtility
     local ok, data = false, nil
-    -- Coba ambil data spesifik per kategori jika tersedia
     if category == "Pets" and IU.GetPetData then ok, data = pcall(function() return IU:GetPetData(id) end)
     elseif category == "Boats" and IU.GetBoatData then ok, data = pcall(function() return IU:GetBoatData(id) end)
     elseif category == "Emotes" and IU.GetEmoteData then ok, data = pcall(function() return IU:GetEmoteData(id) end)
@@ -187,6 +185,9 @@ local function fetchItemData(category, id)
     elseif category == "Baits" and IU.GetBaitData then ok, data = pcall(function() return IU:GetBaitData(id) end)
     elseif category == "Lanterns" and IU.GetLanternData then ok, data = pcall(function() return IU:GetLanternData(id) end)
     elseif category == "Pet Eggs" and IU.GetPetEggData then ok, data = pcall(function() return IU:GetPetEggData(id) end)
+    elseif category == "Items" then
+        -- Fallback untuk semua item generik (ikan, enchant stone, dll.)
+        ok, data = pcall(function() return IU:GetItemData(id) end)
     end
     
     if ok and data then return data end
@@ -262,7 +263,7 @@ local function getInventoryItemListFull()
             
             if not seen[uniqueKey] then
                 local data = fetchItemData(catName, id)
-                if data then  -- tidak ada filter TradeLocked
+                if data then
                     local name = data.Name or (data.Data and data.Data.Name) or (catName .. " ID " .. tostring(id))
                     local count = #getUUIDsForItemId(id, catName)
                     
@@ -289,8 +290,11 @@ local function getInventoryItemListFull()
         end
     end
     
-    -- Sort hanya berdasarkan nama (kategori sesuai aslinya)
+    -- Urutkan: berdasarkan kategori (alfabetis), lalu nama (alfabetis)
     table.sort(items, function(a, b)
+        if a.category ~= b.category then
+            return a.category < b.category
+        end
         return a.name < b.name
     end)
     
@@ -569,11 +573,22 @@ local function listSingleSlot(idx)
     local s=slotData[idx]
     if not s.itemId or not s.active or slotListing[idx] or not capturedRF then return false end
     local uuid=getAvailableUUIDForItem(s.itemId, s.category, getAllUsedUUIDs("single",idx))
-    if not uuid then s.active=false; return false,"Habis" end
+    if not uuid then
+        s.active=false
+        Notifier.new({ Title="❌ Slot "..idx, Content="Stok habis atau UUID tidak ditemukan!", Duration=3, Icon=ZHX_PNG })
+        return false,"Habis"
+    end
     slotListing[idx]=true
-    local ok=pcall(function() capturedRF:InvokeServer("Booth",s.category,uuid,s.price) end)
+    local ok, err = pcall(function() capturedRF:InvokeServer("Booth",s.category,uuid,s.price) end)
     slotListing[idx]=false
-    if ok then s.listedUUID=uuid; return true else s.listedUUID=nil; return false end
+    if ok then
+        s.listedUUID=uuid
+        return true
+    else
+        s.listedUUID=nil
+        Notifier.new({ Title="❌ Gagal Pajang", Content="Server menolak listing "..s.itemName, Duration=3, Icon=ZHX_PNG })
+        return false
+    end
 end
 local function listMultiSlot(mIdx)
     local ms=multiSlotData[mIdx]
@@ -585,18 +600,26 @@ local function listMultiSlot(mIdx)
         if it and #getUUIDsForItemId(it.itemId, it.category)>0 then found=true; break
         else ms.currentItemIdx=ms.currentItemIdx+1 end
     end
-    if not found then ms.active=false; return false,"Habis" end
+    if not found then ms.active=false; Notifier.new({ Title="❌ Multi "..mIdx, Content="Semua item habis.", Duration=3, Icon=ZHX_PNG }); return false,"Habis" end
     local it=ms.items[ms.currentItemIdx]
     local uuid=getAvailableUUIDForItem(it.itemId, it.category, getAllUsedUUIDs("multi",mIdx))
     if not uuid then
         ms.currentItemIdx=ms.currentItemIdx+1
         if ms.currentItemIdx>total then ms.currentItemIdx=1 end
+        Notifier.new({ Title="⚠ Multi "..mIdx, Content="UUID tidak tersedia, pindah ke item berikutnya.", Duration=3, Icon=ZHX_PNG })
         return false
     end
     multiListing[mIdx]=true
-    local ok=pcall(function() capturedRF:InvokeServer("Booth",it.category,uuid,ms.price) end)
+    local ok, err = pcall(function() capturedRF:InvokeServer("Booth",it.category,uuid,ms.price) end)
     multiListing[mIdx]=false
-    if ok then ms.listedUUID=uuid; return true else ms.listedUUID=nil; return false end
+    if ok then
+        ms.listedUUID=uuid
+        return true
+    else
+        ms.listedUUID=nil
+        Notifier.new({ Title="❌ Gagal Multi "..mIdx, Content="Server menolak listing "..it.itemName, Duration=3, Icon=ZHX_PNG })
+        return false
+    end
 end
 local function getTotalMultiStock(mIdx)
     local t=0
