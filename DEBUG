@@ -101,7 +101,6 @@ local function applyGlobalScale(scale)
     end
 end
 
--- Tengahkan posisi UI
 for _, obj in ipairs(Window.Root:GetChildren()) do
     if obj:IsA("Frame") and obj.ZIndex == 4 then
         obj.Position = UDim2.new(0.5, 45, 0.5, 0)
@@ -168,9 +167,7 @@ local function getCurrentToken()
     return "?"
 end
 
--- ── INVENTORY: scan semua kategori ──
--- Tidak ada filter TradeLocked, semua item muncul.
--- Kategori mengikuti data asli game.
+-- ── INVENTORY: scan & ambil kategori asli dari data item ──
 local function fetchItemData(category, id)
     local IU = ItemUtility
     local ok, data = false, nil
@@ -185,9 +182,6 @@ local function fetchItemData(category, id)
     elseif category == "Baits" and IU.GetBaitData then ok, data = pcall(function() return IU:GetBaitData(id) end)
     elseif category == "Lanterns" and IU.GetLanternData then ok, data = pcall(function() return IU:GetLanternData(id) end)
     elseif category == "Pet Eggs" and IU.GetPetEggData then ok, data = pcall(function() return IU:GetPetEggData(id) end)
-    elseif category == "Items" then
-        -- Fallback untuk semua item generik (ikan, enchant stone, dll.)
-        ok, data = pcall(function() return IU:GetItemData(id) end)
     end
     
     if ok and data then return data end
@@ -200,6 +194,22 @@ local function fetchItemData(category, id)
     ok, data = pcall(function() return IU:GetItemData(id) end)
     if ok and data then return data end
     return nil
+end
+
+-- Fungsi untuk mendapatkan kategori asli dari data item
+local function getTrueCategory(data, fallbackCategory)
+    if not data then return fallbackCategory end
+    -- Coba properti umum
+    if data.Category and type(data.Category) == "string" then return data.Category end
+    if data.Type and type(data.Type) == "string" then return data.Type end
+    if data.ItemType and type(data.ItemType) == "string" then return data.ItemType end
+    -- Jika ada table Data di dalamnya
+    if data.Data then
+        if data.Data.Category then return data.Data.Category end
+        if data.Data.Type then return data.Data.Type end
+        if data.Data.ItemType then return data.Data.ItemType end
+    end
+    return fallbackCategory
 end
 
 local function getInventorySnapshot()
@@ -265,12 +275,13 @@ local function getInventoryItemListFull()
                 local data = fetchItemData(catName, id)
                 if data then
                     local name = data.Name or (data.Data and data.Data.Name) or (catName .. " ID " .. tostring(id))
-                    local count = #getUUIDsForItemId(id, catName)
+                    local trueCat = getTrueCategory(data, catName)  -- Ambil kategori asli
+                    local count = #getUUIDsForItemId(id, catName)   -- Tetap cari di kategori inventory
                     
                     table.insert(items, {
                         name = name,
                         itemId = id,
-                        category = catName,
+                        category = trueCat,
                         count = count
                     })
                     seen[uniqueKey] = true
@@ -290,7 +301,7 @@ local function getInventoryItemListFull()
         end
     end
     
-    -- Urutkan: berdasarkan kategori (alfabetis), lalu nama (alfabetis)
+    -- Urutkan: kategori (alfabetis), lalu nama (alfabetis)
     table.sort(items, function(a, b)
         if a.category ~= b.category then
             return a.category < b.category
@@ -545,7 +556,7 @@ local function saveConfigsToFile()
 end
 
 -- ══════════════════════════════════════════════════════════════════
--- BACKEND BOOTH (DENGAN KATEGORI ASLI DARI GAME)
+-- BACKEND BOOTH (dengan kategori asli & debug return value)
 -- ══════════════════════════════════════════════════════════════════
 local function getAvailableUUIDForItem(itemId, category, excludeUUIDs)
     excludeUUIDs=excludeUUIDs or {}
@@ -579,14 +590,25 @@ local function listSingleSlot(idx)
         return false,"Habis"
     end
     slotListing[idx]=true
-    local ok, err = pcall(function() capturedRF:InvokeServer("Booth",s.category,uuid,s.price) end)
+    local success, result = pcall(function()
+        return capturedRF:InvokeServer("Booth", s.category, uuid, s.price)
+    end)
     slotListing[idx]=false
-    if ok then
-        s.listedUUID=uuid
-        return true
+    if success then
+        -- Periksa return value server (biasanya true jika sukses, atau string error)
+        if result == true or result == "Success" then
+            s.listedUUID = uuid
+            return true
+        else
+            s.listedUUID = nil
+            local msg = "Server menolak listing " .. s.itemName
+            if type(result) == "string" then msg = msg .. " (" .. result .. ")" end
+            Notifier.new({ Title="❌ Gagal Pajang", Content=msg, Duration=3, Icon=ZHX_PNG })
+            return false
+        end
     else
-        s.listedUUID=nil
-        Notifier.new({ Title="❌ Gagal Pajang", Content="Server menolak listing "..s.itemName, Duration=3, Icon=ZHX_PNG })
+        s.listedUUID = nil
+        Notifier.new({ Title="❌ Error Remote", Content="Gagal memanggil server untuk "..s.itemName, Duration=3, Icon=ZHX_PNG })
         return false
     end
 end
@@ -610,14 +632,24 @@ local function listMultiSlot(mIdx)
         return false
     end
     multiListing[mIdx]=true
-    local ok, err = pcall(function() capturedRF:InvokeServer("Booth",it.category,uuid,ms.price) end)
+    local success, result = pcall(function()
+        return capturedRF:InvokeServer("Booth", it.category, uuid, ms.price)
+    end)
     multiListing[mIdx]=false
-    if ok then
-        ms.listedUUID=uuid
-        return true
+    if success then
+        if result == true or result == "Success" then
+            ms.listedUUID = uuid
+            return true
+        else
+            ms.listedUUID = nil
+            local msg = "Server menolak listing " .. it.itemName
+            if type(result) == "string" then msg = msg .. " (" .. result .. ")" end
+            Notifier.new({ Title="❌ Gagal Multi "..mIdx, Content=msg, Duration=3, Icon=ZHX_PNG })
+            return false
+        end
     else
-        ms.listedUUID=nil
-        Notifier.new({ Title="❌ Gagal Multi "..mIdx, Content="Server menolak listing "..it.itemName, Duration=3, Icon=ZHX_PNG })
+        ms.listedUUID = nil
+        Notifier.new({ Title="❌ Error Remote Multi", Content="Gagal memanggil server", Duration=3, Icon=ZHX_PNG })
         return false
     end
 end
@@ -657,7 +689,7 @@ local function updateAllUIStatus()
 end
 
 -- ══════════════════════════════════════════════════════════════════
--- CUSTOM DROPDOWN SYSTEM
+-- CUSTOM DROPDOWN SYSTEM (tidak diubah)
 -- ══════════════════════════════════════════════════════════════════
 local customDropGui     = nil
 local customDropFrame   = nil
