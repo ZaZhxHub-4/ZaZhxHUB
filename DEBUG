@@ -1,42 +1,145 @@
--- // ZHX Net Label Dumper — Lihat Semua Remote Terbaru
+-- // Booth Debugger — Cek remote CreateSaleListing + SaleListings
 local RS = game:GetService("ReplicatedStorage")
 local LP = game:GetService("Players").LocalPlayer
+local HS = game:GetService("HttpService")
 
 local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+
+-- Fungsi ambil remote hashed
+local function getHashedRemote(label)
+    local children = net:GetChildren()
+    for i, child in ipairs(children) do
+        if child.Name == label then
+            local nxt = children[i+1]
+            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
+                return nxt
+            end
+            break
+        end
+    end
+    return nil
+end
+
+local results = {}
+local function add(line) table.insert(results, line) end
+
+-- ========== 1. Cek keberadaan label ==========
+add("=== CEK LABEL ===")
 local labels = {}
 for _, child in ipairs(net:GetChildren()) do
-    table.insert(labels, child.Name)
+    if child.Name:find("CreateSaleListing") then
+        add("Label ditemukan: " .. child.Name)
+        local hashed = getHashedRemote(child.Name)
+        if hashed then
+            add("  Hashed remote: " .. hashed.Name .. " (" .. hashed.ClassName .. ")")
+        else
+            add("  Hashed remote TIDAK ditemukan")
+        end
+    end
+    if child.Name:find("DeleteSaleListing") then
+        add("Label Delete: " .. child.Name)
+        local hashed = getHashedRemote(child.Name)
+        if hashed then
+            add("  Hashed: " .. hashed.Name)
+        end
+    end
 end
-table.sort(labels)
 
-local allText = table.concat(labels, "\n")
+-- ========== 2. Coba panggil CreateSaleListing ==========
+add("\n=== UJI PANGGIL CreateSaleListing ===")
+local createRF = nil
+for _, child in ipairs(net:GetChildren()) do
+    if child.Name == "RF/Trading/CreateSaleListing" then
+        createRF = getHashedRemote(child.Name)
+        break
+    end
+end
 
--- GUI
+if not createRF then
+    add("Remote CreateSaleListing TIDAK DITEMUKAN")
+else
+    add("Remote: " .. createRF.Name .. " (" .. createRF.ClassName .. ")")
+    
+    -- Coba berbagai format
+    local testCases = {
+        {"Booth", "Fish", "test-uuid-123", 100},
+        {"Booth", "Fish", "test-uuid-123", 100, "listing-key"},
+        {"Booth", "test-uuid-123", 100},
+        {"Booth", "test-uuid-123", 100, "Fish"},
+        {"test-uuid-123", 100},
+        {"test-uuid-123", 100, "Fish"},
+        {"Booth", {itemId = 1, uuid = "test", price = 100}},
+        {itemType = "Booth", uuid = "test", price = 100},
+    }
+    
+    for i, params in ipairs(testCases) do
+        local ok, result = pcall(function()
+            return createRF:InvokeServer(unpack(params))
+        end)
+        local paramStr = HS:JSONEncode(params)
+        if ok then
+            add(string.format("  Uji %d: OK -> %s", i, tostring(result)))
+        else
+            add(string.format("  Uji %d: ERROR -> %s", i, tostring(result)))
+        end
+    end
+end
+
+-- ========== 3. Cek SaleListings ==========
+add("\n=== DATA SaleListings ===")
+local Replion = require(RS.Packages.Replion)
+local PlayerData = Replion.Client:WaitReplion("Data")
+local saleData = nil
+pcall(function() saleData = PlayerData:Get("SaleListings") end)
+if saleData then
+    for k, v in pairs(saleData) do
+        if type(v) == "table" then
+            add("Booth:")
+            for listingId, listingData in pairs(v) do
+                add("  Listing Key: " .. tostring(listingId))
+                if type(listingData) == "table" then
+                    for k2, v2 in pairs(listingData) do
+                        add("    " .. tostring(k2) .. " = " .. tostring(v2))
+                    end
+                else
+                    add("    Value: " .. tostring(listingData))
+                end
+            end
+        else
+            add(k .. " = " .. tostring(v))
+        end
+    end
+else
+    add("SaleListings kosong atau tidak bisa diakses")
+end
+
+-- ========== GUI OUTPUT ==========
+local outputText = table.concat(results, "\n")
 local gui = Instance.new("ScreenGui")
-gui.Name = "NetDumpGUI"
+gui.Name = "BoothDebuggerGUI"
 gui.ResetOnSpawn = false
 gui.Parent = LP:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(1, -20, 0.7, 0)
-frame.Position = UDim2.new(0, 10, 0.15, 0)
+frame.Size = UDim2.new(1, -20, 0.75, 0)
+frame.Position = UDim2.new(0, 10, 0.12, 0)
 frame.BackgroundColor3 = Color3.fromRGB(15,15,20)
 frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
-frame.ZIndex = 2000
+frame.ZIndex = 7000
 frame.Parent = gui
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
-Instance.new("UIStroke", frame).Color = Color3.fromRGB(72,210,130)
+Instance.new("UIStroke", frame).Color = Color3.fromRGB(255,200,0)
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,30)
 title.Position = UDim2.new(0,10,0,5)
 title.BackgroundTransparency = 1
-title.Text = "Net Labels (" .. #labels .. " item)  |  Tap teks untuk copy"
+title.Text = "Booth Debugger | Tap untuk copy"
 title.TextColor3 = Color3.fromRGB(255,255,100)
 title.TextSize = 12
 title.Font = Enum.Font.GothamBold
-title.ZIndex = 2001
+title.ZIndex = 7001
 title.Parent = frame
 
 local scroll = Instance.new("ScrollingFrame")
@@ -45,36 +148,34 @@ scroll.Position = UDim2.new(0,5,0,35)
 scroll.BackgroundColor3 = Color3.fromRGB(20,20,25)
 scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 6
-scroll.ScrollBarImageColor3 = Color3.fromRGB(72,210,130)
-scroll.CanvasSize = UDim2.new(0,0,0, #labels * 18 + 10)
-scroll.ZIndex = 2001
+scroll.ScrollBarImageColor3 = Color3.fromRGB(255,200,0)
+scroll.CanvasSize = UDim2.new(0,0,0, math.max(#results,1)*18+10)
+scroll.ZIndex = 7001
 scroll.Parent = frame
 Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,6)
 
 local textBtn = Instance.new("TextButton")
-textBtn.Size = UDim2.new(1,0,0, #labels * 18)
+textBtn.Size = UDim2.new(1,0,0, math.max(#results,1)*18)
 textBtn.Position = UDim2.new(0,0,0,0)
 textBtn.BackgroundTransparency = 1
-textBtn.Text = allText
+textBtn.Text = outputText
 textBtn.TextColor3 = Color3.fromRGB(200,200,200)
 textBtn.TextSize = 11
 textBtn.Font = Enum.Font.Code
 textBtn.TextXAlignment = Enum.TextXAlignment.Left
 textBtn.TextYAlignment = Enum.TextYAlignment.Top
 textBtn.AutoButtonColor = false
-textBtn.ZIndex = 2002
+textBtn.ZIndex = 7002
 textBtn.Parent = scroll
 
 textBtn.MouseButton1Click:Connect(function()
     pcall(function()
-        if setclipboard then setclipboard(allText)
-        elseif syn and syn.set_clipboard then syn.set_clipboard(allText)
-        elseif writefile then writefile("ZHX_NetLabels.txt", allText) end
+        if setclipboard then setclipboard(outputText)
+        elseif syn and syn.set_clipboard then syn.set_clipboard(outputText)
+        elseif writefile then writefile("ZHX_BoothDebug.txt", outputText) end
     end)
-    title.Text = "✅ Tersalin! (" .. #labels .. " label)  |  Tap lagi untuk copy ulang"
-    task.delay(2, function()
-        title.Text = "Net Labels (" .. #labels .. " item)  |  Tap teks untuk copy"
-    end)
+    title.Text = "✅ Tersalin!"
+    task.delay(2, function() title.Text = "Booth Debugger | Tap untuk copy" end)
 end)
 
 local closeBtn = Instance.new("TextButton")
@@ -86,10 +187,8 @@ closeBtn.Text = "✕"
 closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
 closeBtn.TextSize = 14
 closeBtn.Font = Enum.Font.GothamBold
-closeBtn.ZIndex = 2001
+closeBtn.ZIndex = 7001
 closeBtn.AutoButtonColor = false
 closeBtn.Parent = frame
 Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,5)
 closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
-
-print("Net Label Dumper siap. Tap teks untuk copy.")
