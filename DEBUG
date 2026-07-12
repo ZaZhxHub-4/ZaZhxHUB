@@ -580,14 +580,38 @@ local function getAllUsedUUIDs(exceptType, exceptIdx)
     return used
 end
 local function listSingleSlot(idx)
-    local s=slotData[idx]
-    if not s.itemId or not s.active or slotListing[idx] or not capturedRF then return false end
-    local uuid=getAvailableUUIDForItem(s.itemId, s.category, getAllUsedUUIDs("single",idx))
-    if not uuid then s.active=false; return false,"Habis" end
+    local s = slotData[idx]
+    
+    -- DEBUG TAMBAHAN
+    if not capturedRF then 
+        warn("DEBUG: Gagal memajang item, capturedRF nil!") 
+        return false 
+    end
+    if not s.itemId then 
+        warn("DEBUG: Slot "..idx.." tidak ada itemId") 
+        return false 
+    end
+    
+    if not s.itemId or not s.active or slotListing[idx] then return false end
+    
+    local uuid = getAvailableUUIDForItem(s.itemId, s.category, getAllUsedUUIDs("single",idx))
+    if not uuid then 
+        warn("DEBUG: Item "..s.itemName.." habis di inventory")
+        s.active=false; return false 
+    end
+    
     slotListing[idx]=true
-    local ok=pcall(function() capturedRF:InvokeServer("Booth",s.category,uuid,s.price) end)
+    local ok, err = pcall(function() capturedRF:InvokeServer("Booth", s.category, uuid, s.price) end)
     slotListing[idx]=false
-    if ok then s.listedUUID=uuid; return true else s.listedUUID=nil; return false end
+    
+    if ok then 
+        s.listedUUID=uuid; 
+        print("DEBUG: Berhasil pajang "..s.itemName)
+        return true 
+    else 
+        warn("DEBUG: Error saat InvokeServer: " .. tostring(err))
+        s.listedUUID=nil; return false 
+    end
 end
 local function listMultiSlot(mIdx)
     local ms=multiSlotData[mIdx]
