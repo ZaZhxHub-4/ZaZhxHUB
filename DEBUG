@@ -581,36 +581,42 @@ local function getAllUsedUUIDs(exceptType, exceptIdx)
 end
 local function listSingleSlot(idx)
     local s = slotData[idx]
-    
-    -- DEBUG TAMBAHAN
-    if not capturedRF then 
-        warn("DEBUG: Gagal memajang item, capturedRF nil!") 
-        return false 
-    end
-    if not s.itemId then 
-        warn("DEBUG: Slot "..idx.." tidak ada itemId") 
-        return false 
-    end
-    
-    if not s.itemId or not s.active or slotListing[idx] then return false end
+    if not s.itemId or not s.active or slotListing[idx] or not capturedRF then return false end
     
     local uuid = getAvailableUUIDForItem(s.itemId, s.category, getAllUsedUUIDs("single",idx))
-    if not uuid then 
-        warn("DEBUG: Item "..s.itemName.." habis di inventory")
-        s.active=false; return false 
-    end
+    if not uuid then s.active=false; return false,"Habis" end
     
     slotListing[idx]=true
-    local ok, err = pcall(function() capturedRF:InvokeServer("Booth", s.category, uuid, s.price) end)
+    local ok, err = pcall(function() 
+        capturedRF:InvokeServer("Booth", s.category, uuid, s.price) 
+    end)
     slotListing[idx]=false
     
-    if ok then 
-        s.listedUUID=uuid; 
-        print("DEBUG: Berhasil pajang "..s.itemName)
+    if ok then
+        s.listedUUID=uuid
+        
+        -- --- CEK DATA ---
+        -- Kita tunggu sebentar untuk sinkronisasi data
+        task.wait(1) 
+        local saleData = PlayerData:Get("SaleListings")
+        if saleData and saleData.Booth then
+            local found = false
+            for k, v in pairs(saleData.Booth) do
+                if v.UUID == uuid then found = true break end
+            end
+            if found then
+                print("DEBUG: Item DITEMUKAN di SaleListings (Berhasil pajang)")
+            else
+                warn("DEBUG: PERINGATAN! InvokeServer OK, tapi Item TIDAK ADA di SaleListings!")
+                -- Jika ini terjadi, berarti argumen (Kategori/UUID) tidak disukai server
+            end
+        end
+        -- ----------------
+        
         return true 
     else 
-        warn("DEBUG: Error saat InvokeServer: " .. tostring(err))
-        s.listedUUID=nil; return false 
+        s.listedUUID=nil
+        return false 
     end
 end
 local function listMultiSlot(mIdx)
