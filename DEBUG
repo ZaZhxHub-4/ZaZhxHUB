@@ -720,59 +720,286 @@ local function getDropdownPosition()
     return px, py, dropW, dropH, scale
 end
 
-local activeCategory = "Fish"
-
 local function openCustomDropdown(dropType, slotIdx, itemList, onSelect, selectedSet)
     closeCustomDropdown()
-    activeDropType, activeDropIdx = dropType, slotIdx
+    activeDropType = dropType
+    activeDropIdx  = slotIdx
     local hl, bg, dropBg = getThemeColors()
     local scale = currentGlobalScale
+
+    customDropGui = Instance.new("ScreenGui")
+    customDropGui.Name             = "ZHX_CustomDropdown"
+    customDropGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    customDropGui.ResetOnSpawn   = false
+    customDropGui.Parent         = pg
+
     local px, py, dropW, dropH, sc = getDropdownPosition()
-    
-    customDropGui = Instance.new("ScreenGui", pg); customDropGui.Name = "ZHX_CustomDropdown"
-    customDropFrame = Instance.new("Frame", customDropGui); customDropFrame.Size = UDim2.new(0, dropW, 0, 420*sc); customDropFrame.Position = UDim2.new(0, px, 0, py); customDropFrame.BackgroundColor3 = bg; customDropFrame.BorderSizePixel = 0; customDropFrame.ZIndex = 200; Instance.new("UICorner", customDropFrame).CornerRadius = UDim.new(0,8)
-    
-    -- Search Box
-    local searchBox = Instance.new("TextBox", customDropFrame); searchBox.Size = UDim2.new(1,-20,0,30*sc); searchBox.Position = UDim2.new(0,10,0,10); searchBox.BackgroundColor3 = dropBg; searchBox.PlaceholderText = "🔍 Cari item..."; searchBox.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0,6)
-    
-    -- Tab Kategori (Horizontal)
-    local catScroll = Instance.new("ScrollingFrame", customDropFrame); catScroll.Size = UDim2.new(1,-20,0,35*sc); catScroll.Position = UDim2.new(0,10,0,50); catScroll.BackgroundTransparency = 1; catScroll.ScrollBarThickness = 0
-    Instance.new("UIListLayout", catScroll).FillDirection = Enum.FillDirection.Horizontal; Instance.new("UIListLayout", catScroll).Padding = UDim.new(0,5)
-    
-    -- List Item
-    local itemScroll = Instance.new("ScrollingFrame", customDropFrame); itemScroll.Size = UDim2.new(1,-20,0,320*sc); itemScroll.Position = UDim2.new(0,10,0,90); itemScroll.BackgroundTransparency = 1; itemScroll.ScrollBarThickness = 4; itemScroll.ScrollBarImageColor3 = hl
-    Instance.new("UIListLayout", itemScroll).Padding = UDim.new(0,4)
 
-    local currentSelected = {}; if selectedSet then for id, v in pairs(selectedSet) do currentSelected[id] = v end end
+    customDropFrame = Instance.new("Frame")
+    customDropFrame.Name             = "DropFrame"
+    customDropFrame.Size             = UDim2.new(0, dropW, 0, dropH)
+    customDropFrame.Position         = UDim2.new(0, px, 0, py)
+    customDropFrame.BackgroundColor3 = bg
+    customDropFrame.BorderSizePixel  = 0
+    customDropFrame.ZIndex           = 200
+    customDropFrame.Parent           = customDropGui
+    Instance.new("UICorner", customDropFrame).CornerRadius = UDim.new(0, 8)
+    local stroke = Instance.new("UIStroke", customDropFrame)
+    stroke.Color     = hl
+    stroke.Thickness = 1.5
 
-    local function buildList(searchTxt)
-        for _, c in ipairs(itemScroll:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
-        for _, it in ipairs(itemList) do
-            local show = (searchTxt ~= "" and it.name:lower():find(searchTxt:lower()) ~= nil) or (searchTxt == "" and it.category == activeCategory)
-            
-            if show then
-                local btn = Instance.new("TextButton", itemScroll); btn.Size = UDim2.new(1,0,0,30*sc); btn.Text = it.name.." (x"..it.count..")"; btn.BackgroundColor3 = (dropType=="multi" and currentSelected[it.itemId]) and hl or dropBg; btn.TextColor3 = Color3.new(1,1,1)
-                btn.MouseButton1Click:Connect(function() 
-                    if dropType=="single" then onSelect(it); closeCustomDropdown() 
-                    else currentSelected[it.itemId] = not currentSelected[it.itemId]; onSelect(it, currentSelected); buildList(searchBox.Text) end 
-                end)
+    local headerH = 26 * sc
+    local header = Instance.new("Frame")
+    header.Size             = UDim2.new(1, 0, 0, headerH)
+    header.Position         = UDim2.new(0,0,0,0)
+    header.BackgroundColor3 = hl
+    header.BorderSizePixel  = 0
+    header.ZIndex           = 201
+    header.Parent           = customDropFrame
+    local hcorner = Instance.new("UICorner", header)
+    hcorner.CornerRadius = UDim.new(0,8)
+    local hfix = Instance.new("Frame")
+    hfix.Size = UDim2.new(1,0,0,8); hfix.Position = UDim2.new(0,0,1,-8)
+    hfix.BackgroundColor3 = hl; hfix.BorderSizePixel=0; hfix.ZIndex=201; hfix.Parent=header
+
+    local headerLbl = Instance.new("TextLabel")
+    headerLbl.Size             = UDim2.new(1,-28,1,0)
+    headerLbl.Position         = UDim2.new(0,8,0,0)
+    headerLbl.BackgroundTransparency = 1
+    headerLbl.Text             = (dropType == "multi") and ">> Pilih Item" or ">> Pilih Item"
+    headerLbl.TextColor3       = Color3.fromRGB(255,255,255)
+    headerLbl.TextSize         = math.floor(12 * sc)
+    headerLbl.Font             = Enum.Font.GothamBold
+    headerLbl.TextXAlignment   = Enum.TextXAlignment.Left
+    headerLbl.ZIndex           = 202
+    headerLbl.Parent           = header
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size             = UDim2.new(0, headerH, 0, headerH)
+    closeBtn.Position         = UDim2.new(1, -headerH, 0, 0)
+    closeBtn.BackgroundTransparency = 1
+    closeBtn.Text             = "X"
+    closeBtn.TextColor3       = Color3.fromRGB(255,255,255)
+    closeBtn.TextSize         = math.floor(13 * sc)
+    closeBtn.Font             = Enum.Font.GothamBold
+    closeBtn.ZIndex           = 203
+    closeBtn.Parent           = header
+    closeBtn.MouseButton1Click:Connect(closeCustomDropdown)
+
+    local searchH = math.floor(SEARCH_H * sc)
+    local searchBg = Instance.new("Frame")
+    searchBg.Size             = UDim2.new(1,-12,0,searchH)
+    searchBg.Position         = UDim2.new(0,6,0,headerH+4)
+    searchBg.BackgroundColor3 = dropBg
+    searchBg.BorderSizePixel  = 0
+    searchBg.ZIndex           = 201
+    searchBg.Parent           = customDropFrame
+    Instance.new("UICorner", searchBg).CornerRadius = UDim.new(0,6)
+    local sStroke = Instance.new("UIStroke", searchBg)
+    sStroke.Color = Color3.fromRGB(80,90,100); sStroke.Thickness = 1
+
+    local searchBox = Instance.new("TextBox")
+    searchBox.Size             = UDim2.new(1,-8,1,-4)
+    searchBox.Position         = UDim2.new(0,4,0,2)
+    searchBox.BackgroundTransparency = 1
+    searchBox.Text             = ""
+    searchBox.PlaceholderText  = "🔍 Cari item..."
+    searchBox.PlaceholderColor3 = Color3.fromRGB(130,140,150)
+    searchBox.TextColor3       = Color3.fromRGB(220,225,230)
+    searchBox.TextSize         = math.floor(11 * sc)
+    searchBox.Font             = Enum.Font.Gotham
+    searchBox.ClearTextOnFocus = false
+    searchBox.ZIndex           = 202
+    searchBox.Parent           = searchBg
+
+    local topOffset = headerH + searchH + 10
+    local listH     = dropH - topOffset - 6
+
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size             = UDim2.new(1,-6,0,listH)
+    scrollFrame.Position         = UDim2.new(0,3,0,topOffset)
+    scrollFrame.BackgroundTransparency = 1
+    scrollFrame.BorderSizePixel  = 0
+    scrollFrame.ScrollBarThickness = 4
+    scrollFrame.ScrollBarImageColor3 = hl
+    scrollFrame.CanvasSize       = UDim2.new(0,0,0,0)
+    scrollFrame.ZIndex           = 201
+    scrollFrame.Parent           = customDropFrame
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder    = Enum.SortOrder.LayoutOrder
+    listLayout.Padding      = UDim.new(0,2)
+    listLayout.Parent       = scrollFrame
+
+    local currentSelected = {}
+    if selectedSet then
+        for id, v in pairs(selectedSet) do currentSelected[id] = v end
+    end
+
+    local function buildItemRows(filterText)
+        for _, c in ipairs(scrollFrame:GetChildren()) do
+            if c:IsA("Frame") or c:IsA("TextButton") or c:IsA("TextLabel") then c:Destroy() end
+        end
+
+        local ft = filterText:lower():gsub("^%s*(.-)%s*$", "%1")
+        local lastCat   = nil
+        local rowCount  = 0
+        local totalH    = 0
+        local iH        = math.floor(ITEM_H * sc)
+        local dH        = math.floor(DIVIDER_H * sc)
+
+        for _, item in ipairs(itemList) do
+            local matchSearch = (ft == "") or item.name:lower():find(ft, 1, true)
+            if not matchSearch then continue end
+
+            if item.category ~= lastCat then
+                lastCat = item.category
+                local divFrame = Instance.new("Frame")
+                divFrame.Size             = UDim2.new(1,-4,0,dH)
+                divFrame.BackgroundTransparency = 1
+                divFrame.BorderSizePixel  = 0
+                divFrame.ZIndex           = 202
+                divFrame.LayoutOrder      = rowCount * 2
+                divFrame.Parent           = scrollFrame
+
+                local divLine = Instance.new("Frame")
+                divLine.Size             = UDim2.new(0.35,0,0,1)
+                divLine.Position         = UDim2.new(0,4,0.5,-1)
+                divLine.BackgroundColor3 = Color3.fromRGB(80,90,100)
+                divLine.BorderSizePixel  = 0
+                divLine.ZIndex           = 203
+                divLine.Parent           = divFrame
+
+                local divLine2 = Instance.new("Frame")
+                divLine2.Size             = UDim2.new(0.35,0,0,1)
+                divLine2.Position         = UDim2.new(0.65,0,0.5,-1)
+                divLine2.BackgroundColor3 = Color3.fromRGB(80,90,100)
+                divLine2.BorderSizePixel = 0
+                divLine2.ZIndex          = 203
+                divLine2.Parent          = divFrame
+
+                local divLbl = Instance.new("TextLabel")
+                divLbl.Size             = UDim2.new(0.3,0,1,0)
+                divLbl.Position         = UDim2.new(0.35,0,0,0)
+                divLbl.BackgroundTransparency = 1
+                divLbl.Text             = item.category
+                divLbl.TextColor3       = Color3.fromRGB(160,170,180)
+                divLbl.TextSize         = math.floor(9 * sc)
+                divLbl.Font             = Enum.Font.GothamBold
+                divLbl.TextXAlignment   = Enum.TextXAlignment.Center
+                divLbl.ZIndex           = 203
+                divLbl.Parent           = divFrame
+
+                totalH = totalH + dH + 2
+                rowCount = rowCount + 1
+            end
+
+            local isChosen = (dropType == "multi") and currentSelected[item.itemId]
+            local rowBtn = Instance.new("TextButton")
+            rowBtn.Size             = UDim2.new(1,-4,0,iH)
+            rowBtn.BackgroundColor3 = isChosen and hl or dropBg
+            rowBtn.BackgroundTransparency = isChosen and 0.3 or 0.4
+            rowBtn.BorderSizePixel  = 0
+            rowBtn.Text             = ""
+            rowBtn.ZIndex           = 202
+            rowBtn.LayoutOrder      = rowCount * 2 + 1
+            rowBtn.Parent           = scrollFrame
+            Instance.new("UICorner", rowBtn).CornerRadius = UDim.new(0,5)
+
+            local checkLbl = Instance.new("TextLabel")
+            checkLbl.Size             = UDim2.new(0, iH, 1, 0)
+            checkLbl.Position         = UDim2.new(0,0,0,0)
+            checkLbl.BackgroundTransparency = 1
+            checkLbl.Text             = isChosen and "✓" or ""
+            checkLbl.TextColor3       = hl
+            checkLbl.TextSize         = math.floor(11 * sc)
+            checkLbl.Font             = Enum.Font.GothamBold
+            checkLbl.TextXAlignment   = Enum.TextXAlignment.Center
+            checkLbl.ZIndex           = 203
+            checkLbl.Parent           = rowBtn
+            checkLbl.Visible          = (dropType == "multi")
+
+            local nameOffset = (dropType == "multi") and iH or 6
+            local nameLbl = Instance.new("TextLabel")
+            nameLbl.Size             = UDim2.new(1,-nameOffset-4,1,0)
+            nameLbl.Position         = UDim2.new(0, nameOffset, 0, 0)
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Text             = item.name
+            nameLbl.TextColor3       = isChosen and Color3.fromRGB(255,255,255) or Color3.fromRGB(200,205,210)
+            nameLbl.TextSize         = math.floor(10 * sc)
+            nameLbl.Font             = Enum.Font.Gotham
+            nameLbl.TextXAlignment   = Enum.TextXAlignment.Left
+            nameLbl.TextTruncate     = Enum.TextTruncate.AtEnd
+            nameLbl.ZIndex           = 203
+            nameLbl.Parent           = rowBtn
+
+            local stokLbl = Instance.new("TextLabel")
+            stokLbl.Size             = UDim2.new(0,30,1,0)
+            stokLbl.Position         = UDim2.new(1,-32,0,0)
+            stokLbl.BackgroundTransparency = 1
+            stokLbl.Text             = "x"..item.count
+            stokLbl.TextColor3       = Color3.fromRGB(120,130,140)
+            stokLbl.TextSize         = math.floor(9 * sc)
+            stokLbl.Font             = Enum.Font.Gotham
+            stokLbl.TextXAlignment   = Enum.TextXAlignment.Right
+            stokLbl.ZIndex           = 203
+            stokLbl.Parent           = rowBtn
+
+            rowBtn.MouseEnter:Connect(function()
+                if not (dropType=="multi" and currentSelected[item.itemId]) then
+                    rowBtn.BackgroundColor3 = hl
+                    rowBtn.BackgroundTransparency = 0.6
+                    nameLbl.TextColor3 = Color3.fromRGB(255,255,255)
+                end
+            end)
+            rowBtn.MouseLeave:Connect(function()
+                if not (dropType=="multi" and currentSelected[item.itemId]) then
+                    rowBtn.BackgroundColor3 = dropBg
+                    rowBtn.BackgroundTransparency = 0.4
+                    nameLbl.TextColor3 = Color3.fromRGB(200,205,210)
+                end
+            end)
+
+            local capturedItem = {
+                itemId   = item.itemId,
+                name     = item.name,
+                category = item.category,
+                count    = item.count
+            }
+            rowBtn.MouseButton1Click:Connect(function()
+                if dropType == "single" then
+                    onSelect(capturedItem)
+                    closeCustomDropdown()
+                elseif dropType == "multi" then
+                    currentSelected[capturedItem.itemId] = not currentSelected[capturedItem.itemId]
+                    onSelect(capturedItem, currentSelected)
+                    buildItemRows(searchBox.Text)
+                end
+            end)
+
+            totalH = totalH + iH + 2
+            rowCount = rowCount + 1
+        end
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalH + 8)
+    end
+
+    buildItemRows("")
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function() buildItemRows(searchBox.Text) end)
+
+    customDropConn = UIS.InputBegan:Connect(function(inp, gameProc)
+        if gameProc then return end
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            local pos = inp.Position
+            if customDropFrame then
+                local absPos  = customDropFrame.AbsolutePosition
+                local absSize = customDropFrame.AbsoluteSize
+                local inside  = pos.X >= absPos.X and pos.X <= absPos.X + absSize.X
+                            and pos.Y >= absPos.Y and pos.Y <= absPos.Y + absSize.Y
+                if not inside then closeCustomDropdown() end
             end
         end
-    end
-
-    -- Create Category Tabs
-    local foundCats = {}; for _, it in ipairs(itemList) do foundCats[it.category] = true end
-    local catW = 0
-    for _, cat in ipairs(CATEGORY_ORDER) do
-        if foundCats[cat] then
-            local btn = Instance.new("TextButton", catScroll); btn.Size = UDim2.new(0, 70*sc, 1, 0); btn.Text = cat; btn.BackgroundColor3 = (activeCategory==cat) and hl or dropBg; btn.TextColor3 = Color3.new(1,1,1)
-            btn.MouseButton1Click:Connect(function() activeCategory = cat; buildList("") end)
-            catW = catW + 75*sc
-        end
-    end
-    catScroll.CanvasSize = UDim2.new(0, catW, 0, 0)
-    searchBox:GetPropertyChangedSignal("Text"):Connect(function() buildList(searchBox.Text) end)
-    buildList("")
+    end)
 end
 
 local function setSlotButtonText(key, text)
