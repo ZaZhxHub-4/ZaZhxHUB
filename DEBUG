@@ -1,194 +1,154 @@
--- // Booth Debugger — Cek remote CreateSaleListing + SaleListings
+-- // ZHX Hook CreateSaleListing + GUI Log Mini (Drag, Copy)
 local RS = game:GetService("ReplicatedStorage")
 local LP = game:GetService("Players").LocalPlayer
 local HS = game:GetService("HttpService")
 
 local net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+local children = net:GetChildren()
 
--- Fungsi ambil remote hashed
-local function getHashedRemote(label)
-    local children = net:GetChildren()
-    for i, child in ipairs(children) do
-        if child.Name == label then
-            local nxt = children[i+1]
-            if nxt and (nxt:IsA("RemoteFunction") or nxt:IsA("RemoteEvent")) then
-                return nxt
-            end
-            break
-        end
-    end
-    return nil
-end
-
-local results = {}
-local function add(line) table.insert(results, line) end
-
--- ========== 1. Cek keberadaan label ==========
-add("=== CEK LABEL ===")
-local labels = {}
-for _, child in ipairs(net:GetChildren()) do
-    if child.Name:find("CreateSaleListing") then
-        add("Label ditemukan: " .. child.Name)
-        local hashed = getHashedRemote(child.Name)
-        if hashed then
-            add("  Hashed remote: " .. hashed.Name .. " (" .. hashed.ClassName .. ")")
-        else
-            add("  Hashed remote TIDAK ditemukan")
-        end
-    end
-    if child.Name:find("DeleteSaleListing") then
-        add("Label Delete: " .. child.Name)
-        local hashed = getHashedRemote(child.Name)
-        if hashed then
-            add("  Hashed: " .. hashed.Name)
-        end
-    end
-end
-
--- ========== 2. Coba panggil CreateSaleListing ==========
-add("\n=== UJI PANGGIL CreateSaleListing ===")
-local createRF = nil
-for _, child in ipairs(net:GetChildren()) do
+-- Cari remote CreateSaleListing yang ter-hash
+local hookTarget = nil
+for i, child in ipairs(children) do
     if child.Name == "RF/Trading/CreateSaleListing" then
-        createRF = getHashedRemote(child.Name)
+        local nxt = children[i+1]
+        if nxt and nxt:IsA("RemoteFunction") then
+            hookTarget = nxt
+        end
         break
     end
 end
 
-if not createRF then
-    add("Remote CreateSaleListing TIDAK DITEMUKAN")
-else
-    add("Remote: " .. createRF.Name .. " (" .. createRF.ClassName .. ")")
-    
-    -- Coba berbagai format
-    local testCases = {
-        {"Booth", "Fish", "test-uuid-123", 100},
-        {"Booth", "Fish", "test-uuid-123", 100, "listing-key"},
-        {"Booth", "test-uuid-123", 100},
-        {"Booth", "test-uuid-123", 100, "Fish"},
-        {"test-uuid-123", 100},
-        {"test-uuid-123", 100, "Fish"},
-        {"Booth", {itemId = 1, uuid = "test", price = 100}},
-        {itemType = "Booth", uuid = "test", price = 100},
-    }
-    
-    for i, params in ipairs(testCases) do
-        local ok, result = pcall(function()
-            return createRF:InvokeServer(unpack(params))
-        end)
-        local paramStr = HS:JSONEncode(params)
-        if ok then
-            add(string.format("  Uji %d: OK -> %s", i, tostring(result)))
-        else
-            add(string.format("  Uji %d: ERROR -> %s", i, tostring(result)))
-        end
+if not hookTarget then error("Remote CreateSaleListing tidak ditemukan") end
+
+-- State log
+local logs = {}
+local function addLog(line)
+    table.insert(logs, line)
+    if #logs > 100 then table.remove(logs, 1) end -- jaga biar gak numpuk
+    if logLabel then
+        logLabel.Text = table.concat(logs, "\n")
+        logLabel.Size = UDim2.new(1,0,0, #logs * 16)
+        scrollFrame.CanvasSize = UDim2.new(0,0,0, #logs * 16 + 4)
     end
 end
 
--- ========== 3. Cek SaleListings ==========
-add("\n=== DATA SaleListings ===")
-local Replion = require(RS.Packages.Replion)
-local PlayerData = Replion.Client:WaitReplion("Data")
-local saleData = nil
-pcall(function() saleData = PlayerData:Get("SaleListings") end)
-if saleData then
-    for k, v in pairs(saleData) do
-        if type(v) == "table" then
-            add("Booth:")
-            for listingId, listingData in pairs(v) do
-                add("  Listing Key: " .. tostring(listingId))
-                if type(listingData) == "table" then
-                    for k2, v2 in pairs(listingData) do
-                        add("    " .. tostring(k2) .. " = " .. tostring(v2))
-                    end
-                else
-                    add("    Value: " .. tostring(listingData))
-                end
+-- Hook
+local oldInvoke = hookTarget.InvokeServer
+hookTarget.InvokeServer = function(self, ...)
+    local args = {...}
+    addLog("─── 📡 " .. os.date("%H:%M:%S"))
+    addLog("Args: " .. #args)
+    for i, arg in ipairs(args) do
+        if type(arg) == "table" then
+            for k, v in pairs(arg) do
+                addLog(string.format("  [%d] %s = %s (%s)", i, tostring(k), tostring(v), type(v)))
             end
         else
-            add(k .. " = " .. tostring(v))
+            addLog(string.format("  [%d] %s (%s)", i, tostring(arg), type(arg)))
         end
     end
-else
-    add("SaleListings kosong atau tidak bisa diakses")
+    local result = {oldInvoke(self, ...)}
+    addLog("Result: " .. tostring(result[1]))
+    addLog("")
+    return unpack(result)
 end
 
--- ========== GUI OUTPUT ==========
-local outputText = table.concat(results, "\n")
+-- GUI LOG MINI
 local gui = Instance.new("ScreenGui")
-gui.Name = "BoothDebuggerGUI"
+gui.Name = "HookLogGUI"
 gui.ResetOnSpawn = false
 gui.Parent = LP:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(1, -20, 0.75, 0)
-frame.Position = UDim2.new(0, 10, 0.12, 0)
-frame.BackgroundColor3 = Color3.fromRGB(15,15,20)
-frame.BackgroundTransparency = 0.1
+frame.Size = UDim2.new(0, 180, 0, 200)
+frame.Position = UDim2.new(1, -190, 0, 80) -- kanan atas
+frame.BackgroundColor3 = Color3.fromRGB(10,10,15)
+frame.BackgroundTransparency = 0.2
 frame.BorderSizePixel = 0
-frame.ZIndex = 7000
+frame.ZIndex = 9000
 frame.Parent = gui
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
-Instance.new("UIStroke", frame).Color = Color3.fromRGB(255,200,0)
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,6)
+Instance.new("UIStroke", frame).Color = Color3.fromRGB(0,255,200)
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1,0,0,30)
-title.Position = UDim2.new(0,10,0,5)
-title.BackgroundTransparency = 1
-title.Text = "Booth Debugger | Tap untuk copy"
-title.TextColor3 = Color3.fromRGB(255,255,100)
-title.TextSize = 12
-title.Font = Enum.Font.GothamBold
-title.ZIndex = 7001
-title.Parent = frame
+-- Title bar
+local titleBar = Instance.new("TextLabel")
+titleBar.Size = UDim2.new(1,0,0,20)
+titleBar.Position = UDim2.new(0,0,0,0)
+titleBar.BackgroundColor3 = Color3.fromRGB(0,180,160)
+titleBar.BorderSizePixel = 0
+titleBar.Text = "📡 LOG | Tap copy"
+titleBar.TextColor3 = Color3.fromRGB(255,255,255)
+titleBar.TextSize = 10
+titleBar.Font = Enum.Font.GothamBold
+titleBar.ZIndex = 9001
+titleBar.Parent = frame
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0,6)
+-- potong sudut bawah
+local fixCorner = Instance.new("Frame")
+fixCorner.Size = UDim2.new(1,0,0,6)
+fixCorner.Position = UDim2.new(0,0,1,-6)
+fixCorner.BackgroundColor3 = Color3.fromRGB(0,180,160)
+fixCorner.BorderSizePixel = 0
+fixCorner.ZIndex = 9001
+fixCorner.Parent = titleBar
 
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-10,1,-45)
-scroll.Position = UDim2.new(0,5,0,35)
-scroll.BackgroundColor3 = Color3.fromRGB(20,20,25)
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 6
-scroll.ScrollBarImageColor3 = Color3.fromRGB(255,200,0)
-scroll.CanvasSize = UDim2.new(0,0,0, math.max(#results,1)*18+10)
-scroll.ZIndex = 7001
-scroll.Parent = frame
-Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,6)
+-- Scroll area
+scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1,-4,1,-22)
+scrollFrame.Position = UDim2.new(0,2,0,20)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 3
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(0,255,200)
+scrollFrame.CanvasSize = UDim2.new(0,0,0,1000)
+scrollFrame.ZIndex = 9001
+scrollFrame.Parent = frame
 
-local textBtn = Instance.new("TextButton")
-textBtn.Size = UDim2.new(1,0,0, math.max(#results,1)*18)
-textBtn.Position = UDim2.new(0,0,0,0)
-textBtn.BackgroundTransparency = 1
-textBtn.Text = outputText
-textBtn.TextColor3 = Color3.fromRGB(200,200,200)
-textBtn.TextSize = 11
-textBtn.Font = Enum.Font.Code
-textBtn.TextXAlignment = Enum.TextXAlignment.Left
-textBtn.TextYAlignment = Enum.TextYAlignment.Top
-textBtn.AutoButtonColor = false
-textBtn.ZIndex = 7002
-textBtn.Parent = scroll
+logLabel = Instance.new("TextButton") -- pakai TextButton biar bisa di-tap copy
+logLabel.Size = UDim2.new(1,0,0,1000)
+logLabel.Position = UDim2.new(0,0,0,0)
+logLabel.BackgroundTransparency = 1
+logLabel.Text = "Menunggu panggilan..."
+logLabel.TextColor3 = Color3.fromRGB(200,200,200)
+logLabel.TextSize = 9
+logLabel.Font = Enum.Font.Code
+logLabel.TextXAlignment = Enum.TextXAlignment.Left
+logLabel.TextYAlignment = Enum.TextYAlignment.Top
+logLabel.AutoButtonColor = false
+logLabel.ZIndex = 9002
+logLabel.Parent = scrollFrame
 
-textBtn.MouseButton1Click:Connect(function()
+-- Tap untuk copy
+logLabel.MouseButton1Click:Connect(function()
+    local allText = table.concat(logs, "\n")
     pcall(function()
-        if setclipboard then setclipboard(outputText)
-        elseif syn and syn.set_clipboard then syn.set_clipboard(outputText)
-        elseif writefile then writefile("ZHX_BoothDebug.txt", outputText) end
+        if setclipboard then setclipboard(allText)
+        elseif syn and syn.set_clipboard then syn.set_clipboard(allText)
+        elseif writefile then writefile("ZHX_HookLog.txt", allText) end
     end)
-    title.Text = "✅ Tersalin!"
-    task.delay(2, function() title.Text = "Booth Debugger | Tap untuk copy" end)
+    titleBar.Text = "✅ Tersalin! | Tap copy"
+    task.delay(2, function() titleBar.Text = "📡 LOG | Tap copy" end)
 end)
 
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0,50,0,24)
-closeBtn.Position = UDim2.new(1,-55,0,8)
-closeBtn.BackgroundColor3 = Color3.fromRGB(80,20,20)
-closeBtn.BorderSizePixel = 0
-closeBtn.Text = "✕"
-closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
-closeBtn.TextSize = 14
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.ZIndex = 7001
-closeBtn.AutoButtonColor = false
-closeBtn.Parent = frame
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,5)
-closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+-- Drag panel (dari title bar)
+local dragging, dragStart, startPos = false, nil, nil
+titleBar.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = inp.Position
+        startPos = frame.Position
+    end
+end)
+game:GetService("UserInputService").InputChanged:Connect(function(inp)
+    if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+game:GetService("UserInputService").InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+print("Hook aktif. Pajang item manual untuk melihat parameter.")
