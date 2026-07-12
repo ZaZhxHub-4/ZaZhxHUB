@@ -168,18 +168,16 @@ local function getCurrentToken()
     return "?"
 end
 
--- ── INVENTORY: scan semua kategori, filter TradeLocked, Anti Overlap ──
-local CATEGORY_ORDER = {
-    "Fish", "Fishing Rods", "Baits", "Enchant Stones",
-    "Pets", "Boats", "Emotes", "Potions",
-    "Charms", "Halos", "Lanterns", "Totems", "Pet Eggs",
-    "Gears", "Trophies", "Other"
-}
+-- ── INVENTORY: Scan Otomatis dari Database Server (Tanpa Filter) ──
 
--- Mengambil data item secara spesifik berdasarkan kategori (Mencegah Bug ID Bertumpuk)
+-- Mengambil data item secara spesifik. Jika kategori tidak ada di list ini, 
+-- script akan otomatis menggunakan fungsi fallback (IU:GetItemData)
 local function fetchItemData(category, id)
     local IU = ItemUtility
     local ok, data = false, nil
+    
+    -- Mapping internal (hanya membantu jika ada pengecualian spesifik)
+    -- Jika kategori tidak masuk sini, dia akan langsung ke fallback di bawah.
     if category == "Pets" and IU.GetPetData then ok, data = pcall(function() return IU:GetPetData(id) end)
     elseif category == "Boats" and IU.GetBoatData then ok, data = pcall(function() return IU:GetBoatData(id) end)
     elseif category == "Emotes" and IU.GetEmoteData then ok, data = pcall(function() return IU:GetEmoteData(id) end)
@@ -195,6 +193,7 @@ local function fetchItemData(category, id)
     
     if ok and data then return data end
     
+    -- Fallback ke metode umum
     if IU.GetItemDataFromItemType then
         ok, data = pcall(function() return IU:GetItemDataFromItemType(category, id) end)
         if ok and data then return data end
@@ -205,58 +204,7 @@ local function fetchItemData(category, id)
     return nil
 end
 
-local function isItemTradeLocked(itemData)
-    return false -- Item tidak akan pernah dianggap locked
-end
-
-local function getInventorySnapshot()
-    local inv = PlayerData:Get("Inventory")
-    if not inv then return {} end
-    local t = {}
-    for catName, catData in pairs(inv) do
-        if type(catData) == "table" then
-            local firstVal = catData[1]
-            if type(firstVal) == "table" and firstVal.Id and firstVal.UUID then
-                for _, item in ipairs(catData) do t[item.UUID] = item.Id end
-            else
-                for _, subItem in pairs(catData) do
-                    if type(subItem) == "table" and subItem.Id and subItem.UUID then
-                        t[subItem.UUID] = subItem.Id
-                    end
-                end
-            end
-        end
-    end
-    return t
-end
-
--- Diubah agar wajib menerima categoryReq untuk mencegah ID overlap
-local function getUUIDsForItemId(itemId, categoryReq)
-    local inv = PlayerData:Get("Inventory")
-    if not inv then return {} end
-    local uuids = {}
-    
-    local function checkAndAdd(item, catName)
-        if type(item) == "table" and item.Id == itemId and item.UUID then
-            if not categoryReq or catName == categoryReq then
-                table.insert(uuids, item.UUID)
-            end
-        end
-    end
-
-    for catName, catData in pairs(inv) do
-        if (not categoryReq or catName == categoryReq) and type(catData) == "table" then
-            local firstVal = catData[1]
-            if type(firstVal) == "table" and firstVal.Id and firstVal.UUID then
-                for _, item in ipairs(catData) do checkAndAdd(item, catName) end
-            else
-                for _, subItem in pairs(catData) do checkAndAdd(subItem, catName) end
-            end
-        end
-    end
-    return uuids
-end
-
+-- Fungsi utama untuk scan (TIDAK ADA FILTER LOCK)
 local function getInventoryItemListFull()
     local inv = PlayerData:Get("Inventory")
     if not inv then return {} end
@@ -267,26 +215,28 @@ local function getInventoryItemListFull()
     local function processItem(item, catName)
         if type(item) == "table" and item.Id and item.UUID then
             local id = item.Id
+            -- Gunakan kombinasi kategori dan ID untuk mencegah overlap
             local uniqueKey = catName .. "_" .. tostring(id)
             
             if not seen[uniqueKey] then
+                -- Tidak ada lagi pemanggilan isItemTradeLocked
                 local data = fetchItemData(catName, id)
-                if data then
-                    local name = data.Name or (data.Data and data.Data.Name) or (catName .. " ID " .. tostring(id))
-                    local count = #getUUIDsForItemId(id, catName)
-                    
-                    table.insert(items, {
-                        name = name,
-                        itemId = id,
-                        category = catName,
-                        count = count
-                    })
-                    seen[uniqueKey] = true
-                end
+                -- Langsung ambil datanya jika ada
+                local name = (data and (data.Name or (data.Data and data.Data.Name))) or (catName .. " ID " .. tostring(id))
+                local count = #getUUIDsForItemId(id, catName)
+                
+                table.insert(items, {
+                    name = name,
+                    itemId = id,
+                    category = catName, -- Mengikuti kategori database asli
+                    count = count
+                })
+                seen[uniqueKey] = true
             end
         end
     end
 
+    -- Iterasi langsung dari data mentah server
     for catName, catData in pairs(inv) do
         if type(catData) == "table" then
             local firstVal = catData[1]
@@ -298,20 +248,14 @@ local function getInventoryItemListFull()
         end
     end
     
-    local catOrder = {}
-    for i, cat in ipairs(CATEGORY_ORDER) do catOrder[cat] = i end
-
+    -- Sorting berdasarkan nama kategori (Alphabetical) agar rapi
     table.sort(items, function(a, b)
-        local oa = catOrder[a.category] or 99
-        local ob = catOrder[b.category] or 99
-        if oa ~= ob then return oa < ob end
+        if a.category ~= b.category then return a.category < b.category end
         return a.name < b.name
     end)
     
     return items
 end
-
-local function getInventoryItemList() return getInventoryItemListFull() end
 
 -- ══════════════════════════════════════════════════════════════════
 -- RF FINDER
@@ -580,44 +524,14 @@ local function getAllUsedUUIDs(exceptType, exceptIdx)
     return used
 end
 local function listSingleSlot(idx)
-    local s = slotData[idx]
+    local s=slotData[idx]
     if not s.itemId or not s.active or slotListing[idx] or not capturedRF then return false end
-    
-    local uuid = getAvailableUUIDForItem(s.itemId, s.category, getAllUsedUUIDs("single",idx))
+    local uuid=getAvailableUUIDForItem(s.itemId, s.category, getAllUsedUUIDs("single",idx))
     if not uuid then s.active=false; return false,"Habis" end
-    
     slotListing[idx]=true
-    local ok, err = pcall(function() 
-        capturedRF:InvokeServer("Booth", s.category, uuid, s.price) 
-    end)
+    local ok=pcall(function() capturedRF:InvokeServer("Booth",s.category,uuid,s.price) end)
     slotListing[idx]=false
-    
-    if ok then
-        s.listedUUID=uuid
-        
-        -- --- CEK DATA ---
-        -- Kita tunggu sebentar untuk sinkronisasi data
-        task.wait(1) 
-        local saleData = PlayerData:Get("SaleListings")
-        if saleData and saleData.Booth then
-            local found = false
-            for k, v in pairs(saleData.Booth) do
-                if v.UUID == uuid then found = true break end
-            end
-            if found then
-                print("DEBUG: Item DITEMUKAN di SaleListings (Berhasil pajang)")
-            else
-                warn("DEBUG: PERINGATAN! InvokeServer OK, tapi Item TIDAK ADA di SaleListings!")
-                -- Jika ini terjadi, berarti argumen (Kategori/UUID) tidak disukai server
-            end
-        end
-        -- ----------------
-        
-        return true 
-    else 
-        s.listedUUID=nil
-        return false 
-    end
+    if ok then s.listedUUID=uuid; return true else s.listedUUID=nil; return false end
 end
 local function listMultiSlot(mIdx)
     local ms=multiSlotData[mIdx]
