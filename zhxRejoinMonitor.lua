@@ -1,22 +1,22 @@
--- // Secure PS + Heartbeat via File (setiap 10 detik)
+-- // Secure PS + Heartbeat via HTTP (task.spawn)
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
-local HEARTBEAT_DIR = "/storage/emulated/0/Delta/Workspace/zhx_heartbeat/"
-local DEBUG_FILE = "zhx_heartbeat_debug.txt"
+local APK_IP = "127.0.0.1"
 
--- Fungsi debug
-local function debugLog(msg)
-    pcall(function()
-        local existing = ""
-        if isfile and isfile(DEBUG_FILE) then
-            existing = readfile(DEBUG_FILE) or ""
-        end
-        writefile(DEBUG_FILE, existing .. os.date("%H:%M:%S") .. " | " .. USERNAME .. " | " .. msg .. "\n")
-    end)
-end
+-- Baca IP APK dari file
+pcall(function()
+    local ipFile = "/storage/emulated/0/zhx_apk_ip.txt"
+    if isfile and isfile(ipFile) then
+        local ip = readfile(ipFile):gsub("%s+", "")
+        if ip ~= "" then APK_IP = ip end
+    end
+end)
+
+local APK_URL = "http://" .. APK_IP .. ":8080/report"
 
 -- Whitelist
 local WHITELIST = {
@@ -36,21 +36,16 @@ local function isWhitelisted(username)
     return false
 end
 
-local function writeSignal(filename)
-    pcall(function()
-        local path = HEARTBEAT_DIR .. filename
-        writefile(path, "1")
+-- Kirim sinyal ke APK (pakai task.spawn agar tidak blocked)
+local function sendToAPK(action)
+    task.spawn(function()
+        pcall(function()
+            HttpService:PostAsync(APK_URL, HttpService:JSONEncode({
+                username = USERNAME,
+                action = action
+            }))
+        end)
     end)
-end
-
-local function sendHeartbeat()
-    writeSignal(USERNAME .. "_heartbeat.txt")
-    debugLog("Heartbeat ditulis")
-end
-
-local function sendKickSignal()
-    writeSignal(USERNAME .. "_kick.txt")
-    debugLog("Sinyal KICK ditulis")
 end
 
 local function checkPlayers()
@@ -100,12 +95,12 @@ end
 
 buildUI()
 
--- Heartbeat loop (10 detik)
+-- Heartbeat loop (30 detik)
 task.spawn(function()
     while true do
-        sendHeartbeat()
+        sendToAPK("heartbeat")
         updateUI("🟢 Online", Color3.fromRGB(72,210,130))
-        task.wait(10)
+        task.wait(30)
     end
 end)
 
@@ -115,7 +110,7 @@ task.spawn(function()
         local safe, intruder = checkPlayers()
         if not safe then
             updateUI("🔴 " .. intruder .. "!", Color3.fromRGB(255,100,100))
-            sendKickSignal()
+            sendToAPK("kick")
             task.wait(2)
             pcall(function()
                 LP:Kick("Proses pengamanan aktif! (" .. intruder .. ")")
