@@ -1,4 +1,4 @@
--- // Secure PS + Heartbeat via HTTP (task.spawn)
+-- // Secure PS + Heartbeat via HTTP (syn.request / fallback HttpService)
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
@@ -7,7 +7,7 @@ local pg = LP:WaitForChild("PlayerGui")
 local USERNAME = LP.Name
 local APK_IP = "127.0.0.1"
 
--- Baca IP APK dari file (ditulis oleh RejoinerService)
+-- Baca IP APK dari file (yang ditulis APK)
 pcall(function()
     local ipFile = "/data/local/tmp/zhx_apk_ip.txt"
     if isfile and isfile(ipFile) then
@@ -17,6 +17,17 @@ pcall(function()
 end)
 
 local APK_URL = "http://" .. APK_IP .. ":8080/report"
+
+-- Debug kecil
+local function debugLog(msg)
+    pcall(function()
+        local existing = ""
+        if isfile and isfile("zhx_http_debug.txt") then
+            existing = readfile("zhx_http_debug.txt") or ""
+        end
+        writefile("zhx_http_debug.txt", existing .. os.date("%H:%M:%S") .. " | " .. msg .. "\n")
+    end)
+end
 
 -- Whitelist
 local WHITELIST = {
@@ -36,15 +47,46 @@ local function isWhitelisted(username)
     return false
 end
 
--- Kirim sinyal ke APK (pakai task.spawn agar tidak blocked)
+-- Kirim sinyal ke APK (gunakan syn.request jika ada)
 local function sendToAPK(action)
     task.spawn(function()
-        pcall(function()
-            HttpService:PostAsync(APK_URL, HttpService:JSONEncode({
-                username = USERNAME,
-                action = action
-            }))
-        end)
+        local body = HttpService:JSONEncode({ username = USERNAME, action = action })
+        local success = false
+
+        -- Metode 1: syn.request (Delta / Android Executor)
+        if syn and syn.request then
+            local ok, err = pcall(function()
+                syn.request({
+                    Url = APK_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = body
+                })
+            end)
+            if ok then
+                success = true
+                debugLog("syn.request OK → " .. action)
+            else
+                debugLog("syn.request GAGAL: " .. tostring(err))
+            end
+        end
+
+        -- Metode 2: HttpService biasa (fallback)
+        if not success then
+            local ok, err = pcall(function()
+                HttpService:PostAsync(APK_URL, body)
+            end)
+            if ok then
+                success = true
+                debugLog("HttpService OK → " .. action)
+            else
+                debugLog("HttpService GAGAL: " .. tostring(err))
+            end
+        end
+
+        if not success then
+            debugLog("Semua metode gagal kirim " .. action)
+        end
     end)
 end
 
@@ -85,7 +127,7 @@ local function buildUI()
     statusText.Size = UDim2.new(1,-8,1,0)
     statusText.Position = UDim2.new(0,4,0,0)
     statusText.BackgroundTransparency = 1
-    statusText.Text = "🟢 Online V0.1.6"
+    statusText.Text = "🟢 Online"
     statusText.TextColor3 = Color3.fromRGB(72,210,130)
     statusText.Font = Enum.Font.GothamBold
     statusText.TextSize = 12
