@@ -1,4 +1,4 @@
--- // Secure PS + Heartbeat via HTTP + Debug Log
+-- // Secure PS + Heartbeat + Debug ke Workspace Delta
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
@@ -6,16 +6,17 @@ local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
 local APK_IP = "127.0.0.1"
-local DEBUG_FILE = "/storage/emulated/0/zhx_heartbeat_debug.txt"
+local DEBUG_FILE = "zhx_heartbeat_debug.txt"  -- workspace Delta
 
--- Fungsi menulis debug ke file
+-- Fungsi debug ke workspace
 local function debugLog(msg)
     pcall(function()
-        local f = io.open(DEBUG_FILE, "a")
-        if f then
-            f:write(os.date("%H:%M:%S") .. " | " .. LP.Name .. " | " .. msg .. "\n")
-            f:close()
+        local existing = ""
+        if isfile and isfile(DEBUG_FILE) then
+            existing = readfile(DEBUG_FILE) or ""
         end
+        local newContent = existing .. os.date("%H:%M:%S") .. " | " .. USERNAME .. " | " .. msg .. "\n"
+        writefile(DEBUG_FILE, newContent)
     end)
 end
 
