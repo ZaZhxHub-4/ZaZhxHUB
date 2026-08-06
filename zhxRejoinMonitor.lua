@@ -1,22 +1,9 @@
--- // Secure PS + Heartbeat via File (Workspace Delta) + Debug Lengkap
+-- // Secure PS + Heartbeat via File (Workspace Delta - No Subfolder)
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
-local HEARTBEAT_DIR = "/storage/emulated/0/Delta/Workspace/zhx_heartbeat/"
-local DEBUG_FILE = "zhx_heartbeat_debug.txt"
-
--- Fungsi debug ke file (workspace Delta)
-local function debugLog(msg)
-    pcall(function()
-        local existing = ""
-        if isfile and isfile(DEBUG_FILE) then
-            existing = readfile(DEBUG_FILE) or ""
-        end
-        writefile(DEBUG_FILE, existing .. os.date("%H:%M:%S") .. " | " .. USERNAME .. " | " .. msg .. "\n")
-    end)
-end
 
 -- Whitelist
 local WHITELIST = {
@@ -36,27 +23,11 @@ local function isWhitelisted(username)
     return false
 end
 
--- Menulis sinyal ke file (dengan debug)
+-- Menulis sinyal ke file (langsung di workspace Delta, tanpa subfolder)
 local function writeSignal(filename, content)
-    local path = HEARTBEAT_DIR .. filename
-    local ok, err = pcall(function()
-        writefile(path, content)
+    pcall(function()
+        writefile(filename, content)
     end)
-    if ok then
-        debugLog("✅ Sukses menulis " .. filename)
-    else
-        debugLog("❌ GAGAL menulis " .. filename .. ": " .. tostring(err))
-        -- Coba fallback ke /data/local/tmp
-        local altPath = "/data/local/tmp/zhx_hb/" .. filename
-        local ok2, err2 = pcall(function()
-            writefile(altPath, content)
-        end)
-        if ok2 then
-            debugLog("✅ Fallback sukses ke " .. altPath)
-        else
-            debugLog("❌ Fallback juga GAGAL: " .. tostring(err2))
-        end
-    end
 end
 
 local function sendHeartbeat()
@@ -65,7 +36,6 @@ end
 
 local function sendKickSignal()
     writeSignal(USERNAME .. "_kick.txt", "kick")
-    debugLog("🛑 Sinyal KICK dikirim")
 end
 
 local function checkPlayers()
@@ -114,21 +84,6 @@ local function buildUI()
 end
 
 buildUI()
-
--- Test awal: pastikan folder bisa ditulis
-local function testWrite()
-    local testFile = HEARTBEAT_DIR .. "test_write.txt"
-    local ok, err = pcall(function()
-        writefile(testFile, "test")
-    end)
-    if ok then
-        debugLog("✅ Folder heartbeat BISA ditulis (test file sukses)")
-        pcall(function() os.remove(testFile) end)
-    else
-        debugLog("❌ Folder heartbeat TIDAK BISA ditulis: " .. tostring(err))
-    end
-end
-testWrite()
 
 -- Heartbeat loop (10 detik)
 task.spawn(function()
