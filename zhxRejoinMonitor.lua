@@ -1,10 +1,22 @@
--- // Secure PS + Heartbeat via File (Tanpa HTTP, Aman dari Thread Block)
+-- // Secure PS + Heartbeat via File (setiap 10 detik)
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
-local SIGNAL_FOLDER = "/storage/emulated/0/zhx_heartbeat/"
+local HEARTBEAT_DIR = "/storage/emulated/0/zhx_heartbeat/"
+local DEBUG_FILE = "zhx_heartbeat_debug.txt" -- workspace Delta
+
+-- Fungsi debug
+local function debugLog(msg)
+    pcall(function()
+        local existing = ""
+        if isfile and isfile(DEBUG_FILE) then
+            existing = readfile(DEBUG_FILE) or ""
+        end
+        writefile(DEBUG_FILE, existing .. os.date("%H:%M:%S") .. " | " .. USERNAME .. " | " .. msg .. "\n")
+    end)
+end
 
 -- Whitelist
 local WHITELIST = {
@@ -24,13 +36,22 @@ local function isWhitelisted(username)
     return false
 end
 
--- Fungsi menulis sinyal ke file (thread‑safe untuk Delta Executor)
-local function sendSignal(action)
-    local filename = SIGNAL_FOLDER .. USERNAME .. ".txt"
-    local content = action .. "|" .. tick()
+-- Tulis sinyal ke file
+local function writeSignal(filename)
     pcall(function()
-        writefile(filename, content)
+        local path = HEARTBEAT_DIR .. filename
+        writefile(path, "1")
     end)
+end
+
+local function sendHeartbeat()
+    writeSignal(USERNAME .. "_heartbeat.txt")
+    debugLog("Heartbeat ditulis")
+end
+
+local function sendKickSignal()
+    writeSignal(USERNAME .. "_kick.txt")
+    debugLog("Sinyal KICK ditulis")
 end
 
 local function checkPlayers()
@@ -80,12 +101,12 @@ end
 
 buildUI()
 
--- Heartbeat loop (setiap 30 detik)
+-- Heartbeat loop (setiap 10 detik)
 task.spawn(function()
     while true do
-        sendSignal("heartbeat")
+        sendHeartbeat()
         updateUI("🟢 Online", Color3.fromRGB(72,210,130))
-        task.wait(30)
+        task.wait(10)  -- <-- 10 detik
     end
 end)
 
@@ -95,7 +116,7 @@ task.spawn(function()
         local safe, intruder = checkPlayers()
         if not safe then
             updateUI("🔴 " .. intruder .. "!", Color3.fromRGB(255,100,100))
-            sendSignal("kick")
+            sendKickSignal()
             task.wait(2)
             pcall(function()
                 LP:Kick("Proses pengamanan aktif! (" .. intruder .. ")")
