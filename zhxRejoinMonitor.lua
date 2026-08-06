@@ -9,7 +9,7 @@ local APK_IP = "127.0.0.1"
 
 -- Baca IP APK dari file
 pcall(function()
-    local ipFile = "/storage/emulated/0/zhx_apk_ip.txt"
+    local ipFile = "/storage/emulated/0/Delta/Workspace/zhx_apk_ip.txt"
     if isfile and isfile(ipFile) then
         local ip = readfile(ipFile):gsub("%s+", "")
         if ip ~= "" then APK_IP = ip end
@@ -85,7 +85,7 @@ local function buildUI()
     statusText.Size = UDim2.new(1,-8,1,0)
     statusText.Position = UDim2.new(0,4,0,0)
     statusText.BackgroundTransparency = 1
-    statusText.Text = "🟢 Online"
+    statusText.Text = "🟢 Online V0.1.5"
     statusText.TextColor3 = Color3.fromRGB(72,210,130)
     statusText.Font = Enum.Font.GothamBold
     statusText.TextSize = 12
