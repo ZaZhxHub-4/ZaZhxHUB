@@ -1,9 +1,13 @@
--- // Secure PS + Heartbeat via File (Workspace Delta - No Subfolder)
+-- // Secure PS + Heartbeat via File (Counter Based)
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
+local DEBUG_FILE = "zhx_heartbeat_debug.txt"
+
+-- Counter heartbeat (mulai dari 1)
+local heartbeatCounter = 0
 
 -- Whitelist
 local WHITELIST = {
@@ -23,7 +27,18 @@ local function isWhitelisted(username)
     return false
 end
 
--- Menulis sinyal ke file (langsung di workspace Delta)
+-- Fungsi debug
+local function debugLog(msg)
+    pcall(function()
+        local existing = ""
+        if isfile and isfile(DEBUG_FILE) then
+            existing = readfile(DEBUG_FILE) or ""
+        end
+        writefile(DEBUG_FILE, existing .. os.date("%H:%M:%S") .. " | " .. USERNAME .. " | " .. msg .. "\n")
+    end)
+end
+
+-- Menulis sinyal ke file
 local function writeSignal(filename, content)
     pcall(function()
         writefile(filename, content)
@@ -31,12 +46,13 @@ local function writeSignal(filename, content)
 end
 
 local function sendHeartbeat()
-    -- ⚠️ Tulis timestamp dalam MILIDETIK (angka bulat) agar bisa diparse Long.parseLong()
-    writeSignal(USERNAME .. "_hb.txt", tostring(math.floor(tick() * 1000)))
+    heartbeatCounter = heartbeatCounter + 1
+    writeSignal(USERNAME .. "_hb.txt", tostring(heartbeatCounter))
 end
 
 local function sendKickSignal()
     writeSignal(USERNAME .. "_kick.txt", "kick")
+    debugLog("Sinyal KICK ditulis")
 end
 
 local function checkPlayers()
