@@ -4,8 +4,8 @@ local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
-local HEARTBEAT_DIR = "/storage/emulated/0/zhx_heartbeat/"
-local DEBUG_FILE = "zhx_heartbeat_debug.txt" -- workspace Delta
+local HEARTBEAT_DIR = "/storage/emulated/0/Delta/Workspace/zhx_heartbeat/"
+local DEBUG_FILE = "zhx_heartbeat_debug.txt"
 
 -- Fungsi debug
 local function debugLog(msg)
@@ -36,7 +36,6 @@ local function isWhitelisted(username)
     return false
 end
 
--- Tulis sinyal ke file
 local function writeSignal(filename)
     pcall(function()
         local path = HEARTBEAT_DIR .. filename
@@ -101,16 +100,16 @@ end
 
 buildUI()
 
--- Heartbeat loop (setiap 10 detik)
+-- Heartbeat loop (10 detik)
 task.spawn(function()
     while true do
         sendHeartbeat()
         updateUI("🟢 Online", Color3.fromRGB(72,210,130))
-        task.wait(10)  -- <-- 10 detik
+        task.wait(10)
     end
 end)
 
--- Cek intruder loop (setiap 5 detik)
+-- Cek intruder loop (5 detik)
 task.spawn(function()
     while true do
         local safe, intruder = checkPlayers()
