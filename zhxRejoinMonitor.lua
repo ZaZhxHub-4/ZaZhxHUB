@@ -4,17 +4,13 @@ local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
-local HEARTBEAT_DIR = "/storage/emulated/0/Delta/Workspace/zhx_heartbeat/"
-local DEBUG_FILE = "zhx_heartbeat_debug.txt"
+local HEARTBEAT_DIR = "/data/local/tmp/zhx_hb/"
+local DEBUG_FILE = "zhx_hb_debug.txt"
 
--- Fungsi debug ke workspace
+-- Fungsi debug (tulis ke file terpisah agar kita bisa cek)
 local function debugLog(msg)
     pcall(function()
-        local existing = ""
-        if isfile and isfile(DEBUG_FILE) then
-            existing = readfile(DEBUG_FILE) or ""
-        end
-        writefile(DEBUG_FILE, existing .. os.date("%H:%M:%S") .. " | " .. msg .. "\n")
+        writefile(DEBUG_FILE, os.date("%H:%M:%S") .. " | " .. msg .. "\n")
     end)
 end
 
@@ -36,18 +32,19 @@ local function isWhitelisted(username)
     return false
 end
 
--- Menulis sinyal ke file
+-- Menulis sinyal ke file (dengan retry dan debug)
 local function writeSignal(filename, content)
-    pcall(function()
-        local path = HEARTBEAT_DIR .. filename
+    local path = HEARTBEAT_DIR .. filename
+    local ok, err = pcall(function()
         writefile(path, content)
     end)
+    if not ok then
+        debugLog("❌ GAGAL tulis " .. filename .. ": " .. tostring(err))
+    end
 end
 
 local function sendHeartbeat()
-    -- Tulis timestamp (detik) agar APK tahu ini baru
     writeSignal(USERNAME .. "_hb.txt", tostring(tick()))
-    debugLog("Heartbeat ditulis")
 end
 
 local function sendKickSignal()
@@ -102,7 +99,23 @@ end
 
 buildUI()
 
--- Heartbeat loop (setiap 10 detik)
+-- Cek apakah folder heartbeat bisa ditulis
+local function testWrite()
+    local testFile = HEARTBEAT_DIR .. "test.txt"
+    local ok, err = pcall(function()
+        writefile(testFile, "test")
+    end)
+    if ok then
+        debugLog("✅ Folder heartbeat BISA ditulis")
+        pcall(function() os.remove(testFile) end)
+    else
+        debugLog("❌ Folder heartbeat TIDAK BISA ditulis: " .. tostring(err))
+    end
+end
+
+testWrite()
+
+-- Heartbeat loop (10 detik)
 task.spawn(function()
     while true do
         sendHeartbeat()
@@ -111,7 +124,7 @@ task.spawn(function()
     end
 end)
 
--- Cek intruder loop (setiap 5 detik)
+-- Cek intruder loop (5 detik)
 task.spawn(function()
     while true do
         local safe, intruder = checkPlayers()
