@@ -1,5 +1,6 @@
--- // Secure PS + Heartbeat via File (Counter Based)
+-- // Secure PS + Heartbeat via File (Counter Based) - Minimal UI Draggable
 local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
@@ -13,7 +14,7 @@ local WHITELIST = {
     "pegawaixruby", "rubyxesmeraldo", "zzzhxxx2", "zzzhxxx10",
     "zzzhxxx13", "zzzhxxx8", "zzzhxxx15", "zaazhx14",
     "warungevo_tb", "tagxgudang", "lahlahlah55555",
-    "lohlohloh3030", "cashew_404", "queendstr", "baygonz89"
+    "lohlohloh3030", "cashew_404", "queendstr", "baygonz89", "tagxall"
 }
 
 local function isWhitelisted(username)
@@ -47,12 +48,12 @@ local function checkPlayers()
     return true, nil
 end
 
--- UI kecil
-local statusText = nil
+-- UI kecil & draggable
+local uiButton = nil
 local function updateUI(text, color)
-    if statusText then
-        statusText.Text = text
-        statusText.TextColor3 = color or Color3.fromRGB(255,255,255)
+    if uiButton then
+        uiButton.Text = text
+        uiButton.TextColor3 = color or Color3.fromRGB(255,255,255)
     end
 end
 
@@ -62,24 +63,41 @@ local function buildUI()
     gui.ResetOnSpawn = false
     gui.Parent = pg
 
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 220, 0, 30)
-    frame.Position = UDim2.new(1, -230, 0, 10)
-    frame.BackgroundColor3 = Color3.fromRGB(30,40,30)
-    frame.BorderSizePixel = 0
-    frame.Parent = gui
-    Instance.new("UICorner", frame).CornerRadius = UDim.new(0,6)
+    uiButton = Instance.new("TextButton")
+    uiButton.Size = UDim2.new(0, 120, 0, 22)
+    uiButton.Position = UDim2.new(1, -130, 0, 10)
+    uiButton.BackgroundColor3 = Color3.fromRGB(30,40,30)
+    uiButton.BorderSizePixel = 0
+    uiButton.Text = "🟢 Online"
+    uiButton.TextColor3 = Color3.fromRGB(72,210,130)
+    uiButton.Font = Enum.Font.GothamBold
+    uiButton.TextSize = 11
+    uiButton.AutoButtonColor = false
+    uiButton.Parent = gui
+    Instance.new("UICorner", uiButton).CornerRadius = UDim.new(0,6)
 
-    statusText = Instance.new("TextLabel")
-    statusText.Size = UDim2.new(1,-8,1,0)
-    statusText.Position = UDim2.new(0,4,0,0)
-    statusText.BackgroundTransparency = 1
-    statusText.Text = "🟢 Online"
-    statusText.TextColor3 = Color3.fromRGB(72,210,130)
-    statusText.Font = Enum.Font.GothamBold
-    statusText.TextSize = 12
-    statusText.TextXAlignment = Enum.TextXAlignment.Left
-    statusText.Parent = frame
+    -- Drag functionality
+    local dragging, dragStart, startPos = false, nil, nil
+    uiButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = uiButton.Position
+        end
+    end)
+
+    UIS.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            uiButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
 end
 
 buildUI()
