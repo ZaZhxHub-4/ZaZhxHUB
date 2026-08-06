@@ -23,7 +23,7 @@ local function isWhitelisted(username)
     return false
 end
 
--- Menulis sinyal ke file (langsung di workspace Delta, tanpa subfolder)
+-- Menulis sinyal ke file (langsung di workspace Delta)
 local function writeSignal(filename, content)
     pcall(function()
         writefile(filename, content)
@@ -31,7 +31,8 @@ local function writeSignal(filename, content)
 end
 
 local function sendHeartbeat()
-    writeSignal(USERNAME .. "_hb.txt", tostring(tick()))
+    -- ⚠️ Tulis timestamp dalam MILIDETIK (angka bulat) agar bisa diparse Long.parseLong()
+    writeSignal(USERNAME .. "_hb.txt", tostring(math.floor(tick() * 1000)))
 end
 
 local function sendKickSignal()
