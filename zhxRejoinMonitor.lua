@@ -1,13 +1,13 @@
--- // Secure PS + Heartbeat via File (setiap 10 detik)
+-- // Secure PS + Heartbeat via File (Workspace Delta)
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
-local HEARTBEAT_DIR = "/data/local/tmp/zhx_hb/"
+local HEARTBEAT_DIR = "/storage/emulated/0/Delta/Workspace/zhx_heartbeat/"
 local DEBUG_FILE = "zhx_hb_debug.txt"
 
--- Fungsi debug (tulis ke file terpisah agar kita bisa cek)
+-- Fungsi debug ke file terpisah
 local function debugLog(msg)
     pcall(function()
         writefile(DEBUG_FILE, os.date("%H:%M:%S") .. " | " .. msg .. "\n")
@@ -32,15 +32,12 @@ local function isWhitelisted(username)
     return false
 end
 
--- Menulis sinyal ke file (dengan retry dan debug)
+-- Menulis sinyal ke file
 local function writeSignal(filename, content)
     local path = HEARTBEAT_DIR .. filename
-    local ok, err = pcall(function()
+    pcall(function()
         writefile(path, content)
     end)
-    if not ok then
-        debugLog("❌ GAGAL tulis " .. filename .. ": " .. tostring(err))
-    end
 end
 
 local function sendHeartbeat()
@@ -98,22 +95,6 @@ local function buildUI()
 end
 
 buildUI()
-
--- Cek apakah folder heartbeat bisa ditulis
-local function testWrite()
-    local testFile = HEARTBEAT_DIR .. "test.txt"
-    local ok, err = pcall(function()
-        writefile(testFile, "test")
-    end)
-    if ok then
-        debugLog("✅ Folder heartbeat BISA ditulis")
-        pcall(function() os.remove(testFile) end)
-    else
-        debugLog("❌ Folder heartbeat TIDAK BISA ditulis: " .. tostring(err))
-    end
-end
-
-testWrite()
 
 -- Heartbeat loop (10 detik)
 task.spawn(function()
