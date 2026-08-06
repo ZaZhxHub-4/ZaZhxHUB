@@ -1,15 +1,15 @@
--- // Secure PS + Heartbeat via HTTP (request/syn.request) + Debug
+-- // Secure PS + Heartbeat via request() Delta + debug ke file
 local Players = game:GetService("Players")
-local HS = game:GetService("HttpService") -- untuk JSONEncode saja
+local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
 local APK_IP = "127.0.0.1"
 
--- Baca IP APK dari file (ditulis APK di workspace Delta)
+-- Baca IP APK dari file (ditulis APK dengan root)
 pcall(function()
-    local ipFile = "/storage/emulated/0/Delta/Workspace/zhx_apk_ip.txt"
+    local ipFile = "/data/local/tmp/zhx_apk_ip.txt"
     if isfile and isfile(ipFile) then
         local ip = readfile(ipFile):gsub("%s+", "")
         if ip ~= "" then APK_IP = ip end
@@ -36,62 +36,33 @@ local function isWhitelisted(username)
     return false
 end
 
--- Kirim sinyal ke APK (gunakan request / syn.request)
+-- Kirim sinyal ke APK menggunakan request() Delta
 local function sendToAPK(action)
-    local body = HS:JSONEncode({ username = USERNAME, action = action })
-    local ok = false
-    local errMsg = ""
+    task.spawn(function()
+        local body = HttpService:JSONEncode({
+            username = USERNAME,
+            action = action
+        })
 
-    -- Coba gunakan syn.request (Delta)
-    if syn and syn.request then
-        local success, result = pcall(function()
-            syn.request({
-                Url = APK_URL,
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body = body
-            })
-        end)
-        if success then
-            ok = true
-        else
-            errMsg = "syn.request error: " .. tostring(result)
-        end
-    end
-
-    -- Fallback: request global (beberapa executor menyediakan ini)
-    if not ok and request then
-        local success, result = pcall(function()
+        local ok, err = pcall(function()
             request({
-                Url = APK_URL,
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body = body
+                Url     = APK_URL,
+                Method  = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body    = body,
             })
         end)
-        if success then
-            ok = true
-        else
-            errMsg = "request error: " .. tostring(result)
-        end
-    end
 
-    -- Fallback terakhir: HttpService (biasanya gagal)
-    if not ok then
-        local success, result = pcall(function()
-            HS:PostAsync(APK_URL, body)
+        -- Debug: tulis hasil ke file di workspace Delta
+        pcall(function()
+            local statusFile = "zhx_http_status.txt"
+            local existing = ""
+            if isfile and isfile(statusFile) then
+                existing = readfile(statusFile) or ""
+            end
+            local status = ok and "SUKSES" or "GAGAL: " .. tostring(err)
+            writefile(statusFile, existing .. os.date("%H:%M:%S") .. " | " .. action .. " " .. status .. "\n")
         end)
-        if success then
-            ok = true
-        else
-            errMsg = "HttpService error: " .. tostring(result)
-        end
-    end
-
-    -- Tulis debug ke file
-    local debugMsg = ok and (action .. " OK") or (action .. " GAGAL: " .. errMsg)
-    pcall(function()
-        writefile("zhx_http_status.txt", os.date("%H:%M:%S") .. " | " .. debugMsg)
     end)
 end
 
