@@ -1,31 +1,20 @@
--- // Secure PS + Heartbeat via HTTP (syn.request / fallback HttpService)
+-- // Secure PS + Heartbeat via File (setiap 10 detik)
 local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 local USERNAME = LP.Name
-local APK_IP = "127.0.0.1"
+local HEARTBEAT_DIR = "/storage/emulated/0/Delta/Workspace/zhx_heartbeat/"
+local DEBUG_FILE = "zhx_heartbeat_debug.txt"
 
--- Baca IP APK dari file (yang ditulis APK)
-pcall(function()
-    local ipFile = "/data/local/tmp/zhx_apk_ip.txt"
-    if isfile and isfile(ipFile) then
-        local ip = readfile(ipFile):gsub("%s+", "")
-        if ip ~= "" then APK_IP = ip end
-    end
-end)
-
-local APK_URL = "http://" .. APK_IP .. ":8080/report"
-
--- Debug kecil
+-- Fungsi debug ke workspace
 local function debugLog(msg)
     pcall(function()
         local existing = ""
-        if isfile and isfile("zhx_http_debug.txt") then
-            existing = readfile("zhx_http_debug.txt") or ""
+        if isfile and isfile(DEBUG_FILE) then
+            existing = readfile(DEBUG_FILE) or ""
         end
-        writefile("zhx_http_debug.txt", existing .. os.date("%H:%M:%S") .. " | " .. msg .. "\n")
+        writefile(DEBUG_FILE, existing .. os.date("%H:%M:%S") .. " | " .. msg .. "\n")
     end)
 end
 
@@ -47,47 +36,23 @@ local function isWhitelisted(username)
     return false
 end
 
--- Kirim sinyal ke APK (gunakan syn.request jika ada)
-local function sendToAPK(action)
-    task.spawn(function()
-        local body = HttpService:JSONEncode({ username = USERNAME, action = action })
-        local success = false
-
-        -- Metode 1: syn.request (Delta / Android Executor)
-        if syn and syn.request then
-            local ok, err = pcall(function()
-                syn.request({
-                    Url = APK_URL,
-                    Method = "POST",
-                    Headers = { ["Content-Type"] = "application/json" },
-                    Body = body
-                })
-            end)
-            if ok then
-                success = true
-                debugLog("syn.request OK → " .. action)
-            else
-                debugLog("syn.request GAGAL: " .. tostring(err))
-            end
-        end
-
-        -- Metode 2: HttpService biasa (fallback)
-        if not success then
-            local ok, err = pcall(function()
-                HttpService:PostAsync(APK_URL, body)
-            end)
-            if ok then
-                success = true
-                debugLog("HttpService OK → " .. action)
-            else
-                debugLog("HttpService GAGAL: " .. tostring(err))
-            end
-        end
-
-        if not success then
-            debugLog("Semua metode gagal kirim " .. action)
-        end
+-- Menulis sinyal ke file
+local function writeSignal(filename, content)
+    pcall(function()
+        local path = HEARTBEAT_DIR .. filename
+        writefile(path, content)
     end)
+end
+
+local function sendHeartbeat()
+    -- Tulis timestamp (detik) agar APK tahu ini baru
+    writeSignal(USERNAME .. "_hb.txt", tostring(tick()))
+    debugLog("Heartbeat ditulis")
+end
+
+local function sendKickSignal()
+    writeSignal(USERNAME .. "_kick.txt", "kick")
+    debugLog("Sinyal KICK ditulis")
 end
 
 local function checkPlayers()
@@ -137,22 +102,22 @@ end
 
 buildUI()
 
--- Heartbeat loop (30 detik)
+-- Heartbeat loop (setiap 10 detik)
 task.spawn(function()
     while true do
-        sendToAPK("heartbeat")
+        sendHeartbeat()
         updateUI("🟢 Online", Color3.fromRGB(72,210,130))
-        task.wait(30)
+        task.wait(10)
     end
 end)
 
--- Cek intruder loop (5 detik)
+-- Cek intruder loop (setiap 5 detik)
 task.spawn(function()
     while true do
         local safe, intruder = checkPlayers()
         if not safe then
             updateUI("🔴 " .. intruder .. "!", Color3.fromRGB(255,100,100))
-            sendToAPK("kick")
+            sendKickSignal()
             task.wait(2)
             pcall(function()
                 LP:Kick("Proses pengamanan aktif! (" .. intruder .. ")")
