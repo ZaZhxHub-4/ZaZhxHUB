@@ -7,32 +7,19 @@ local pg = LP:WaitForChild("PlayerGui")
 local USERNAME = LP.Name
 local heartbeatCounter = 0
 
--- Folder workspace global (sama dengan APK)
-local WORKSPACE = "/storage/emulated/0/Delta/Workspace/"
-local VERIFICATION_FILE = WORKSPACE .. "zhx_verified"
-local WHITELIST_FILE = WORKSPACE .. "whitelist_config.txt"
-
--- Pastikan folder workspace ada
-pcall(function() makefolder(WORKSPACE) end)
-
--- Load whitelist dari file (hanya baca)
-local function loadWhitelist()
-    local list = {}
-    pcall(function()
-        if isfile(WHITELIST_FILE) then
-            local content = readfile(WHITELIST_FILE)
-            for name in content:gmatch("[^\r\n]+") do
-                name = name:gsub("%s+", "")
-                if name ~= "" then
-                    table.insert(list, name:lower())
-                end
+-- Load whitelist dari file whitelist_config.txt (ditulis oleh APK)
+local WHITELIST = {}
+pcall(function()
+    if isfile("whitelist_config.txt") then
+        local content = readfile("whitelist_config.txt")
+        for name in content:gmatch("[^\r\n]+") do
+            name = name:gsub("%s+", "")
+            if name ~= "" then
+                table.insert(WHITELIST, name:lower())
             end
         end
-    end)
-    return list
-end
-
-local WHITELIST = loadWhitelist()
+    end
+end)
 
 local function isWhitelisted(username)
     local lower = username:lower()
@@ -48,15 +35,15 @@ end
 
 local function sendHeartbeat()
     heartbeatCounter = heartbeatCounter + 1
-    writeSignal(WORKSPACE .. USERNAME .. "_hb.txt", tostring(heartbeatCounter))
+    writeSignal(USERNAME .. "_hb.txt", tostring(heartbeatCounter))
 end
 
 local function sendKickSignal()
-    writeSignal(WORKSPACE .. USERNAME .. "_kick.txt", "kick")
+    writeSignal(USERNAME .. "_kick.txt", "kick")
 end
 
 local function checkPlayers()
-    if #WHITELIST == 0 then return true, nil end
+    if #WHITELIST == 0 then return true, nil end  -- jika kosong, kick tidak aktif
     local players = Players:GetPlayers()
     for _, player in ipairs(players) do
         if player ~= LP and not isWhitelisted(player.Name) then
@@ -144,9 +131,9 @@ task.spawn(function()
     end
 end)
 
--- ============ VERIFICATION FILE ============
+-- ============ TULIS FILE VERIFIKASI (sekali) ============
 pcall(function()
-    if not isfile(VERIFICATION_FILE) then
-        writefile(VERIFICATION_FILE, "verified")
+    if not isfile("zhx_verified") then
+        writefile("zhx_verified", "verified")
     end
 end)
