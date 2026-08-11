@@ -7,7 +7,7 @@ local pg = LP:WaitForChild("PlayerGui")
 local USERNAME = LP.Name
 local heartbeatCounter = 0
 
--- Folder workspace global
+-- Folder workspace global (sama dengan APK)
 local WORKSPACE = "/storage/emulated/0/Delta/Workspace/"
 local VERIFICATION_FILE = WORKSPACE .. "zhx_verified"
 local WHITELIST_FILE = WORKSPACE .. "whitelist_config.txt"
