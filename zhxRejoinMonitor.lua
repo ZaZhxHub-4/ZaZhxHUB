@@ -7,12 +7,15 @@ local pg = LP:WaitForChild("PlayerGui")
 local USERNAME = LP.Name
 local heartbeatCounter = 0
 
--- Folder workspace global (sama dengan APK)
+-- Folder workspace global
 local WORKSPACE = "/storage/emulated/0/Delta/Workspace/"
 local VERIFICATION_FILE = WORKSPACE .. "zhx_verified"
 local WHITELIST_FILE = WORKSPACE .. "whitelist_config.txt"
 
--- Load whitelist dari file (hanya baca, tidak tulis)
+-- Pastikan folder workspace ada
+pcall(function() makefolder(WORKSPACE) end)
+
+-- Load whitelist dari file (hanya baca)
 local function loadWhitelist()
     local list = {}
     pcall(function()
@@ -91,7 +94,6 @@ local function buildUI()
     uiButton.Parent = gui
     Instance.new("UICorner", uiButton).CornerRadius = UDim.new(0,6)
 
-    -- Drag functionality
     local dragging, dragStart, startPos = false, nil, nil
     uiButton.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -143,7 +145,6 @@ task.spawn(function()
 end)
 
 -- ============ VERIFICATION FILE ============
--- Buat file verifikasi hanya sekali jika belum ada
 pcall(function()
     if not isfile(VERIFICATION_FILE) then
         writefile(VERIFICATION_FILE, "verified")
